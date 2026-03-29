@@ -71,26 +71,24 @@ The following issues have been identified which should be resolved:
    `llama.vim` to understand how this function should be implemented then
    implement it and add it to the functions defined within lib.rs `lttw()`.
 
- - fim_accept function in lib.rs is incomplete. 
+ - fim_accept function in lib.rs is incomplete. COMPLETE the full implementation
 ```
 // In a real implementation, this would:
 // 1. Set the buffer lines with the accepted content
 // 2. Move the cursor to the end of the accepted text
 // 3. Clear the FIM hint
 ```
- - fim_try_hint function in lib.rs is incomplete: 
+ - fim_try_hint function in lib.rs is incomplete. COMPLETE the full implementation
 ```
 // This would be an async call in the real implementation
 ```
- - inst_send is incomplete: 
+ - inst_send is incomplete. COMPLETE the full implementation
 ```
 // In a real implementation, this would read chunks from the response stream
 // and update visual text in real-time
 ```
- - process_ring_buffer function in lib.rs is incomplete: 
+ - process_ring_buffer function in lib.rs is incomplete. COMPLETE the full implementation
 ```
 // In a full implementation, we would send these to the server here
 // For now, just log that we processed them
 ```
-
-
