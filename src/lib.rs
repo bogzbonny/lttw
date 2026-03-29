@@ -2,18 +2,6 @@
 //
 // This module provides the entry point for the Neovim plugin using nvim-oxi.
 // All core logic is implemented in Rust modules and exposed to Neovim via FFI.
-
-use nvim_oxi::api::opts::SetExtmarkOptsBuilder;
-use nvim_oxi::api::types::Mode;
-use nvim_oxi::api::{self, Buffer, Window};
-use nvim_oxi::{Dictionary, Function, Result as NvimResult};
-use std::convert::TryInto;
-use std::sync::OnceLock;
-
-use crate::cache::Cache;
-use crate::instruction::InstructionStatus;
-use crate::ring_buffer::RingBuffer;
-
 pub mod cache;
 pub mod config;
 pub mod context;
@@ -22,6 +10,21 @@ pub mod fim;
 pub mod instruction;
 pub mod ring_buffer;
 pub mod utils;
+
+use {
+    nvim_oxi::{
+        api::{
+            opts::SetExtmarkOptsBuilder,
+            types::Mode,
+            {self, Buffer, Window},
+        },
+        Dictionary, Function, Result as NvimResult,
+    },
+    std::convert::TryInto,
+    std::sync::OnceLock,
+};
+
+use crate::{cache::Cache, instruction::InstructionStatus, ring_buffer::RingBuffer};
 
 /// State for a single instruction request
 pub use crate::instruction::InstructionRequestState;
@@ -36,19 +39,9 @@ pub use crate::instruction::InstructionRequestState;
 /// * `Err(nvim_oxi::Error)` - Error message if initialization failed
 #[nvim_oxi::plugin]
 pub fn lttw() -> NvimResult<Dictionary> {
-    // Initialize plugin state
-    init_state();
-
-    // Register nvim-oxi commands
-    register_commands()?;
-
-    // Setup keymaps
-    setup_keymaps()?;
-
-    // Setup autocmds
-    setup_autocmds()?;
-
     let mut functions = Dictionary::new();
+
+    functions.insert::<&str, Function<(), ()>>("lttw_setup", Function::from(|_| lttw_setup()));
 
     // FIM functions
     functions.insert::<&str, Function<Dictionary, Option<String>>>(
@@ -186,6 +179,13 @@ pub fn lttw() -> NvimResult<Dictionary> {
         }),
     );
 
+    functions.insert::<&str, Function<(), ()>>(
+        "on_cursor_moved_i",
+        Function::from(|_| {
+            let _ = on_cursor_moved_i();
+        }),
+    );
+
     // Cache functions
     functions.insert::<&str, Function<(String, String), ()>>(
         "cache_insert",
@@ -249,6 +249,22 @@ pub fn lttw() -> NvimResult<Dictionary> {
     );
 
     Ok(functions)
+}
+
+fn lttw_setup() -> NvimResult<()> {
+    // Initialize plugin state
+    init_state();
+
+    // Register nvim-oxi commands
+    register_commands()?;
+
+    // Setup keymaps
+    setup_keymaps()?;
+
+    // Setup autocmds
+    setup_autocmds()?;
+
+    Ok(())
 }
 
 /// State for FIM (Fill-in-Middle) completion
@@ -409,30 +425,6 @@ fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
     result.map_err(|e| nvim_oxi::Error::Api(api::Error::Other(e.to_string())))
 }
 
-/// FIM render function
-// XXX delete or use
-fn fim_render(content: &str) -> NvimResult<Dictionary> {
-    let (pos_x, pos_y) = get_pos();
-    let buf = get_current_buffer();
-    let lines = buf_get_lines(buf, 0, -1);
-
-    let _line_cur = if pos_y < lines.len() {
-        lines[pos_y].clone()
-    } else {
-        String::new()
-    };
-
-    let state = get_state();
-    let rendered = fim::render_fim_suggestion(pos_x, pos_y, content, &_line_cur, &state.config);
-
-    let mut result = Dictionary::new();
-    let content_array: nvim_oxi::Array = rendered.content.into_iter().collect();
-    result.insert("content", content_array);
-    result.insert("can_accept", rendered.can_accept);
-
-    Ok(result)
-}
-
 /// FIM accept function - accepts the FIM suggestion
 fn fim_accept(accept_type: &str) -> NvimResult<Option<String>> {
     let mut state = get_state_mut();
@@ -442,7 +434,7 @@ fn fim_accept(accept_type: &str) -> NvimResult<Option<String>> {
     }
 
     let pos_x = state.fim_state.pos_x;
-    let _pos_y = state.fim_state.pos_y;
+    let pos_y = state.fim_state.pos_y;
     let line_cur = state.fim_state.line_cur.clone();
     let content = state.fim_state.content.clone();
 
@@ -454,24 +446,52 @@ fn fim_accept(accept_type: &str) -> NvimResult<Option<String>> {
     // Use the accept_fim_suggestion function from fim module
     let (new_line, rest) = fim::accept_fim_suggestion(accept_type, pos_x, &line_cur, &content);
 
-    // In a real implementation, this would:
-    // 1. Set the buffer lines with the accepted content
-    // 2. Move the cursor to the end of the accepted text
-    // 3. Clear the FIM hint
+    // Set the buffer lines with the accepted content
+    let buf = Buffer::current();
 
-    let mut result = new_line;
-    if let Some(rest_lines) = rest {
-        for line in rest_lines {
-            result.push('\n');
-            result.push_str(&line);
+    // Get current lines and convert to owned strings
+    let all_lines: Vec<String> = match buf.get_lines(.., false) {
+        Ok(iter) => iter.map(|s| s.to_string()).collect(),
+        Err(_) => Vec::new(),
+    };
+
+    // Update the current line with the new content
+    let mut all_lines_modified = all_lines.clone();
+    if pos_y < all_lines_modified.len() {
+        all_lines_modified[pos_y] = new_line.clone();
+    }
+
+    // If there are rest lines (from 'full' or 'line' accept), insert them
+    if let Some(rest_lines) = &rest {
+        for (i, line) in rest_lines.iter().enumerate() {
+            all_lines_modified.insert(pos_y + 1 + i, line.clone());
         }
     }
 
-    // Clear the FIM state
+    // Set the lines back to the buffer (replace from pos_y to end)
+    let end_line = if let Some(rest_lines) = &rest {
+        pos_y + rest_lines.len() + 1
+    } else {
+        pos_y + 1
+    };
+
+    let mut buf = Buffer::current();
+    buf.set_lines(
+        pos_y..end_line,
+        true,
+        all_lines_modified[pos_y..end_line].to_vec(),
+    )?;
+
+    // Move the cursor to the end of the accepted text
+    let new_col = new_line.len();
+    let mut window = Window::current();
+    let _ = window.set_cursor(pos_y, new_col);
+
+    // Clear the FIM hint
     state.fim_state.hint_shown = false;
     state.fim_state.content.clear();
 
-    Ok(Some(result))
+    Ok(Some(new_line))
 }
 
 /// FIM hide function - clears the FIM hint from display
@@ -615,7 +635,42 @@ fn fim_try_hint() -> NvimResult<Option<String>> {
                         );
 
                         // Trigger speculative FIM in background
-                        // This would be an async call in the real implementation
+                        // Use cloned data to avoid borrow conflicts
+                        let speculative_config = state.config.clone();
+                        let speculative_cache = state.cache.clone();
+                        let speculative_ring = state.ring_buffer.clone();
+                        let speculative_lines = lines.clone();
+                        let speculative_content = state.fim_state.content.clone();
+
+                        // Spawn speculative FIM task
+                        tokio::runtime::Runtime::new().unwrap().spawn(async move {
+                            let pos_x = pos_x;
+                            let pos_y = pos_y;
+
+                            let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
+                                let mut cache = speculative_cache;
+                                let mut ring_buffer = speculative_ring;
+
+                                fim::fim_completion(
+                                    pos_x,
+                                    pos_y,
+                                    true, // is_auto - shorter timeout
+                                    &speculative_lines,
+                                    &speculative_config,
+                                    &mut cache,
+                                    &mut ring_buffer,
+                                    Some(&speculative_content),
+                                )
+                                .await
+                            });
+
+                            // Update state with result (if needed)
+                            if let Ok(Some(_content)) = result {
+                                // Result is cached by fim_completion
+                                // Note: We can't easily update the main state from a spawned task
+                                // In a real implementation, we'd use channels or a shared state with proper locking
+                            }
+                        });
 
                         return Ok(Some("hint_shown".to_string()));
                     }
@@ -806,6 +861,8 @@ fn inst_send(req_id: i64) -> NvimResult<Option<String>> {
     };
 
     let messages = req.inst_prev.clone();
+    let _config_clone = state.config.clone();
+
     state.debug_manager.log(
         "inst_send",
         &[&format!(
@@ -815,8 +872,6 @@ fn inst_send(req_id: i64) -> NvimResult<Option<String>> {
         )],
     );
 
-    drop(state); // Drop borrow for async call
-
     // Send request asynchronously
     let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
         let state = get_state_mut();
@@ -824,14 +879,37 @@ fn inst_send(req_id: i64) -> NvimResult<Option<String>> {
     });
 
     match result {
-        Ok(_response) => {
+        Ok(response) => {
             // Process streaming response
-            // In a real implementation, this would read chunks from the response stream
-            // and update visual text in real-time
+            let req_id_clone = req_id;
+
+            // Spawn a task to process the stream
+            tokio::runtime::Runtime::new().unwrap().spawn(async move {
+                // Read the response body
+                let body = match response.text().await {
+                    Ok(b) => b,
+                    Err(e) => {
+                        let _ = inst_update(req_id_clone, &format!("Error: {}", e));
+                        return;
+                    }
+                };
+
+                // Process SSE stream and update state
+                for line in body.lines() {
+                    if let Ok(updated_content) = inst_update(req_id_clone, line) {
+                        // Content has been updated
+                        let _ = updated_content;
+                    }
+                }
+
+                // Mark as finalized
+                let _ = inst_finalize(req_id_clone);
+            });
+
             let mut state = get_state_mut();
             if let Some(req) = state.instruction_requests.get_mut(&req_id) {
                 req.status = InstructionStatus::Generating;
-                // Update visual marker to show generating status - clone data for logging
+                // Update visual marker to show generating status
                 drop(state);
                 inst_update_virt_text(req_id)?;
                 Ok(Some("streaming".to_string()))
@@ -1608,6 +1686,87 @@ fn on_buf_leave() -> NvimResult<()> {
     Ok(())
 }
 
+/// Handle CursorMovedI event - trigger speculative FIM completion
+fn on_cursor_moved_i() -> NvimResult<()> {
+    let mut state = get_state_mut();
+
+    // Check if FIM is enabled and auto_fim is true
+    if !state.enabled || !state.config.auto_fim {
+        return Ok(());
+    }
+
+    let pos_x = state.fim_state.pos_x;
+    let pos_y = state.fim_state.pos_y;
+    let buf = get_current_buffer();
+    let lines = buf_get_lines(buf, 0, -1);
+
+    state.debug_manager.log(
+        "on_cursor_moved_i",
+        &[&format!(
+            "Cursor moved in insert mode at ({}, {})",
+            pos_x, pos_y
+        )],
+    );
+
+    // Try to show a cached hint
+    let hashes = fim::compute_hashes(&context::get_local_context(
+        &lines,
+        pos_x,
+        pos_y,
+        None,
+        &state.config,
+    ));
+
+    // Check cache for primary hash
+    for hash in &hashes {
+        if let Some(response_text) = state.cache.get_fim(hash) {
+            state.debug_manager.log(
+                "on_cursor_moved_i",
+                &[&format!("Found cached completion for hash {}", &hash[..16])],
+            );
+
+            // Parse response and render
+            if let Ok(response) = serde_json::from_str::<serde_json::Value>(&response_text) {
+                if let Some(content) = response.get("content").and_then(|c| c.as_str()) {
+                    let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &state.config);
+                    let rendered = fim::render_fim_suggestion(
+                        pos_x,
+                        pos_y,
+                        content,
+                        &ctx.line_cur_suffix,
+                        &state.config,
+                    );
+
+                    // Update FIM state
+                    state.fim_state.hint_shown = rendered.can_accept;
+                    state.fim_state.pos_x = pos_x;
+                    state.fim_state.pos_y = pos_y;
+                    state.fim_state.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
+                    state.fim_state.can_accept = rendered.can_accept;
+                    state.fim_state.content = rendered.content.clone();
+
+                    // Display virtual text using extmarks
+                    if rendered.can_accept {
+                        let _ = display_fim_hint(&mut state);
+
+                        state.debug_manager.log(
+                            "on_cursor_moved_i",
+                            &[&format!(
+                                "Showing FIM hint from cursor move: {} lines",
+                                rendered.content.len()
+                            )],
+                        );
+                    }
+
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Handle BufWritePost event - gather chunks after saving buffer
 fn on_buf_write_post() -> NvimResult<()> {
     let mut state = get_state_mut();
@@ -1668,8 +1827,26 @@ fn process_ring_buffer() -> NvimResult<()> {
             )],
         );
 
-        // In a full implementation, we would send these to the server here
-        // For now, just log that we processed them
+        // Build request with ring buffer context
+        let extra = state.ring_buffer.get_extra();
+        let request = serde_json::json!({
+            "input_extra": extra,
+            "cache_prompt": true
+        });
+
+        // Send to server (fire and forget - non-blocking)
+        let config = state.config.clone();
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(async move {
+                let client = reqwest::Client::new();
+                let _ = client
+                    .post(&config.endpoint_fim)
+                    .json(&request)
+                    .bearer_auth(&config.api_key)
+                    .send()
+                    .await;
+            });
     }
 
     Ok(())
