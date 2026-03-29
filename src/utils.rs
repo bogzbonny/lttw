@@ -10,23 +10,6 @@ pub fn random_range(i0: usize, i1: usize) -> usize {
     rng.gen_range(i0..=i1)
 }
 
-/// Get the number of leading spaces (or tabs) in a string
-/// Tabs are converted to tabstop width
-pub fn get_indent(line: &str) -> usize {
-    let tabstop = 4; // Standard tabstop
-    let mut count = 0;
-
-    for c in line.chars() {
-        match c {
-            '\t' => count += tabstop,
-            ' ' => count += 1,
-            _ => break,
-        }
-    }
-
-    count
-}
-
 /// Compute SHA256 hash of a string
 pub fn sha256(input: &str) -> String {
     use sha2::{Digest, Sha256};
@@ -52,14 +35,6 @@ mod tests {
     fn test_random_range() {
         let value = random_range(1, 10);
         assert!((1..=10).contains(&value));
-    }
-
-    #[test]
-    fn test_get_indent() {
-        assert_eq!(get_indent(""), 0);
-        assert_eq!(get_indent("   "), 3);
-        assert_eq!(get_indent("\t"), 4);
-        assert_eq!(get_indent("hello"), 0);
     }
 
     #[test]

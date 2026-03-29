@@ -3,16 +3,6 @@
 // This module handles gathering local context around the cursor position
 // and computing similarity between text chunks for the ring buffer.
 
-#[allow(unused)]
-use once_cell::sync::Lazy;
-#[allow(unused)]
-use regex::Regex;
-#[allow(unused)]
-use std::collections::HashMap;
-
-#[allow(unused)]
-use serde::Serialize;
-
 use crate::config::LttwConfig;
 
 /// Local context around the cursor position
@@ -189,23 +179,24 @@ pub fn get_indent(line: &str) -> usize {
 /// Compute similarity between two chunks of text
 /// Returns a value between 0.0 (no similarity) and 1.0 (high similarity)
 pub fn chunk_similarity(c0: &[String], c1: &[String]) -> f64 {
-    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\W+").unwrap());
+    let re = regex::Regex::new(r"\W+").unwrap();
+    use std::collections::HashSet;
 
     let text0 = c0.join("\n");
     let text1 = c1.join("\n");
-    let tokens0: Vec<&str> = RE.split(&text0).collect();
-    let tokens1: Vec<&str> = RE.split(&text1).collect();
+    let tokens0: Vec<&str> = re.split(&text0).collect();
+    let tokens1: Vec<&str> = re.split(&text1).collect();
 
-    let mut set0: HashMap<&str, bool> = HashMap::new();
+    let mut set0: HashSet<&str> = HashSet::new();
     for tok in &tokens0 {
         if !tok.is_empty() {
-            set0.insert(tok, true);
+            set0.insert(tok);
         }
     }
 
     let mut common = 0;
     for tok in &tokens1 {
-        if set0.contains_key(tok) {
+        if set0.contains(tok) {
             common += 1;
         }
     }

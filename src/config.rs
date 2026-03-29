@@ -132,12 +132,6 @@ impl LttwConfig {
         };
 
         // Helper to get i64 field from dictionary
-        let _get_i64 = |key: &str| -> Option<i64> {
-            dict.get(key)
-                .and_then(|obj| i64::try_from(obj.clone()).ok())
-        };
-
-        // Helper to get i64 field from dictionary
         let get_i64 = |key: &str| -> Option<i64> {
             dict.get(key)
                 .and_then(|obj| i64::try_from(obj.clone()).ok())

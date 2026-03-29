@@ -2,8 +2,6 @@
 //
 // This module provides debug logging functionality for the plugin.
 
-use std::sync::Mutex;
-
 /// Debug manager
 #[derive(Debug, Clone)]
 pub struct DebugManager {
@@ -88,24 +86,6 @@ impl Default for DebugManager {
 /// Format a value for logging
 pub fn format_for_log(value: &dyn std::fmt::Debug) -> String {
     format!("{:?}", value)
-}
-
-/// Log a message to the debug manager (top-level function)
-pub fn log(msg: &str) {
-    // Static debug manager for now - using OnceLock for thread-safe initialization
-    use std::sync::OnceLock;
-
-    static DEBUG_MANAGER: OnceLock<Mutex<DebugManager>> = OnceLock::new();
-
-    let manager = DEBUG_MANAGER.get_or_init(|| Mutex::new(DebugManager::new(1024)));
-    if let Ok(mut m) = manager.lock() {
-        m.log(msg, &[]);
-    }
-}
-
-/// Log a message (for FFI)
-pub fn debug_log(msg: &str) {
-    log(msg);
 }
 
 #[cfg(test)]

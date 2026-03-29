@@ -192,15 +192,6 @@ impl RingBuffer {
             }
         }
     }
-
-    /// Get context string for the ring buffer
-    pub fn get_context(&self, _buffer: u64, _position: usize) -> String {
-        self.chunks
-            .iter()
-            .map(|c| c.str.clone())
-            .collect::<Vec<String>>()
-            .join("\n")
-    }
 }
 
 /// Extra context for the server request
