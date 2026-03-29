@@ -6,7 +6,6 @@ use std::sync::Mutex;
 
 /// Debug manager
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct DebugManager {
     log: Vec<String>,
     max_lines: usize,
@@ -15,7 +14,6 @@ pub struct DebugManager {
 
 impl DebugManager {
     /// Create a new debug manager
-    #[allow(dead_code)]
     pub fn new(max_lines: usize) -> Self {
         Self {
             log: Vec::new(),
@@ -25,7 +23,6 @@ impl DebugManager {
     }
 
     /// Log a message
-    #[allow(dead_code)]
     pub fn log(&mut self, msg: &str, details: &[&str]) {
         if !self.enabled {
             return;
@@ -62,45 +59,38 @@ impl DebugManager {
     }
 
     /// Get all log entries
-    #[allow(dead_code)]
     pub fn get_log(&self) -> &[String] {
         &self.log
     }
 
     /// Clear the log
-    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.log.clear();
     }
 
     /// Enable or disable logging
-    #[allow(dead_code)]
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
 
     /// Check if logging is enabled
-    #[allow(dead_code)]
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
 }
 
 impl Default for DebugManager {
-    #[allow(dead_code)]
     fn default() -> Self {
         Self::new(1024)
     }
 }
 
 /// Format a value for logging
-#[allow(dead_code)]
 pub fn format_for_log(value: &dyn std::fmt::Debug) -> String {
     format!("{:?}", value)
 }
 
 /// Log a message to the debug manager (top-level function)
-#[allow(dead_code)]
 pub fn log(msg: &str) {
     // Static debug manager for now - using OnceLock for thread-safe initialization
     use std::sync::OnceLock;
@@ -114,7 +104,6 @@ pub fn log(msg: &str) {
 }
 
 /// Log a message (for FFI)
-#[allow(dead_code)]
 pub fn debug_log(msg: &str) {
     log(msg);
 }

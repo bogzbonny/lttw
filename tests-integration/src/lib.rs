@@ -279,9 +279,9 @@ fn test_cache_with_ring_buffer() -> Result<()> {
 #[nvim_oxi::test]
 fn test_fim_render_suggestion() -> Result<()> {
     use lttw::fim::render_fim_suggestion;
-    use lttw::config::LlamaConfig;
+    use lttw::config::LttwConfig;
     
-    let config = LlamaConfig::new();
+    let config = LttwConfig::new();
     
     // Test rendering a simple suggestion
     let content = "42;";
@@ -447,7 +447,7 @@ fn test_fim_request_with_extra_context() -> Result<()> {
 #[nvim_oxi::test]
 #[ignore = "requires llama.cpp server running at http://127.0.0.1:8012"]
 fn test_fim_server_completion() -> Result<()> {
-    use lttw::config::LlamaConfig;
+    use lttw::config::LttwConfig;
     use lttw::cache::Cache;
     use lttw::ring_buffer::RingBuffer;
     use tokio::runtime::Runtime;
@@ -471,7 +471,7 @@ fn test_fim_server_completion() -> Result<()> {
     let lines: Vec<String> = buf.get_lines(.., false)?.collect::<Vec<_>>().into_iter().map(|s| s.to_string()).collect();
     
     // Setup config and state
-    let config = LlamaConfig::new();
+    let config = LttwConfig::new();
     let mut cache = Cache::new(10);
     let mut ring_buffer = RingBuffer::new(3, 64);
     
@@ -519,12 +519,12 @@ fn test_fim_server_completion() -> Result<()> {
 #[nvim_oxi::test]
 #[ignore = "requires llama.cpp server running at http://127.0.0.1:8012"]
 fn test_fim_cache_with_server() -> Result<()> {
-    use lttw::config::LlamaConfig;
+    use lttw::config::LttwConfig;
     use lttw::cache::Cache;
     use lttw::ring_buffer::RingBuffer;
     use tokio::runtime::Runtime;
     
-    let config = LlamaConfig::new();
+    let config = LttwConfig::new();
     let mut cache = Cache::new(10);
     let mut ring_buffer = RingBuffer::new(3, 64);
     
@@ -588,12 +588,12 @@ fn test_fim_cache_with_server() -> Result<()> {
 #[nvim_oxi::test]
 #[ignore = "requires llama.cpp server running at http://127.0.0.1:8012"]
 fn test_ring_buffer_server_integration() -> Result<()> {
-    use lttw::config::LlamaConfig;
+    use lttw::config::LttwConfig;
     use lttw::cache::Cache;
     use lttw::ring_buffer::RingBuffer;
     use tokio::runtime::Runtime;
     
-    let config = LlamaConfig::new();
+    let config = LttwConfig::new();
     let mut cache = Cache::new(10);
     let mut ring_buffer = RingBuffer::new(5, 64);
     

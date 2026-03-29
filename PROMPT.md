@@ -56,3 +56,41 @@ translated code, if this is the case, fix the bugs. You may always refer to the
 original working code (written in vimscript) to understand what should be
 happening. However you should work by first trying to complete the integration tests,
 by understanding the rust code exclusively at first. 
+
+--------------
+
+You have been translating the codebase provided under `llama.vim/` into a new
+neovim plugin written in ENTIRELY rust using neovim bindings through the use of
+the nvim-oxi crate. NOTE there is not, nor should there EVER be ANY lua code in
+this project, all plugin functionality is achieved PURELY by using nvim-oxi 
+
+The following issues have been identified which should be resolved:
+
+ - in lib.rs there is a `on_cursor_moved_i` function which is called within
+   setup_autocmds() however this function has not been implemented. refer to
+   `llama.vim` to understand how this function should be implemented then
+   implement it and add it to the functions defined within lib.rs `lttw()`.
+
+ - fim_accept function in lib.rs is incomplete. 
+```
+// In a real implementation, this would:
+// 1. Set the buffer lines with the accepted content
+// 2. Move the cursor to the end of the accepted text
+// 3. Clear the FIM hint
+```
+ - fim_try_hint function in lib.rs is incomplete: 
+```
+// This would be an async call in the real implementation
+```
+ - inst_send is incomplete: 
+```
+// In a real implementation, this would read chunks from the response stream
+// and update visual text in real-time
+```
+ - process_ring_buffer function in lib.rs is incomplete: 
+```
+// In a full implementation, we would send these to the server here
+// For now, just log that we processed them
+```
+
+

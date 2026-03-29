@@ -50,7 +50,6 @@ impl Cache {
     }
 
     /// Get a value from the cache and update LRU order
-    #[allow(dead_code)]
     pub fn get(&mut self, key: &str) -> Option<String> {
         if !self.data.contains_key(key) {
             return None;
@@ -84,13 +83,11 @@ impl Cache {
     }
 
     /// Get a FIM response from the cache and update LRU order
-    #[allow(dead_code)]
     pub fn get_fim_mut(&mut self, key: &str) -> Option<String> {
         self.get(key)
     }
 
     /// Cache a FIM response
-    #[allow(dead_code)]
     pub fn cache_fim(&mut self, key: &str, response: &str) {
         self.insert(key.to_string(), response.to_string());
     }

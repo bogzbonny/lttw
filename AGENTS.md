@@ -74,11 +74,11 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 // Local modules last
-use crate::config::LlamaConfig;
+use crate::config::LttwConfig;
 ```
 
 **Naming Conventions:**
-- Types: `PascalCase` (e.g., `LlamaConfig`, `FimRequest`)
+- Types: \x60PascalCase\x60 (e.g., \x60LttwConfig\x60, \x60FimRequest\x60)
 - Functions/Methods: `snake_case` (e.g., `fim_completion`, `get_indent`)
 - Constants: `SCREAMING_SNAKE_CASE` (e.g., `MAX_KEYS`)
 - Modules: `snake_case` (e.g., `context.rs`, `cache.rs`)

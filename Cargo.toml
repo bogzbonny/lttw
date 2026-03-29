@@ -6,11 +6,7 @@ edition = "2021"
 [lib]
 name = "lttw"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
-
-[[bin]]
-name = "lttw"
-path = "src/main.rs"
+crate-type = ["cdylib"]
 
 [dependencies]
 nvim-oxi = { version = "0.6", features = ["neovim-0-11", "test", "test-terminator"] }
@@ -26,6 +22,3 @@ once_cell = "1.19"
 rand = "0.8"
 sha2 = "0.10"
 time = "0.3"
-
-[dev-dependencies]
-criterion = "0.5"

@@ -5,11 +5,10 @@
 // and rendering suggestions.
 
 use crate::cache::Cache;
-use crate::config::LlamaConfig;
+use crate::config::LttwConfig;
 use crate::context::{get_local_context, LocalContext};
 use crate::ring_buffer::{ExtraContext, RingBuffer};
 use crate::utils::sha256;
-use nvim_oxi::Dictionary;
 use serde::{Deserialize, Serialize};
 
 /// FIM completion request
@@ -41,20 +40,16 @@ pub struct FimRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct FimResponse {
     pub content: String,
-    #[allow(dead_code)]
     #[serde(default)]
     pub timings: Option<FimTimings>,
-    #[allow(dead_code)]
     #[serde(default)]
     pub tokens_cached: u64,
-    #[allow(dead_code)]
     #[serde(default)]
     pub truncated: bool,
 }
 
 /// FIM completion result with timing info
 #[derive(Debug, Clone, Serialize)]
-#[allow(dead_code)]
 pub struct FimResult {
     pub content: String,
     pub can_accept: bool,
@@ -142,7 +137,7 @@ pub async fn fim_completion(
     pos_y: usize,
     is_auto: bool,
     lines: &[String],
-    config: &LlamaConfig,
+    config: &LttwConfig,
     cache: &mut Cache,
     ring_buffer: &mut RingBuffer,
     prev: Option<&[String]>,
@@ -232,15 +227,6 @@ pub async fn fim_completion(
     Ok(Some(response.content))
 }
 
-/// FIM completion wrapper for nvim-oxi FFI
-/// This function takes a Dictionary and returns a Dictionary
-#[allow(dead_code)] // May be used in future FFI implementations
-pub fn fim_completion_dict(_request: Dictionary) -> Option<String> {
-    // For now, return an error indicating the plugin needs to be initialized
-    // The actual implementation would require a more complex state management
-    None
-}
-
 /// Try to generate a suggestion using the data in the cache
 /// Looks at the previous 10 characters to see if a completion is cached.
 /// If one is found at (x,y) then it checks that the characters typed after (x,y)
@@ -256,13 +242,12 @@ pub fn fim_completion_dict(_request: Dictionary) -> Option<String> {
 /// # Returns
 /// * `Some(RenderedSuggestion)` - If a cached completion is found
 /// * `None` - If no cached completion is found
-#[allow(dead_code)]
 pub fn fim_try_hint(
     pos_x: usize,
     pos_y: usize,
     lines: &[String],
     cache: &mut Cache,
-    config: &LlamaConfig,
+    config: &LttwConfig,
 ) -> Option<RenderedSuggestion> {
     // Get local context
     let ctx = get_local_context(lines, pos_x, pos_y, None, config);
@@ -374,7 +359,7 @@ pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
 }
 
 /// Send FIM request to the server
-pub async fn send_request(request: &FimRequest, config: &LlamaConfig) -> Result<String, FimError> {
+pub async fn send_request(request: &FimRequest, config: &LttwConfig) -> Result<String, FimError> {
     let client = reqwest::Client::new();
 
     let mut request_body = serde_json::to_value(request)?;
@@ -410,7 +395,7 @@ pub fn render_fim_suggestion(
     _pos_y: usize,
     content: &str,
     line_cur: &str,
-    _config: &LlamaConfig,
+    _config: &LttwConfig,
 ) -> RenderedSuggestion {
     // Parse content into lines
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
@@ -905,7 +890,7 @@ mod tests {
     fn test_fim_try_hint_basic() {
         // Test that fim_try_hint finds cached completions
         let mut cache = Cache::new(10);
-        let config = LlamaConfig::new();
+        let config = LttwConfig::new();
         let lines = vec![
             "fn main() {".to_string(),
             "    println!(\"hello\");".to_string(),
@@ -941,7 +926,7 @@ mod tests {
     fn test_fim_try_hint_nearby_completion() {
         // Test that fim_try_hint finds nearby cached completions
         let mut cache = Cache::new(10);
-        let config = LlamaConfig::new();
+        let config = LttwConfig::new();
         let lines = vec![
             "fn main() {".to_string(),
             "    println!(\"hello world\");".to_string(),
@@ -977,7 +962,7 @@ mod tests {
     fn test_fim_try_hint_no_cache() {
         // Test that fim_try_hint returns None when no cache entry exists
         let mut cache = Cache::new(10);
-        let config = LlamaConfig::new();
+        let config = LttwConfig::new();
         let lines = vec![
             "fn main() {".to_string(),
             "    println!(\"hello\");".to_string(),

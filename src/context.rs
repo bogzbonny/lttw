@@ -13,7 +13,7 @@ use std::collections::HashMap;
 #[allow(unused)]
 use serde::Serialize;
 
-use crate::config::LlamaConfig;
+use crate::config::LttwConfig;
 
 /// Local context around the cursor position
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -39,7 +39,7 @@ pub fn get_local_context(
     pos_x: usize,
     pos_y: usize,
     prev: Option<&[String]>,
-    config: &LlamaConfig,
+    config: &LttwConfig,
 ) -> LocalContext {
     if let Some(prev_lines) = prev {
         get_local_context_with_prev(lines, pos_x, pos_y, prev_lines, config)
@@ -52,7 +52,7 @@ fn get_local_context_no_prev(
     lines: &[String],
     pos_x: usize,
     pos_y: usize,
-    config: &LlamaConfig,
+    config: &LttwConfig,
 ) -> LocalContext {
     let max_y = lines.len();
     let line_cur = if pos_y < max_y {
@@ -112,7 +112,7 @@ fn get_local_context_with_prev(
     pos_x: usize,
     pos_y: usize,
     prev: &[String],
-    config: &LlamaConfig,
+    config: &LttwConfig,
 ) -> LocalContext {
     let max_y = lines.len();
 
@@ -188,7 +188,6 @@ pub fn get_indent(line: &str) -> usize {
 
 /// Compute similarity between two chunks of text
 /// Returns a value between 0.0 (no similarity) and 1.0 (high similarity)
-#[allow(dead_code)]
 pub fn chunk_similarity(c0: &[String], c1: &[String]) -> f64 {
     static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\W+").unwrap());
 
@@ -264,7 +263,7 @@ mod tests {
             "}".to_string(),
         ];
 
-        let config = LlamaConfig::new();
+        let config = LttwConfig::new();
         let ctx = get_local_context(&lines, 5, 1, None, &config);
 
         assert_eq!(ctx.line_cur_suffix, "rintln!(\"hello\");");
@@ -282,7 +281,7 @@ mod tests {
             "}".to_string(),
         ];
 
-        let config = LlamaConfig::new();
+        let config = LttwConfig::new();
         let ctx = get_local_context(&lines, 5, 1, None, &config);
 
         assert_eq!(ctx.line_cur_suffix, "rintln!(\"hello\");");

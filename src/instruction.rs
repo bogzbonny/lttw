@@ -3,8 +3,7 @@
 // This module handles instruction-based editing where the user provides
 // an instruction and the model modifies the selected text accordingly.
 
-use crate::config::LlamaConfig;
-use nvim_oxi::Dictionary;
+use crate::config::LttwConfig;
 use serde::{Deserialize, Serialize};
 
 /// Instruction request
@@ -71,7 +70,7 @@ pub fn build_instruction_payload(
     l0: usize,
     l1: usize,
     inst: &str,
-    config: &LlamaConfig,
+    config: &LttwConfig,
 ) -> Vec<InstMessage> {
     // Build system prompt
     let mut system_prompt = String::new();
@@ -147,7 +146,7 @@ pub fn build_instruction_payload(
 }
 
 /// Send instruction request (non-streaming, for warm-up)
-pub async fn send_instruction_warmup(config: &LlamaConfig) -> Result<(), InstError> {
+pub async fn send_instruction_warmup(config: &LttwConfig) -> Result<(), InstError> {
     // Send empty instruction to warm up the server (fire-and-forget)
     let messages = vec![
         InstMessage {
@@ -156,18 +155,18 @@ pub async fn send_instruction_warmup(config: &LlamaConfig) -> Result<(), InstErr
         },
         InstMessage {
             role: "user".to_string(),
-            content: ".".to_string(),  // Minimal content
+            content: ".".to_string(), // Minimal content
         },
     ];
 
     let request = InstRequest {
-        id_slot: -1,  // Special ID for warm-up
+        id_slot: -1, // Special ID for warm-up
         messages,
         min_p: Some(0.1),
         temperature: Some(0.1),
         samplers: Some(vec!["min_p".to_string(), "temperature".to_string()]),
         n_predict: Some(1),
-        stream: Some(false),  // Non-streaming for warm-up
+        stream: Some(false), // Non-streaming for warm-up
         cache_prompt: Some(true),
         model: config.model_inst.clone(),
     };
@@ -180,7 +179,7 @@ pub async fn send_instruction_warmup(config: &LlamaConfig) -> Result<(), InstErr
     }
 
     let response = builder.send().await?;
-    
+
     // Ignore response, just warm up the server
     if response.status().is_success() {
         Ok(())
@@ -195,7 +194,7 @@ pub async fn send_instruction_warmup(config: &LlamaConfig) -> Result<(), InstErr
 /// Send instruction request (streaming)
 pub async fn send_instruction_stream(
     messages: &[InstMessage],
-    config: &LlamaConfig,
+    config: &LttwConfig,
     req_id: i64,
 ) -> Result<reqwest::Response, InstError> {
     let request = InstRequest {
@@ -205,7 +204,7 @@ pub async fn send_instruction_stream(
         temperature: Some(0.1),
         samplers: Some(vec!["min_p".to_string(), "temperature".to_string()]),
         n_predict: None,
-        stream: Some(true),  // Always streaming for real requests
+        stream: Some(true), // Always streaming for real requests
         cache_prompt: Some(true),
         model: config.model_inst.clone(),
     };
@@ -230,10 +229,9 @@ pub async fn send_instruction_stream(
 }
 
 /// Send instruction request (legacy, non-streaming)
-#[allow(dead_code)]
 pub async fn send_instruction(
     messages: &[InstMessage],
-    config: &LlamaConfig,
+    config: &LttwConfig,
     req_id: i64,
 ) -> Result<String, InstError> {
     let response = send_instruction_stream(messages, config, req_id).await?;
@@ -241,7 +239,6 @@ pub async fn send_instruction(
 }
 
 /// Process instruction response (streaming)
-#[allow(dead_code)]
 pub fn process_instruction_response(response_text: &str) -> Vec<String> {
     let mut content = String::new();
 
@@ -282,7 +279,7 @@ mod tests {
             "}".to_string(),
         ];
 
-        let config = LlamaConfig::new();
+        let config = LttwConfig::new();
 
         let messages = build_instruction_payload(&lines, 0, 1, "make it shorter", &config);
 
@@ -344,18 +341,8 @@ data: {"choices":[{"delta":{"content":"world!"}}]}"#;
     }
 }
 
-/// Instruction completion wrapper for nvim-oxi FFI
-/// This function takes a Dictionary and returns a Dictionary
-#[allow(dead_code)]
-pub fn instruction_completion_dict(_request: Dictionary) -> Option<String> {
-    // For now, return an error indicating the plugin needs to be initialized
-    // The actual implementation would require a more complex state management
-    None
-}
-
 /// Result of processing an instruction response
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct InstructionResult {
     pub content: Vec<String>,
     pub status: InstructionStatus,
@@ -363,31 +350,29 @@ pub struct InstructionResult {
 }
 
 /// Status of an instruction request
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum InstructionStatus {
     #[default]
-    Processing,  // Initial state: waiting for server response
-    Generating,  // Streaming tokens from server
-    Ready,       // Complete, waiting for user accept
-    Cancelled,   // User cancelled
+    Processing, // Initial state: waiting for server response
+    Generating, // Streaming tokens from server
+    Ready,      // Complete, waiting for user accept
+    Cancelled,  // User cancelled
     Error(String),
 }
-
 
 /// Full instruction request state with visual tracking
 #[derive(Debug, Clone)]
 pub struct InstructionRequestState {
     pub id: i64,
     pub bufnr: u64,
-    pub range: (usize, usize),  // (l0, l1) line range
+    pub range: (usize, usize), // (l0, l1) line range
     pub status: InstructionStatus,
-    pub result: String,         // Accumulated result text
-    pub inst: String,           // User instruction
-    pub inst_prev: Vec<InstMessage>,  // Previous messages for continuation
-    pub n_gen: usize,           // Number of tokens generated
-    pub extmark_id: Option<u32>,      // Extmark ID for visual marker
-    pub ns_id: Option<u32>,           // Namespace ID for extmarks
+    pub result: String,              // Accumulated result text
+    pub inst: String,                // User instruction
+    pub inst_prev: Vec<InstMessage>, // Previous messages for continuation
+    pub n_gen: usize,                // Number of tokens generated
+    pub extmark_id: Option<u32>,     // Extmark ID for visual marker
+    pub ns_id: Option<u32>,          // Namespace ID for extmarks
 }
 
 impl InstructionRequestState {
@@ -437,7 +422,6 @@ pub fn process_streaming_response(response_text: &str, current_content: &str) ->
 }
 
 /// Apply instruction result to buffer lines
-#[allow(dead_code)]
 pub fn apply_instruction_result(lines: &mut Vec<String>, l0: usize, l1: usize, result: &[String]) {
     // Remove the original range
     let num_original = l1 - l0 + 1;
@@ -454,7 +438,6 @@ pub fn apply_instruction_result(lines: &mut Vec<String>, l0: usize, l1: usize, r
 }
 
 /// Get status text for display
-#[allow(dead_code)]
 pub fn get_status_text(status: &InstructionStatus) -> &'static str {
     match status {
         InstructionStatus::Processing => "[Proc]",
@@ -466,7 +449,6 @@ pub fn get_status_text(status: &InstructionStatus) -> &'static str {
 }
 
 /// Get highlight group for status
-#[allow(dead_code)]
 pub fn get_status_highlight(status: &InstructionStatus) -> &'static str {
     match status {
         InstructionStatus::Processing => "llama_hl_inst_virt_proc",
@@ -478,18 +460,17 @@ pub fn get_status_highlight(status: &InstructionStatus) -> &'static str {
 }
 
 /// Build virtual text for instruction status display
-#[allow(dead_code)]
 pub fn build_instruction_virt_text(
     req: &InstructionRequestState,
     preview_len: usize,
 ) -> Vec<(String, String)> {
     let mut virt_text = Vec::new();
-    
+
     // Status indicator
     let status_text = get_status_text(&req.status);
     let hl_group = get_status_highlight(&req.status);
     virt_text.push((status_text.to_string(), hl_group.to_string()));
-    
+
     // Add truncated preview of result or instruction
     if req.status == InstructionStatus::Generating || req.status == InstructionStatus::Ready {
         if !req.result.is_empty() {
@@ -501,7 +482,7 @@ pub fn build_instruction_virt_text(
     } else if req.status == InstructionStatus::Processing {
         virt_text.push((" Processing...".to_string(), "Comment".to_string()));
     }
-    
+
     virt_text
 }
 

@@ -5,7 +5,6 @@
 use rand::Rng;
 
 /// Generate a random number in the range [i0, i1]
-#[allow(dead_code)]
 pub fn random_range(i0: usize, i1: usize) -> usize {
     let mut rng = rand::thread_rng();
     rng.gen_range(i0..=i1)
@@ -13,7 +12,6 @@ pub fn random_range(i0: usize, i1: usize) -> usize {
 
 /// Get the number of leading spaces (or tabs) in a string
 /// Tabs are converted to tabstop width
-#[allow(dead_code)]
 pub fn get_indent(line: &str) -> usize {
     let tabstop = 4; // Standard tabstop
     let mut count = 0;
@@ -37,13 +35,11 @@ pub fn sha256(input: &str) -> String {
 }
 
 /// Split a string into lines, preserving empty lines
-#[allow(dead_code)]
 pub fn split_lines(s: &str) -> Vec<String> {
     s.split('\n').map(|s| s.to_string()).collect()
 }
 
 /// Join lines with newlines
-#[allow(dead_code)]
 pub fn join_lines(lines: &[String]) -> String {
     lines.join("\n")
 }

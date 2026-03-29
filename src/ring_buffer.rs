@@ -8,7 +8,6 @@ use serde::Serialize;
 
 /// A chunk of text from the buffer
 #[derive(Debug, Clone, Serialize)]
-#[allow(dead_code)]
 pub struct Chunk {
     pub data: Vec<String>,
     pub str: String,
@@ -17,7 +16,6 @@ pub struct Chunk {
 
 /// Ring buffer for extra context chunks
 #[derive(Debug, Clone, Serialize)]
-#[allow(dead_code)]
 pub struct RingBuffer {
     chunks: Vec<Chunk>,
     pub queued: Vec<Chunk>,
@@ -28,7 +26,6 @@ pub struct RingBuffer {
 
 impl RingBuffer {
     /// Create a new ring buffer with the given parameters
-    #[allow(dead_code)]
     pub fn new(max_chunks: usize, chunk_size: usize) -> Self {
         Self {
             chunks: Vec::new(),
@@ -45,7 +42,6 @@ impl RingBuffer {
     /// * `text` - Text to pick a chunk from
     /// * `no_mod` - If true, don't pick chunks from buffers with pending changes
     /// * `do_evict` - If true, evict chunks that are very similar to the new one
-    #[allow(dead_code)]
     pub fn pick_chunk(&mut self, text: Vec<String>, _no_mod: bool, do_evict: bool) {
         // Skip if extra context is disabled
         if self.max_chunks == 0 {
@@ -119,7 +115,6 @@ impl RingBuffer {
     }
 
     /// Move the first queued chunk to the ring buffer
-    #[allow(dead_code)]
     pub fn update(&mut self) {
         if self.queued.is_empty() {
             return;
@@ -134,7 +129,6 @@ impl RingBuffer {
     }
 
     /// Get extra context from the ring buffer
-    #[allow(dead_code)]
     pub fn get_extra(&self) -> Vec<ExtraContext> {
         self.chunks
             .iter()
@@ -156,19 +150,16 @@ impl RingBuffer {
     }
 
     /// Get the number of queued chunks
-    #[allow(dead_code)]
     pub fn queued_len(&self) -> usize {
         self.queued.len()
     }
 
     /// Check if the queue is empty
-    #[allow(dead_code)]
     pub fn queue_is_empty(&self) -> bool {
         self.queued.is_empty()
     }
 
     /// Get the number of evicted chunks
-    #[allow(dead_code)]
     pub fn n_evict(&self) -> usize {
         self.n_evict
     }
@@ -178,7 +169,6 @@ impl RingBuffer {
     /// # Arguments
     /// * `text` - Text to compare against
     /// * `threshold` - Similarity threshold (0.0-1.0). Chunks with similarity > threshold are evicted
-    #[allow(dead_code)]
     pub fn evict_similar(&mut self, text: &[String], threshold: f64) {
         if text.is_empty() {
             return;
@@ -204,7 +194,6 @@ impl RingBuffer {
     }
 
     /// Get context string for the ring buffer
-    #[allow(dead_code)]
     pub fn get_context(&self, _buffer: u64, _position: usize) -> String {
         self.chunks
             .iter()
@@ -216,7 +205,6 @@ impl RingBuffer {
 
 /// Extra context for the server request
 #[derive(Debug, Clone, serde::Serialize)]
-#[allow(dead_code)]
 pub struct ExtraContext {
     pub text: String,
     #[serde(skip_serializing)]

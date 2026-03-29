@@ -9,7 +9,7 @@ use serde_json::Value;
 
 /// Configuration options for the lttw plugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LlamaConfig {
+pub struct LttwConfig {
     // FIM (Fill-in-Middle) configuration
     pub endpoint_fim: String,
     pub endpoint_inst: String,
@@ -57,7 +57,7 @@ pub struct LlamaConfig {
     pub enabled_filetypes: Vec<String>,
 }
 
-impl Default for LlamaConfig {
+impl Default for LttwConfig {
     fn default() -> Self {
         Self {
             endpoint_fim: "http://127.0.0.1:8012/infill".to_string(),
@@ -96,9 +96,8 @@ impl Default for LlamaConfig {
     }
 }
 
-impl LlamaConfig {
+impl LttwConfig {
     /// Create a new configuration with default values
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -269,7 +268,6 @@ impl LlamaConfig {
     }
 
     /// Create configuration from serde_json::Value
-    #[allow(dead_code)]
     pub fn from_value(value: &Value) -> Result<Self, String> {
         serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse config: {}", e))
     }
@@ -298,7 +296,7 @@ mod tests {
 
     #[test]
     fn test_default_config() {
-        let config = LlamaConfig::new();
+        let config = LttwConfig::new();
         assert_eq!(config.endpoint_fim, "http://127.0.0.1:8012/infill");
         assert_eq!(
             config.endpoint_inst,
@@ -310,7 +308,7 @@ mod tests {
 
     #[test]
     fn test_filetype_enabled() {
-        let mut config = LlamaConfig::new();
+        let mut config = LttwConfig::new();
 
         // Test with empty enabled_filetypes (should use disabled_filetypes)
         assert!(config.is_filetype_enabled("rust"));
@@ -333,7 +331,7 @@ mod tests {
 
     #[test]
     fn test_config_defaults() {
-        let config = LlamaConfig::new();
+        let config = LttwConfig::new();
 
         assert_eq!(config.endpoint_fim, "http://127.0.0.1:8012/infill");
         assert_eq!(
