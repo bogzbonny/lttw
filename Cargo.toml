@@ -1,0 +1,31 @@
+[package]
+name = "lttw"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "lttw"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "lttw"
+path = "src/main.rs"
+
+[dependencies]
+nvim-oxi = { version = "0.6", features = ["neovim-0-11", "test", "test-terminator"] }
+nvim-oxi-macros = "0.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+reqwest = { version = "0.13", features = ["json"] }
+tokio = { version = "1.0", features = ["full"] }
+regex = "1.10"
+chrono = "0.4"
+once_cell = "1.19"
+rand = "0.8"
+sha2 = "0.10"
+time = "0.3"
+
+[dev-dependencies]
+criterion = "0.5"
