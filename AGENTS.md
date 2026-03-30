@@ -233,7 +233,7 @@ All keymaps use `<leader>ll` prefix:
 
 ## Configuration
 
-Configuration uses `vim.g.llama_config` table with defaults in `M.default_config`. Values should be deeply extended using `vim.tbl_deep_extend('force', {}, M.default_config, vim.g.llama_config or {})`.
+Configuration uses \x60vim.g.lttw_config\x60 table with defaults in \x60M.default_config\x60. Values should be deeply extended using \x60vim.tbl_deep_extend('force', {}, M.default_config, vim.g.lttw_config or {})\x60.
 
 ## Neovim API Usage
 

@@ -97,7 +97,7 @@ pub fn build_info_string(
     // Build info string
     let info = if truncated {
         format!(
-            " | WARNING: the context is full: {}, increase the server context size or reduce g:llama_config.ring_n_chunks",
+            " | WARNING: the context is full: {}, increase the server context size or reduce g:lttw_config.ring_n_chunks",
             tokens_cached
         )
     } else {
