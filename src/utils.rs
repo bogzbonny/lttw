@@ -27,6 +27,13 @@ pub fn join_lines(lines: &[String]) -> String {
     lines.join("\n")
 }
 
+/// Get current working directory
+pub fn get_current_directory() -> String {
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| ".".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

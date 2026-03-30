@@ -14,7 +14,7 @@ pub mod utils;
 use {
     nvim_oxi::{
         api::{
-            opts::{OptionOpts, SetExtmarkOptsBuilder},
+            opts::SetExtmarkOptsBuilder,
             types::Mode,
             ToFunction, {self, Buffer, Window},
         },
@@ -295,7 +295,6 @@ struct PluginState {
     fim_state: FimState,
     extmark_ns: Option<u32>,  // Namespace for extmarks (virtual text)
     inst_ns: Option<u32>,     // Namespace for instruction extmarks
-    debug_bufnr: Option<u64>, // Debug buffer number
     enabled: bool,            // Plugin enabled flag
     autocmd_ids: Vec<u64>,    // Track autocmd IDs for cleanup
 }
@@ -315,13 +314,12 @@ impl PluginState {
             config: config.clone(),
             cache: cache::Cache::new(max_cache_keys),
             ring_buffer: ring_buffer::RingBuffer::new(max_chunks, chunk_size),
-            debug_manager: debug::DebugManager::new(1024),
+            debug_manager: debug::DebugManager::new(),
             instruction_requests: std::collections::HashMap::new(),
             next_inst_req_id: 0,
             fim_state: FimState::default(),
             extmark_ns,
             inst_ns,
-            debug_bufnr: None,
             enabled: config.enable_at_startup,
             autocmd_ids: Vec::new(),
         }
@@ -1425,7 +1423,7 @@ fn debug_log(msg: &str, details: Vec<&str>) -> NvimResult<()> {
     Ok(())
 }
 
-/// Debug toggle function - opens/closes the debug buffer and toggles logging
+/// Debug toggle function - toggles logging
 fn debug_toggle() -> NvimResult<bool> {
     let mut state = get_state_mut();
     let enabled = state.debug_manager.is_enabled();
@@ -1433,97 +1431,20 @@ fn debug_toggle() -> NvimResult<bool> {
     // Toggle logging
     state.debug_manager.set_enabled(!enabled);
 
-    // If debug buffer exists, toggle its visibility
-    if let Some(bufnr) = state.debug_bufnr {
-        // Check if the buffer exists by trying to switch to it
-        // If bufwinnr returns -1, the buffer exists but window is closed
-        let winnr = api::call_function::<(String,), i64>("bufwinnr", (format!("#{}", bufnr),))
-            .unwrap_or(-1);
-        if winnr != -1 {
-            // Buffer is visible - close it
-            let _ = api::call_function::<(i64, bool), ()>("win_close", (winnr, true));
-            state.debug_bufnr = None;
-        } else {
-            // Buffer exists but window is closed - show it
-            let cmd = format!("silent b {}", bufnr);
-            let _ = api::command(&cmd);
-        }
-    } else {
-        // Create new debug buffer
-        debug_open_buffer(&mut state)?;
-    }
-
     Ok(!enabled)
 }
 
-/// Open the debug buffer for displaying logs
-fn debug_open_buffer(state: &mut PluginState) -> NvimResult<()> {
-    // Check if debug buffer already exists by name
-    let bufname = "llama_debug";
-    let bufnr_opt: Option<i64> = api::call_function("bufnr", (bufname.to_string(),)).ok();
-
-    let bufnr = if let Some(nr) = bufnr_opt {
-        // Buffer exists, switch to it
-        let cmd = format!("silent b {}", nr);
-        let _ = api::command(&cmd);
-        nr as u64
-    } else {
-        // Create new scratch buffer for the debug pane using vim command
-        let _ = api::command("botright new");
-
-        let buf = Buffer::current();
-        buf.handle().try_into().unwrap_or(0)
-    };
-
-    // Set buffer options for debug pane
-    let _ = api::set_option_value("buftype", "nofile", &OptionOpts::default());
-    let _ = api::set_option_value("bufhidden", "hide", &OptionOpts::default());
-    let _ = api::set_option_value("swapfile", false, &OptionOpts::default());
-    let _ = api::set_option_value("modifiable", false, &OptionOpts::default());
-    let _ = api::set_option_value("spell", false, &OptionOpts::default());
-    let _ = api::set_option_value("wrap", false, &OptionOpts::default());
-    let _ = api::set_option_value("number", false, &OptionOpts::default());
-    let _ = api::set_option_value("relativenumber", false, &OptionOpts::default());
-    let _ = api::set_option_value("signcolumn", "no", &OptionOpts::default());
-
-    // Set buffer name via command
-    let _ = api::command("file llama_debug");
-
-    // Store the buffer number
-    state.debug_bufnr = Some(bufnr);
-
-    // Show the log content
-    debug_flush_buffer(state)?;
-
+/// Open the debug buffer - kept for compatibility but now does nothing
+#[allow(dead_code)]
+fn debug_open_buffer(_state: &mut PluginState) -> NvimResult<()> {
+    // No longer needed - logs go to file
     Ok(())
 }
 
-/// Flush debug log to the debug buffer
-fn debug_flush_buffer(state: &mut PluginState) -> NvimResult<()> {
-    if let Some(bufnr) = state.debug_bufnr {
-        // Set current buffer to the debug buffer
-        let cmd = format!("silent b {}", bufnr);
-        if api::command(&cmd).is_err() {
-            return Ok(()); // Buffer doesn't exist, nothing to flush
-        }
-
-        // Get log entries
-        let log = state.debug_manager.get_log();
-
-        // Convert to lines
-        let mut lines: Vec<String> = Vec::new();
-        for entry in log {
-            lines.push(entry.clone());
-        }
-
-        // Set buffer lines
-        let mut buf = Buffer::current();
-        let _ = buf.set_lines(.., true, lines);
-
-        // Switch back to the previous buffer
-        let _ = api::command("b #");
-    }
-
+/// Flush debug log to the debug buffer - kept for compatibility but now does nothing
+#[allow(dead_code)]
+fn debug_flush_buffer(_state: &mut PluginState) -> NvimResult<()> {
+    // No longer needed - logs go to file
     Ok(())
 }
 
@@ -1534,10 +1455,10 @@ fn debug_clear() -> NvimResult<()> {
     Ok(())
 }
 
-/// Debug get log function
+/// Debug get log function - for compatibility, returns empty vec since logs are in file
 fn debug_get_log() -> NvimResult<Vec<String>> {
-    let state = get_state();
-    Ok(state.debug_manager.get_log().to_vec())
+    // Logs are now written to file, this returns empty for compatibility
+    Ok(Vec::new())
 }
 
 /// Get filetype function
