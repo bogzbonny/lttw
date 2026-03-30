@@ -729,6 +729,7 @@ dependencies = [
  "nvim-oxi",
  "nvim-oxi-macros",
  "once_cell",
+ "parking_lot",
  "rand 0.8.5",
  "regex",
  "reqwest",

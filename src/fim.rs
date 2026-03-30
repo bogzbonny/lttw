@@ -144,96 +144,108 @@ pub async fn fim_completion(
     is_auto: bool,
     lines: &[String],
     config: &LttwConfig,
-    cache: &mut Cache,
-    ring_buffer: &mut RingBuffer,
+    cache: std::sync::Arc<parking_lot::RwLock<Cache>>,
+    ring_buffer: std::sync::Arc<parking_lot::RwLock<RingBuffer>>,
     prev: Option<&[String]>,
 ) -> Result<Option<String>, FimError> {
-    // Get local context
-    debug_manager.log("fim_completion 1", &[]);
-    let ctx = get_local_context(lines, pos_x, pos_y, prev, config);
-    debug_manager.log(
-        "fim_completion 2",
-        &[&format!(
-            "is_auto {is_auto}, ctx.line_cur_suffix.len() {}, config.max_line_suffix {}",
-            ctx.line_cur_suffix.len(),
-            config.max_line_suffix
-        )],
-    );
+    // Lock the cache and ring buffer for setup
+    let request_data = {
+        let cache_lock = cache.write();
+        let mut ring_buffer_lock = ring_buffer.write();
 
-    // Skip auto FIM if too much suffix
-    if is_auto && ctx.line_cur_suffix.len() > config.max_line_suffix as usize {
-        return Ok(None);
-    }
-    debug_manager.log("fim_completion 3", &[]);
+        // Get local context
+        debug_manager.log("fim_completion 1", &[]);
+        let ctx = get_local_context(lines, pos_x, pos_y, prev, config);
+        debug_manager.log(
+            "fim_completion 2",
+            &[&format!(
+                "is_auto {is_auto}, ctx.line_cur_suffix.len() {}, config.max_line_suffix {}",
+                ctx.line_cur_suffix.len(),
+                config.max_line_suffix
+            )],
+        );
 
-    // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
-    // This prevents redundant context from cluttering the ring buffer
-    let current_prefix_lines: Vec<String> = ctx.prefix.split('\n').map(|s| s.to_string()).collect();
-    if !current_prefix_lines.is_empty() {
-        ring_buffer.evict_similar(&current_prefix_lines, 0.5);
-    }
-    debug_manager.log("fim_completion 4", &[]);
+        // Skip auto FIM if too much suffix
+        if is_auto && ctx.line_cur_suffix.len() > config.max_line_suffix as usize {
+            return Ok(None);
+        }
+        debug_manager.log("fim_completion 3", &[]);
 
-    // Build request
-    let extra = ring_buffer.get_extra();
-    debug_manager.log("fim_completion 5", &[]);
-    let hashes = compute_hashes(&ctx);
-    debug_manager.log("fim_completion 6", &[]);
+       // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
+        // This prevents redundant context from cluttering the ring buffer
+        let current_prefix_lines: Vec<String> = ctx.prefix.split('\n').map(|s| s.to_string()).collect();
+        if !current_prefix_lines.is_empty() {
+            ring_buffer_lock.evict_similar(&current_prefix_lines, 0.5);
+        }
+        debug_manager.log("fim_completion 4", &[]);
 
-    // Check cache
-    if config.auto_fim {
-        for hash in &hashes {
-            if cache.contains_key(hash) {
-                return Ok(None);
+        // Build request
+        let extra = ring_buffer_lock.get_extra();
+        debug_manager.log("fim_completion 5", &[]);
+
+        let hashes = compute_hashes(&ctx);
+        debug_manager.log("fim_completion 6", &[]);
+
+        // Check cache
+        if config.auto_fim {
+            for hash in &hashes {
+                if cache_lock.contains_key(hash) {
+                    return Ok(None);
+                }
             }
         }
-    }
-    debug_manager.log("fim_completion 7", &[]);
+        debug_manager.log("fim_completion 7", &[]);
 
-    // Build request
-    let request = FimRequest {
-        id_slot: 0,
-        input_prefix: ctx.prefix,
-        input_suffix: ctx.suffix,
-        input_extra: extra,
-        prompt: ctx.middle,
-        n_predict: config.n_predict,
-        stop: config.stop_strings.clone(),
-        n_indent: ctx.indent,
-        top_k: 40,
-        top_p: 0.90,
-        samplers: vec![
-            "top_k".to_string(),
-            "top_p".to_string(),
-            "infill".to_string(),
-        ],
-        stream: false,
-        cache_prompt: true,
-        t_max_prompt_ms: config.t_max_prompt_ms,
-        t_max_predict_ms: if is_auto {
-            250
-        } else {
-            config.t_max_predict_ms
-        },
-        response_fields: vec![
-            "content".to_string(),
-            "timings/prompt_n".to_string(),
-            "timings/prompt_ms".to_string(),
-            "timings/prompt_per_token_ms".to_string(),
-            "timings/prompt_per_second".to_string(),
-            "timings/predicted_n".to_string(),
-            "timings/predicted_ms".to_string(),
-            "timings/predicted_per_token_ms".to_string(),
-            "timings/predicted_per_second".to_string(),
-            "truncated".to_string(),
-            "tokens_cached".to_string(),
-        ],
-        model: config.model_fim.clone(),
-        prev: prev.map(|p| p.to_vec()).unwrap_or_default(),
-    };
-    debug_manager.log("fim_completion 8", &[]);
+        // Build request
+        let request = FimRequest {
+            id_slot: 0,
+            input_prefix: ctx.prefix.clone(),
+            input_suffix: ctx.suffix.clone(),
+            input_extra: extra,
+            prompt: ctx.middle.clone(),
+            n_predict: config.n_predict,
+            stop: config.stop_strings.clone(),
+            n_indent: ctx.indent,
+            top_k: 40,
+            top_p: 0.90,
+            samplers: vec![
+                "top_k".to_string(),
+                "top_p".to_string(),
+                "infill".to_string(),
+            ],
+            stream: false,
+            cache_prompt: true,
+            t_max_prompt_ms: config.t_max_prompt_ms,
+            t_max_predict_ms: if is_auto {
+                250
+            } else {
+                config.t_max_predict_ms
+            },
+            response_fields: vec![
+                "content".to_string(),
+                "timings/prompt_n".to_string(),
+                "timings/prompt_ms".to_string(),
+                "timings/prompt_per_token_ms".to_string(),
+                "timings/prompt_per_second".to_string(),
+                "timings/predicted_n".to_string(),
+                "timings/predicted_ms".to_string(),
+                "timings/predicted_per_token_ms".to_string(),
+                "timings/predicted_per_second".to_string(),
+                "truncated".to_string(),
+                "tokens_cached".to_string(),
+            ],
+            model: config.model_fim.clone(),
+            prev: prev.map(|p| p.to_vec()).unwrap_or_default(),
+        };
+        debug_manager.log("fim_completion 8", &[]);
 
-    // Send request
+        // Return the request data and hashes, releasing locks before we exit the block
+        (request, hashes, ctx.clone())
+    }; // Locks released here
+
+    let (request, hashes, _ctx) = request_data;
+
+    // Send request without holding locks
     let response_text = send_request(&request, config).await?;
     debug_manager.log("fim_completion 9", &[]);
 
@@ -241,11 +253,16 @@ pub async fn fim_completion(
     let response: FimResponse = serde_json::from_str(&response_text)?;
     debug_manager.log("fim_completion 10", &[]);
 
-    // Cache the response with timing info
-    for hash in hashes {
-        cache.insert(hash, response_text.clone());
+    // Cache the response with timing info (new block for re-acquired locks)
+    {
+        let mut cache_lock = cache.write();
+        // Ring buffer is read but not modified here
+        let _ring_buffer_lock = ring_buffer.read();
+           for hash in &hashes {
+                cache_lock.insert(hash.clone(), response_text.clone());
+            }
+        debug_manager.log("fim_completion 11", &[]);
     }
-    debug_manager.log("fim_completion 11", &[]);
 
     // Return content - timing info is stored in cache alongside response
     Ok(Some(response.content))
