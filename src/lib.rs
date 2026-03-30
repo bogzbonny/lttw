@@ -940,7 +940,7 @@ fn inst_build(lines: Vec<String>, l0: i64, l1: i64, inst: &str) -> NvimResult<Di
 /// Instruction send function - sends request and streams response
 #[allow(clippy::await_holding_lock)] // Uses state access within block_on for async call
 fn inst_send(req_id: i64) -> NvimResult<Option<String>> {
-    let mut state = get_state_mut();
+    let state = get_state();
 
     // Get the request
     let req = match state.instruction_requests.get(&req_id) {
@@ -1096,7 +1096,7 @@ fn inst_update(req_id: i64, response_chunk: &str) -> NvimResult<String> {
 
         // Log after dropping borrow
         {
-            let mut state = get_state_mut();
+            let state = get_state();
             state.debug_manager.log(
                 "inst_update",
                 &[&format!(
@@ -1112,7 +1112,7 @@ fn inst_update(req_id: i64, response_chunk: &str) -> NvimResult<String> {
         Ok(new_content)
     } else {
         drop(state);
-        let mut state = get_state_mut();
+        let state = get_state();
         state.debug_manager.log(
             "inst_update",
             &[&format!(
@@ -1137,7 +1137,7 @@ fn inst_finalize(req_id: i64) -> NvimResult<()> {
 
         // Log after dropping borrow
         {
-            let mut state = get_state_mut();
+            let state = get_state();
             state.debug_manager.log(
                 "inst_finalize",
                 &[&format!(
@@ -1215,14 +1215,14 @@ fn inst_accept() -> NvimResult<()> {
         // set_lines replaces lines in range [start, end) with new lines
         match buf.set_lines(l0..(l1 + 1), true, result_lines) {
             Ok(_) => {
-                let mut state = get_state_mut();
+                let state = get_state();
                 state.debug_manager.log(
                     "inst_accept",
                     &["Successfully applied instruction result to buffer"],
                 );
             }
             Err(e) => {
-                let mut state = get_state_mut();
+                let state = get_state();
                 state.debug_manager.log(
                     "inst_accept",
                     &[&format!("Failed to set buffer lines: {:?}", e)],
@@ -1421,7 +1421,7 @@ fn cache_get(key: &str) -> NvimResult<Option<String>> {
 
 /// Debug log function
 fn debug_log(msg: &str, details: Vec<&str>) -> NvimResult<()> {
-    let mut state = get_state_mut();
+    let state = get_state();
     state.debug_manager.log(msg, &details);
     Ok(())
 }
@@ -1829,6 +1829,13 @@ fn on_buf_leave() -> NvimResult<()> {
 /// Handle CursorMovedI event - trigger speculative FIM completion
 fn on_cursor_moved_i() -> NvimResult<()> {
     let mut state = get_state_mut();
+    state.debug_manager.log(
+        "on_cursor_moved_i",
+        &[&format!(
+            "state.enabled {}, state.config.auto_fim {}",
+            &state.enabled, &state.config.auto_fim
+        )],
+    );
 
     // Check if FIM is enabled and auto_fim is true
     if !state.enabled || !state.config.auto_fim {
@@ -2181,7 +2188,7 @@ fn setup_ring_buffer_timer() -> NvimResult<()> {
         (timeout, repeat, callback_ref, opts),
     ) {
         Ok(timer_id) => {
-            let mut state = get_state_mut();
+            let state = get_state();
             state.debug_manager.log(
                 "setup_ring_buffer_timer",
                 &[&format!(
@@ -2191,7 +2198,7 @@ fn setup_ring_buffer_timer() -> NvimResult<()> {
             );
         }
         Err(e) => {
-            let mut state = get_state_mut();
+            let state = get_state();
             state.debug_manager.log(
                 "setup_ring_buffer_timer",
                 &[&format!("Failed to start timer: {:?}", e)],

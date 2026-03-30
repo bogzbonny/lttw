@@ -53,7 +53,7 @@ impl DebugManager {
     }
 
     /// Log a message to the file
-    pub fn log(&mut self, msg: &str, details: &[&str]) {
+    pub fn log(&self, msg: &str, details: &[&str]) {
         if !self.enabled {
             return;
         }
