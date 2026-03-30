@@ -16,7 +16,7 @@ use {
         api::{
             opts::SetExtmarkOptsBuilder,
             types::Mode,
-            ToFunction, {self, Buffer, Window},
+            {self, Buffer, Window},
         },
         Dictionary, Function, Result as NvimResult,
     },
@@ -297,6 +297,7 @@ struct PluginState {
     inst_ns: Option<u32>,    // Namespace for instruction extmarks
     enabled: bool,           // Plugin enabled flag
     autocmd_ids: Vec<u64>,   // Track autocmd IDs for cleanup
+    ring_buffer_timer_handle: Option<tokio::sync::Mutex<tokio::task::JoinHandle<()>>>, // Handle to ring buffer timer task
 }
 
 impl PluginState {
@@ -322,6 +323,7 @@ impl PluginState {
             inst_ns,
             enabled: config.enable_at_startup,
             autocmd_ids: Vec::new(),
+            ring_buffer_timer_handle: None,
         }
     }
 }
@@ -393,6 +395,7 @@ fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
 
                 // Trigger speculative FIM with previous content as prev parameter
                 let result = fim::fim_completion(
+                    state.debug_manager.clone(),
                     pos_x,
                     pos_y,
                     false, // Not auto - use longer timeout
@@ -443,6 +446,7 @@ fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
             let ring_ptr: *mut RingBuffer = &mut *(&mut state.ring_buffer as *mut _);
             let config = state.config.clone();
             let result = fim::fim_completion(
+                state.debug_manager.clone(),
                 pos_x,
                 pos_y,
                 is_auto,
@@ -729,6 +733,7 @@ fn fim_try_hint() -> NvimResult<Option<String>> {
 
                         // Trigger speculative FIM in background
                         // Use cloned data to avoid borrow conflicts
+                        let dbg = state.debug_manager.clone();
                         let speculative_config = state.config.clone();
                         let speculative_cache = state.cache.clone();
                         let speculative_ring = state.ring_buffer.clone();
@@ -745,6 +750,7 @@ fn fim_try_hint() -> NvimResult<Option<String>> {
                                 let mut ring_buffer = speculative_ring;
 
                                 fim::fim_completion(
+                                    dbg,
                                     pos_x,
                                     pos_y,
                                     true, // is_auto - shorter timeout
@@ -1854,6 +1860,8 @@ fn on_cursor_moved_i() -> NvimResult<()> {
         )],
     );
 
+    state.debug_manager.log("on_cursor_moved_i 1", &[]);
+
     // Try to show a cached hint
     let hashes = fim::compute_hashes(&context::get_local_context(
         &lines,
@@ -1862,10 +1870,14 @@ fn on_cursor_moved_i() -> NvimResult<()> {
         None,
         &state.config,
     ));
+    state.debug_manager.log("on_cursor_moved_i 2", &[]);
 
     // Check cache for primary hash
     let mut found_cached = false;
     for hash in &hashes {
+        state
+            .debug_manager
+            .log("on_cursor_moved_i hashes 3", &[&hash.to_string()]);
         if let Some(response_text) = state.cache.get_fim(hash) {
             found_cached = true;
             state.debug_manager.log(
@@ -1911,19 +1923,32 @@ fn on_cursor_moved_i() -> NvimResult<()> {
             }
         }
     }
+    state.debug_manager.log("on_cursor_moved_i 4", &[]);
 
     // If no cached hint found and we're not already showing a hint, try normal FIM
     if !found_cached && !state.fim_state.hint_shown {
         // Only trigger FIM if we're in a reasonable position
+        state.debug_manager.log(
+            "on_cursor_moved_i 4.1",
+            &[&format!(
+                "pos_y {pos_y}, pos_x {pos_x}, lines_len: {}",
+                lines.len()
+            )],
+        );
         if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
             // Use the synchronous fim_completion wrapper
+            state.debug_manager.log("on_cursor_moved_i 4.21", &[]);
             let result = fim_completion(true); // is_auto = true
+            state.debug_manager.log("on_cursor_moved_i 4.2", &[]);
 
             // If we got a suggestion from server, display it
             if let Ok(Some(ref content)) = result {
+                state.debug_manager.log("on_cursor_moved_i 4.3", &[]);
                 // Parse response and render
                 if let Ok(response) = serde_json::from_str::<serde_json::Value>(content) {
+                    state.debug_manager.log("on_cursor_moved_i 4.4", &[]);
                     if let Some(content_str) = response.get("content").and_then(|c| c.as_str()) {
+                        state.debug_manager.log("on_cursor_moved_i 4.5", &[]);
                         let ctx =
                             context::get_local_context(&lines, pos_x, pos_y, None, &state.config);
                         let rendered = fim::render_fim_suggestion(
@@ -1933,6 +1958,7 @@ fn on_cursor_moved_i() -> NvimResult<()> {
                             &ctx.line_cur_suffix,
                             &state.config,
                         );
+                        state.debug_manager.log("on_cursor_moved_i 4.6", &[]);
 
                         // Update FIM state
                         state.fim_state.hint_shown = rendered.can_accept;
@@ -1942,13 +1968,16 @@ fn on_cursor_moved_i() -> NvimResult<()> {
                         state.fim_state.can_accept = rendered.can_accept;
                         state.fim_state.content = rendered.content;
 
+                        state.debug_manager.log("on_cursor_moved_i 4.7", &[]);
                         // Display virtual text using extmarks
                         let _ = display_fim_hint(&mut state);
+                        state.debug_manager.log("on_cursor_moved_i 4.8", &[]);
                     }
                 }
             }
         }
     }
+    state.debug_manager.log("on_cursor_moved_i 5", &[]);
 
     Ok(())
 }
@@ -2155,56 +2184,42 @@ fn on_buf_enter_and_check_filetype() -> NvimResult<()> {
     on_buf_enter()
 }
 
-/// Setup a repeating timer to process ring buffer updates
+/// Setup a repeating timer to process ring buffer updates using tokio
 fn setup_ring_buffer_timer() -> NvimResult<()> {
     let interval = {
         let state = get_state();
         state.config.ring_update_ms
     };
 
-    // Create a Lua function from our Rust callback and store it in the Lua registry
-    // The Function type needs explicit type annotations for the callback
-    let callback_func: Function<(), Result<(), nvim_oxi::Error>> = Function::from(|_: ()| {
-        let _ = process_ring_buffer();
-        Ok(())
+    // Clone the interval for use in the async task
+    let interval_duration = std::time::Duration::from_millis(interval as u64);
+
+    // Create a new tokio runtime and spawn the timer task
+    // This follows the same pattern used elsewhere in the codebase
+    let timer_handle = tokio::runtime::Runtime::new().unwrap().spawn(async move {
+        // Create a recurring interval timer
+        let mut interval = tokio::time::interval(interval_duration);
+
+        loop {
+            // Wait for the next tick
+            interval.tick().await;
+
+            // Process the ring buffer
+            let _ = process_ring_buffer();
+        }
     });
 
-    // Get the reference to the stored function
-    let callback_ref = callback_func.into_luaref();
+    // Store the handle in the plugin state
+    let mut state = get_state_mut();
+    state.ring_buffer_timer_handle = Some(tokio::sync::Mutex::new(timer_handle));
 
-    // Build the command string that calls vim.loop.timer_start
-    // This calls: vim.loop.timer_start(timeout, repeat, callback_ref, opts)
-    let timeout = interval as i64;
-    let repeat = interval as i64;
-
-    // Create opts dictionary with repeat count (-1 for infinite)
-    let mut opts = Dictionary::new();
-    opts.insert("repeat", -1i32);
-
-    // Call vim.loop.timer_start using nvim_call_function
-    // The callback_ref is a Lua reference that points to our function
-    match nvim_oxi::api::call_function::<(i64, i64, i32, Dictionary), i64>(
-        "vim.loop.timer_start",
-        (timeout, repeat, callback_ref, opts),
-    ) {
-        Ok(timer_id) => {
-            let state = get_state();
-            state.debug_manager.log(
-                "setup_ring_buffer_timer",
-                &[&format!(
-                    "Started ring buffer timer with ID {} (interval: {}ms)",
-                    timer_id, interval
-                )],
-            );
-        }
-        Err(e) => {
-            let state = get_state();
-            state.debug_manager.log(
-                "setup_ring_buffer_timer",
-                &[&format!("Failed to start timer: {:?}", e)],
-            );
-        }
-    }
+    state.debug_manager.log(
+        "setup_ring_buffer_timer",
+        &[&format!(
+            "Started ring buffer timer (interval: {}ms)",
+            interval
+        )],
+    );
 
     Ok(())
 }

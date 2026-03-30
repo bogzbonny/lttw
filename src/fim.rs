@@ -4,12 +4,17 @@
 // including context gathering, request building, response processing,
 // and rendering suggestions.
 
-use crate::cache::Cache;
-use crate::config::LttwConfig;
-use crate::context::{get_local_context, LocalContext};
-use crate::ring_buffer::{ExtraContext, RingBuffer};
-use crate::utils::sha256;
-use serde::{Deserialize, Serialize};
+use {
+    crate::{
+        cache::Cache,
+        config::LttwConfig,
+        context::{get_local_context, LocalContext},
+        debug::DebugManager,
+        ring_buffer::{ExtraContext, RingBuffer},
+        utils::sha256,
+    },
+    serde::{Deserialize, Serialize},
+};
 
 /// FIM completion request
 #[derive(Debug, Clone, Serialize)]
@@ -133,6 +138,7 @@ pub enum FimError {
 /// Returns the content and optionally timing info for display
 #[allow(clippy::too_many_arguments)] // FIM requires context from multiple sources
 pub async fn fim_completion(
+    debug_manager: DebugManager,
     pos_x: usize,
     pos_y: usize,
     is_auto: bool,
@@ -143,12 +149,15 @@ pub async fn fim_completion(
     prev: Option<&[String]>,
 ) -> Result<Option<String>, FimError> {
     // Get local context
+    debug_manager.log("fim_completion 1", &[]);
     let ctx = get_local_context(lines, pos_x, pos_y, prev, config);
+    debug_manager.log("fim_completion 2", &[]);
 
     // Skip auto FIM if too much suffix
     if is_auto && ctx.line_cur_suffix.len() > config.max_line_suffix as usize {
         return Ok(None);
     }
+    debug_manager.log("fim_completion 3", &[]);
 
     // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
     // This prevents redundant context from cluttering the ring buffer
@@ -156,10 +165,13 @@ pub async fn fim_completion(
     if !current_prefix_lines.is_empty() {
         ring_buffer.evict_similar(&current_prefix_lines, 0.5);
     }
+    debug_manager.log("fim_completion 4", &[]);
 
     // Build request
     let extra = ring_buffer.get_extra();
+    debug_manager.log("fim_completion 5", &[]);
     let hashes = compute_hashes(&ctx);
+    debug_manager.log("fim_completion 6", &[]);
 
     // Check cache
     if config.auto_fim {
@@ -169,6 +181,7 @@ pub async fn fim_completion(
             }
         }
     }
+    debug_manager.log("fim_completion 7", &[]);
 
     // Build request
     let request = FimRequest {
@@ -211,17 +224,21 @@ pub async fn fim_completion(
         model: config.model_fim.clone(),
         prev: prev.map(|p| p.to_vec()).unwrap_or_default(),
     };
+    debug_manager.log("fim_completion 8", &[]);
 
     // Send request
     let response_text = send_request(&request, config).await?;
+    debug_manager.log("fim_completion 9", &[]);
 
     // Parse response
     let response: FimResponse = serde_json::from_str(&response_text)?;
+    debug_manager.log("fim_completion 10", &[]);
 
     // Cache the response with timing info
     for hash in hashes {
         cache.insert(hash, response_text.clone());
     }
+    debug_manager.log("fim_completion 11", &[]);
 
     // Return content - timing info is stored in cache alongside response
     Ok(Some(response.content))
