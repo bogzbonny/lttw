@@ -358,6 +358,7 @@ fn buf_get_lines() -> Vec<String> {
 /// Get current buffer position
 fn get_pos() -> (usize, usize) {
     let (line, col) = Window::current().get_cursor().unwrap_or((0, 0));
+    let line = line.saturating_sub(1);
     (col, line) // (x, y) = (col, line)
 }
 
