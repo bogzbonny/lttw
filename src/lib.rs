@@ -378,7 +378,7 @@ fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
     let lines = buf_get_lines();
 
     // Check if we should trigger speculative FIM after showing a cached hint
-    let state = get_state_mut();
+    let state = get_state();
 
     // Check if there's a displayed hint that needs speculative follow-up
     if state.fim_state.hint_shown && !state.fim_state.content.is_empty() {
@@ -1938,7 +1938,11 @@ fn on_cursor_moved_i() -> NvimResult<()> {
         if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
             // Use the synchronous fim_completion wrapper
             state.debug_manager.log("on_cursor_moved_i 4.21", &[]);
+            drop(state); // need to drop before fim completion
             let result = fim_completion(true); // is_auto = true
+
+            let mut state = get_state_mut();
+
             state.debug_manager.log("on_cursor_moved_i 4.2", &[]);
 
             // If we got a suggestion from server, display it
@@ -1977,6 +1981,7 @@ fn on_cursor_moved_i() -> NvimResult<()> {
             }
         }
     }
+    let state = get_state();
     state.debug_manager.log("on_cursor_moved_i 5", &[]);
 
     Ok(())

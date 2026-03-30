@@ -151,7 +151,14 @@ pub async fn fim_completion(
     // Get local context
     debug_manager.log("fim_completion 1", &[]);
     let ctx = get_local_context(lines, pos_x, pos_y, prev, config);
-    debug_manager.log("fim_completion 2", &[]);
+    debug_manager.log(
+        "fim_completion 2",
+        &[&format!(
+            "is_auto {is_auto}, ctx.line_cur_suffix.len() {}, config.max_line_suffix {}",
+            ctx.line_cur_suffix.len(),
+            config.max_line_suffix
+        )],
+    );
 
     // Skip auto FIM if too much suffix
     if is_auto && ctx.line_cur_suffix.len() > config.max_line_suffix as usize {
