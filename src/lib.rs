@@ -349,7 +349,7 @@ fn get_state_mut() -> std::sync::MutexGuard<'static, PluginState> {
 }
 
 /// Get buffer lines from Neovim
-fn buf_get_lines(_buf: u64, _start: i64, _end: i64) -> Vec<String> {
+fn buf_get_lines() -> Vec<String> {
     let buf = Buffer::current();
     let lines = buf.get_lines(.., false).unwrap();
     lines.map(|s| s.to_string()).collect()
@@ -372,7 +372,7 @@ fn get_current_buffer() -> u64 {
 fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
     let (pos_x, pos_y) = get_pos();
     let _buf = get_current_buffer();
-    let lines = buf_get_lines(_buf, 0, -1);
+    let lines = buf_get_lines();
 
     // Check if we should trigger speculative FIM after showing a cached hint
     let state = get_state_mut();
@@ -680,7 +680,7 @@ fn fim_try_hint() -> NvimResult<Option<String>> {
     let mut state = get_state_mut();
     let (pos_x, pos_y) = get_pos();
     let buf = get_current_buffer();
-    let lines = buf_get_lines(buf, 0, -1);
+    let lines = buf_get_lines();
 
     // Get local context
     let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &state.config);
@@ -841,7 +841,7 @@ fn fim_try_hint() -> NvimResult<Option<String>> {
 fn inst_start(l0: i64, l1: i64, inst: &str) -> NvimResult<i64> {
     let mut state = get_state_mut();
     let bufnr = get_current_buffer();
-    let lines = buf_get_lines(bufnr, 0, -1);
+    let lines = buf_get_lines();
 
     // Create new instruction request
     let req_id = state.next_inst_req_id;
@@ -1915,7 +1915,7 @@ fn on_cursor_moved_i() -> NvimResult<()> {
     // Get CURRENT cursor position
     let (pos_x, pos_y) = get_pos();
     let buf = get_current_buffer();
-    let lines = buf_get_lines(buf, 0, -1);
+    let lines = buf_get_lines();
 
     state.debug_manager.log(
         "on_cursor_moved_i",
