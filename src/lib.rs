@@ -293,10 +293,10 @@ struct PluginState {
     instruction_requests: std::collections::HashMap<i64, InstructionRequestState>,
     next_inst_req_id: i64,
     fim_state: FimState,
-    extmark_ns: Option<u32>,  // Namespace for extmarks (virtual text)
-    inst_ns: Option<u32>,     // Namespace for instruction extmarks
-    enabled: bool,            // Plugin enabled flag
-    autocmd_ids: Vec<u64>,    // Track autocmd IDs for cleanup
+    extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
+    inst_ns: Option<u32>,    // Namespace for instruction extmarks
+    enabled: bool,           // Plugin enabled flag
+    autocmd_ids: Vec<u64>,   // Track autocmd IDs for cleanup
 }
 
 impl PluginState {
@@ -356,8 +356,11 @@ fn buf_get_lines() -> Vec<String> {
 /// Get current buffer position
 fn get_pos() -> (usize, usize) {
     let (line, col) = Window::current().get_cursor().unwrap_or((0, 0));
-    let line = line.saturating_sub(1); // NOTE the line number is one greater than the position
-    (col, line) // (x, y) = (col, line)
+
+    // NOTE nvim starts at 1, must make 0 start
+    let col = col.saturating_sub(1);
+    let line = line.saturating_sub(1);
+    (col, line)
 }
 
 /// Get current buffer
