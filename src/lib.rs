@@ -14,7 +14,7 @@ pub mod utils;
 use {
     nvim_oxi::{
         api::{
-            opts::SetExtmarkOptsBuilder,
+            opts::{SetExtmarkOptsBuilder, SetKeymapOptsBuilder},
             types::Mode,
             {self, Buffer, Window},
         },
@@ -53,212 +53,212 @@ pub fn lttw() -> NvimResult<Dictionary> {
 
     functions.insert::<&str, Function<(), ()>>("lttw_setup", Function::from(|_| lttw_setup()));
 
-    // FIM functions
-    functions.insert::<&str, Function<Dictionary, Option<String>>>(
-        "fim_completion",
-        Function::from(|_: Dictionary| fim_completion(false)),
-    );
+    //// FIM functions
+    //functions.insert::<&str, Function<Dictionary, Option<String>>>(
+    //    "fim_completion",
+    //    Function::from(|_: Dictionary| fim_completion(false)),
+    //);
 
-    functions.insert::<&str, Function<Dictionary, Option<String>>>(
-        "fim_completion_auto",
-        Function::from(|_: Dictionary| fim_completion(true)),
-    );
+    //functions.insert::<&str, Function<Dictionary, Option<String>>>(
+    //    "fim_completion_auto",
+    //    Function::from(|_: Dictionary| fim_completion(true)),
+    //);
 
-    // Note: fim_render is now handled internally via display_fim_hint
+    //// Note: fim_render is now handled internally via display_fim_hint
 
-    functions.insert::<&str, Function<String, Option<String>>>(
-        "fim_accept",
-        Function::from(|accept_type: String| fim_accept(&accept_type)),
-    );
+    //functions.insert::<&str, Function<String, Option<String>>>(
+    //    "fim_accept",
+    //    Function::from(|accept_type: String| fim_accept(&accept_type)),
+    //);
 
-    functions.insert::<&str, Function<(), ()>>("fim_hide", Function::from(|_| fim_hide()));
+    //functions.insert::<&str, Function<(), ()>>("fim_hide", Function::from(|_| fim_hide()));
 
-    functions.insert::<&str, Function<(), Option<String>>>(
-        "fim_try_hint",
-        Function::from(|_| fim_try_hint()),
-    );
+    //functions.insert::<&str, Function<(), Option<String>>>(
+    //    "fim_try_hint",
+    //    Function::from(|_| fim_try_hint()),
+    //);
 
-    // Instruction functions
-    functions.insert::<&str, Function<(Vec<String>, i64, i64, String), Dictionary>>(
-        "inst_build",
-        Function::from(|(lines, l0, l1, inst): (Vec<String>, i64, i64, String)| {
-            inst_build(lines, l0, l1, &inst)
-        }),
-    );
+    //// Instruction functions
+    //functions.insert::<&str, Function<(Vec<String>, i64, i64, String), Dictionary>>(
+    //    "inst_build",
+    //    Function::from(|(lines, l0, l1, inst): (Vec<String>, i64, i64, String)| {
+    //        inst_build(lines, l0, l1, &inst)
+    //    }),
+    //);
 
-    // New instruction API with proper state tracking
-    functions.insert::<&str, Function<(i64, i64, String), NvimResult<i64>>>(
-        "inst_start",
-        Function::from(|(l0, l1, inst): (i64, i64, String)| -> NvimResult<i64> {
-            inst_start(l0, l1, &inst)
-        }),
-    );
+    //// New instruction API with proper state tracking
+    //functions.insert::<&str, Function<(i64, i64, String), NvimResult<i64>>>(
+    //    "inst_start",
+    //    Function::from(|(l0, l1, inst): (i64, i64, String)| -> NvimResult<i64> {
+    //        inst_start(l0, l1, &inst)
+    //    }),
+    //);
 
-    functions.insert::<&str, Function<(i64, String), String>>(
-        "inst_update",
-        Function::from(|(req_id, response): (i64, String)| -> NvimResult<String> {
-            inst_update(req_id, &response)
-        }),
-    );
+    //functions.insert::<&str, Function<(i64, String), String>>(
+    //    "inst_update",
+    //    Function::from(|(req_id, response): (i64, String)| -> NvimResult<String> {
+    //        inst_update(req_id, &response)
+    //    }),
+    //);
 
-    functions.insert::<&str, Function<i64, Option<String>>>(
-        "inst_send",
-        Function::from(|req_id: i64| inst_send(req_id)),
-    );
+    //functions.insert::<&str, Function<i64, Option<String>>>(
+    //    "inst_send",
+    //    Function::from(|req_id: i64| inst_send(req_id)),
+    //);
 
-    functions.insert::<&str, Function<i64, ()>>(
-        "inst_finalize",
-        Function::from(|req_id: i64| {
-            let _ = inst_finalize(req_id);
-        }),
-    );
+    //functions.insert::<&str, Function<i64, ()>>(
+    //    "inst_finalize",
+    //    Function::from(|req_id: i64| {
+    //        let _ = inst_finalize(req_id);
+    //    }),
+    //);
 
-    functions.insert::<&str, Function<(), ()>>("inst_accept", Function::from(|_| inst_accept()));
+    //functions.insert::<&str, Function<(), ()>>("inst_accept", Function::from(|_| inst_accept()));
 
-    functions.insert::<&str, Function<(), ()>>("inst_cancel", Function::from(|_| inst_cancel()));
+    //functions.insert::<&str, Function<(), ()>>("inst_cancel", Function::from(|_| inst_cancel()));
 
-    functions.insert::<&str, Function<(), Option<String>>>(
-        "inst_rerun",
-        Function::from(|_| inst_rerun()),
-    );
+    //functions.insert::<&str, Function<(), Option<String>>>(
+    //    "inst_rerun",
+    //    Function::from(|_| inst_rerun()),
+    //);
 
-    functions.insert::<&str, Function<(), Option<String>>>(
-        "inst_continue",
-        Function::from(|_| inst_continue()),
-    );
+    //functions.insert::<&str, Function<(), Option<String>>>(
+    //    "inst_continue",
+    //    Function::from(|_| inst_continue()),
+    //);
 
-    // Warm-up function
-    functions.insert::<&str, Function<(), ()>>(
-        "inst_warmup",
-        Function::from(|_| {
-            let state = get_state();
-            let config = state.config.read().clone();
-            let _ = tokio::runtime::Runtime::new()
-                .unwrap()
-                .block_on(instruction::send_instruction_warmup(&config));
-        }),
-    );
+    //// Warm-up function
+    //functions.insert::<&str, Function<(), ()>>(
+    //    "inst_warmup",
+    //    Function::from(|_| {
+    //        let state = get_state();
+    //        let config = state.config.read().clone();
+    //        let _ = tokio::runtime::Runtime::new()
+    //            .unwrap()
+    //            .block_on(instruction::send_instruction_warmup(&config));
+    //    }),
+    //);
 
-    // Ring buffer functions
-    functions.insert::<&str, Function<(Vec<String>, bool, bool), ()>>(
-        "ring_pick_chunk",
-        Function::from(|(lines, no_mod, do_evict): (Vec<String>, bool, bool)| {
-            ring_pick_chunk(lines, no_mod, do_evict)
-        }),
-    );
+    //// Ring buffer functions
+    //functions.insert::<&str, Function<(Vec<String>, bool, bool), ()>>(
+    //    "ring_pick_chunk",
+    //    Function::from(|(lines, no_mod, do_evict): (Vec<String>, bool, bool)| {
+    //        ring_pick_chunk(lines, no_mod, do_evict)
+    //    }),
+    //);
 
-    functions.insert::<&str, Function<(), ()>>("ring_update", Function::from(|_| ring_update()));
+    //functions.insert::<&str, Function<(), ()>>("ring_update", Function::from(|_| ring_update()));
 
-    functions.insert::<&str, Function<(), Vec<Dictionary>>>(
-        "ring_get_extra",
-        Function::from(|_| ring_get_extra()),
-    );
+    //functions.insert::<&str, Function<(), Vec<Dictionary>>>(
+    //    "ring_get_extra",
+    //    Function::from(|_| ring_get_extra()),
+    //);
 
-    // Timer-based ring buffer processing
-    functions.insert::<&str, Function<(), ()>>(
-        "process_ring_buffer",
-        Function::from(|_| {
-            let _ = process_ring_buffer();
-        }),
-    );
+    //// Timer-based ring buffer processing
+    //functions.insert::<&str, Function<(), ()>>(
+    //    "process_ring_buffer",
+    //    Function::from(|_| {
+    //        let _ = process_ring_buffer();
+    //    }),
+    //);
 
-    functions.insert::<&str, Function<(), ()>>(
-        "on_text_yank_post",
-        Function::from(|_| {
-            let _ = on_text_yank_post();
-        }),
-    );
+    //functions.insert::<&str, Function<(), ()>>(
+    //    "on_text_yank_post",
+    //    Function::from(|_| {
+    //        let _ = on_text_yank_post();
+    //    }),
+    //);
 
-    functions.insert::<&str, Function<(), ()>>(
-        "on_buf_enter_and_check_filetype",
-        Function::from(|_| {
-            let _ = on_buf_enter_and_check_filetype();
-        }),
-    );
+    //functions.insert::<&str, Function<(), ()>>(
+    //    "on_buf_enter_and_check_filetype",
+    //    Function::from(|_| {
+    //        let _ = on_buf_enter_and_check_filetype();
+    //    }),
+    //);
 
-    functions.insert::<&str, Function<(), ()>>(
-        "on_buf_write_post",
-        Function::from(|_| {
-            let _ = on_buf_write_post();
-        }),
-    );
+    //functions.insert::<&str, Function<(), ()>>(
+    //    "on_buf_write_post",
+    //    Function::from(|_| {
+    //        let _ = on_buf_write_post();
+    //    }),
+    //);
 
-    functions.insert::<&str, Function<(), ()>>(
-        "on_buf_leave",
-        Function::from(|_| {
-            let _ = on_buf_leave();
-        }),
-    );
+    //functions.insert::<&str, Function<(), ()>>(
+    //    "on_buf_leave",
+    //    Function::from(|_| {
+    //        let _ = on_buf_leave();
+    //    }),
+    //);
 
-    functions.insert::<&str, Function<(), ()>>(
-        "on_cursor_moved_i",
-        Function::from(|_| {
-            let _ = on_cursor_moved_i();
-        }),
-    );
+    //functions.insert::<&str, Function<(), ()>>(
+    //    "on_cursor_moved_i",
+    //    Function::from(|_| {
+    //        let _ = on_cursor_moved_i();
+    //    }),
+    //);
 
-    // Cache functions
-    functions.insert::<&str, Function<(String, String), ()>>(
-        "cache_insert",
-        Function::from(|(key, value): (String, String)| cache_insert(&key, &value)),
-    );
+    //// Cache functions
+    //functions.insert::<&str, Function<(String, String), ()>>(
+    //    "cache_insert",
+    //    Function::from(|(key, value): (String, String)| cache_insert(&key, &value)),
+    //);
 
-    functions.insert::<&str, Function<String, Option<String>>>(
-        "cache_get",
-        Function::from(|key: String| cache_get(&key)),
-    );
+    //functions.insert::<&str, Function<String, Option<String>>>(
+    //    "cache_get",
+    //    Function::from(|key: String| cache_get(&key)),
+    //);
 
-    // Debug functions
-    functions.insert::<&str, Function<(String, Vec<String>), ()>>(
-        "debug_log",
-        Function::from(|(msg, details): (String, Vec<String>)| {
-            debug_log(&msg, details.iter().map(|s| s.as_str()).collect::<Vec<_>>())
-        }),
-    );
+    //// Debug functions
+    //functions.insert::<&str, Function<(String, Vec<String>), ()>>(
+    //    "debug_log",
+    //    Function::from(|(msg, details): (String, Vec<String>)| {
+    //        debug_log(&msg, details.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+    //    }),
+    //);
 
-    functions
-        .insert::<&str, Function<(), bool>>("debug_toggle", Function::from(|_| debug_toggle()));
+    //functions
+    //    .insert::<&str, Function<(), bool>>("debug_toggle", Function::from(|_| debug_toggle()));
 
-    functions.insert::<&str, Function<(), ()>>("debug_clear", Function::from(|_| debug_clear()));
+    //functions.insert::<&str, Function<(), ()>>("debug_clear", Function::from(|_| debug_clear()));
 
-    functions.insert::<&str, Function<(), Vec<String>>>(
-        "debug_get_log",
-        Function::from(|_| debug_get_log()),
-    );
+    //functions.insert::<&str, Function<(), Vec<String>>>(
+    //    "debug_get_log",
+    //    Function::from(|_| debug_get_log()),
+    //);
 
-    // Utility functions
-    functions
-        .insert::<&str, Function<(), String>>("get_filetype", Function::from(|_| get_filetype()));
+    //// Utility functions
+    //functions
+    //    .insert::<&str, Function<(), String>>("get_filetype", Function::from(|_| get_filetype()));
 
-    functions.insert::<&str, Function<(), bool>>(
-        "is_filetype_enabled",
-        Function::from(|_| is_filetype_enabled()),
-    );
+    //functions.insert::<&str, Function<(), bool>>(
+    //    "is_filetype_enabled",
+    //    Function::from(|_| is_filetype_enabled()),
+    //);
 
-    // Plugin lifecycle management
-    functions
-        .insert::<&str, Function<(), ()>>("enable_plugin", Function::from(|_| enable_plugin()));
+    //// Plugin lifecycle management
+    //functions
+    //    .insert::<&str, Function<(), ()>>("enable_plugin", Function::from(|_| enable_plugin()));
 
-    functions
-        .insert::<&str, Function<(), ()>>("disable_plugin", Function::from(|_| disable_plugin()));
+    //functions
+    //    .insert::<&str, Function<(), ()>>("disable_plugin", Function::from(|_| disable_plugin()));
 
-    functions
-        .insert::<&str, Function<(), bool>>("toggle_plugin", Function::from(|_| toggle_plugin()));
+    //functions
+    //    .insert::<&str, Function<(), bool>>("toggle_plugin", Function::from(|_| toggle_plugin()));
 
-    functions.insert::<&str, Function<(), bool>>(
-        "toggle_auto_fim",
-        Function::from(|_| toggle_auto_fim()),
-    );
+    //functions.insert::<&str, Function<(), bool>>(
+    //    "toggle_auto_fim",
+    //    Function::from(|_| toggle_auto_fim()),
+    //);
 
-    // FIM state query
-    functions.insert::<&str, Function<(), bool>>(
-        "is_fim_hint_shown",
-        Function::from(|_| {
-            let state = get_state();
-            let fim_state_lock = state.fim_state.read();
-            fim_state_lock.hint_shown
-        }),
-    );
+    //// FIM state query
+    //functions.insert::<&str, Function<(), bool>>(
+    //    "is_fim_hint_shown",
+    //    Function::from(|_| {
+    //        let state = get_state();
+    //        let fim_state_lock = state.fim_state.read();
+    //        fim_state_lock.hint_shown
+    //    }),
+    //);
 
     Ok(functions)
 }
@@ -266,7 +266,15 @@ pub fn lttw() -> NvimResult<Dictionary> {
 /// Check if FIM hint is shown - internal helper for commands
 fn fim_is_hint_shown() -> Result<bool, nvim_oxi::Error> {
     let state = get_state();
+
     let fim_state_lock = state.fim_state.read();
+    {
+        let debug_manager = state.debug_manager.read().clone();
+        debug_manager.log(
+            "fim_is_hint_shown",
+            &[&(fim_state_lock.hint_shown).to_string()],
+        );
+    }
     Ok(fim_state_lock.hint_shown)
 }
 
@@ -549,7 +557,12 @@ fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
 
 /// FIM accept function - accepts the FIM suggestion
 fn fim_accept(accept_type: &str) -> NvimResult<Option<String>> {
+    // Log before releasing the lock
     let state = get_state();
+    {
+        let debug_manager = state.debug_manager.read().clone();
+        debug_manager.log("fim_accept_triggered", &[]);
+    }
 
     let (hint_shown, can_accept, pos_x, pos_y, line_cur, content) = {
         let fim_state_lock = state.fim_state.read();
@@ -627,6 +640,12 @@ fn fim_accept(accept_type: &str) -> NvimResult<Option<String>> {
         fim_state_lock.content.clear();
     }
 
+    // Clear virtual text from display
+    if let Some(ns_id) = state.extmark_ns {
+        let mut buf = Buffer::current();
+        let _ = buf.clear_namespace(ns_id, ..);
+    }
+
     Ok(Some(new_line))
 }
 
@@ -693,6 +712,12 @@ fn display_fim_hint(state: &Arc<PluginState>) -> NvimResult<()> {
 
     if !hint_shown || content.is_empty() {
         return Ok(());
+    }
+
+    // Clear any existing extmarks in the namespace before setting new ones
+    if let Some(ns_id) = extmark_ns {
+        let mut buf = Buffer::current();
+        let _ = buf.clear_namespace(ns_id, ..);
     }
 
     if let Some(ns_id) = extmark_ns {
@@ -1694,8 +1719,21 @@ fn setup_keymaps() -> NvimResult<()> {
     let _ = api::set_keymap(
         Mode::Insert,
         "<Tab>",
-        "<C-O>:LttwFimAcceptFullOrTab<CR>",
-        &Default::default(),
+        "",
+        &SetKeymapOptsBuilder::default()
+            .callback(|_| {
+                if let Ok(true) = fim_is_hint_shown() {
+                    if let Err(e) = fim_accept("full") {
+                        // Log error but don't crash
+                        let state = get_state();
+                        state
+                            .debug_manager
+                            .read()
+                            .log("Tab accept", &[&format!("Error accepting FIM: {:?}", e)]);
+                    }
+                }
+            })
+            .build(),
     );
 
     // Note: ESC is not mapped in Insert mode to avoid interfering with normal ESC behavior
@@ -1706,8 +1744,21 @@ fn setup_keymaps() -> NvimResult<()> {
     let _ = api::set_keymap(
         Mode::Insert,
         "<S-Tab>",
-        "<C-O>:LttwFimAcceptLineOrSTab<CR>",
-        &Default::default(),
+        "",
+        &SetKeymapOptsBuilder::default()
+            .callback(|_| {
+                if let Ok(true) = fim_is_hint_shown() {
+                    if let Err(e) = fim_accept("line") {
+                        // Log error but don't crash
+                        let state = get_state();
+                        state.debug_manager.read().log(
+                            "LttwFimAcceptFullOrTab",
+                            &[&format!("Error accepting FIM: {:?}", e)],
+                        );
+                    }
+                }
+            })
+            .build(),
     );
 
     Ok(())
@@ -2274,6 +2325,22 @@ fn setup_autocmds() -> NvimResult<()> {
         autocmd_ids_lock.push(id as u64);
     }
 
+    // Insert mode entry for auto-FIM (InsertEnter)
+    if state.config.read().auto_fim {
+        let id = api::create_autocmd(
+            ["InsertEnter"],
+            &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+                .callback(|_| {
+                    let _ = on_cursor_moved_i();
+                    false // DO NOT DELETE this autocommand once used
+                })
+                .build(),
+        )
+        .unwrap_or(0);
+        let mut autocmd_ids_lock = state.autocmd_ids.write();
+        autocmd_ids_lock.push(id as u64);
+    }
+
     // Yank text for ring buffer (TextYankPost)
     let id = api::create_autocmd(
         ["TextYankPost"],
@@ -2338,9 +2405,9 @@ fn setup_autocmds() -> NvimResult<()> {
         autocmd_ids_lock.push(id as u64);
     }
 
-    // InsertLeavePre - hide FIM hint when leaving Insert mode
+    // InsertLeave - hide FIM hint when leaving Insert mode
     let id = api::create_autocmd(
-        ["InsertLeavePre"],
+        ["InsertLeave"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 let _ = fim_hide();
@@ -2466,45 +2533,6 @@ fn register_commands() -> NvimResult<()> {
         "LttwFimHide",
         |_| -> NvimResult<()> {
             fim_hide()?;
-            Ok(())
-        },
-        &Default::default(),
-    );
-
-    // FIM accept full or insert tab - for TAB key handling
-    let _ = api::create_user_command(
-        "LttwFimAcceptFullOrTab",
-        |_| -> NvimResult<()> {
-            if let Ok(true) = fim_is_hint_shown() {
-                let _ = fim_accept("full");
-            } else {
-                // Insert tab character by calling vim.feedkeys
-                let _ =
-                    api::call_function::<(&str, &str, bool), ()>("feedkeys", ("\t", "i", false));
-            }
-            Ok(())
-        },
-        &Default::default(),
-    );
-
-    // Note: LttwFimCancelOrEsc command removed - ESC is no longer mapped in Insert mode
-    // to avoid interfering with normal ESC behavior
-
-    // FIM accept line or re-inject S-Tab - for S-Tab key handling
-    let _ = api::create_user_command(
-        "LttwFimAcceptLineOrSTab",
-        |_| -> NvimResult<()> {
-            if let Ok(true) = fim_is_hint_shown() {
-                let _ = fim_accept("line");
-                // Key is consumed
-            } else {
-                // Re-inject S-Tab key by calling vim.feedkeys
-                // S-Tab is \x1bOP3~ in terminal
-                let _ = api::call_function::<(&str, &str, bool), ()>(
-                    "feedkeys",
-                    ("\x1bOP3~", "n", false),
-                );
-            }
             Ok(())
         },
         &Default::default(),
