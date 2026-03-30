@@ -252,6 +252,12 @@ pub fn lttw() -> NvimResult<Dictionary> {
     Ok(functions)
 }
 
+/// Check if FIM hint is shown - internal helper for commands
+fn fim_is_hint_shown() -> Result<bool, nvim_oxi::Error> {
+    let state = get_state();
+    Ok(state.fim_state.hint_shown)
+}
+
 fn lttw_setup() -> NvimResult<()> {
     // Initialize plugin state
     init_state();
@@ -1562,6 +1568,8 @@ fn is_filetype_enabled() -> NvimResult<bool> {
     Ok(state.config.is_filetype_enabled(&filetype))
 }
 
+// Expression mapping helper functions removed - using command-based callbacks instead
+
 /// Setup keymaps function - maps keys to call nvim-oxi commands directly
 fn setup_keymaps() -> NvimResult<()> {
     // FIM trigger - calls the LttwFim command
@@ -1612,6 +1620,29 @@ fn setup_keymaps() -> NvimResult<()> {
         &Default::default(),
     );
 
+    // FIM keymaps - use command-based callbacks for proper ESC/TAB handling
+    // These commands check if FIM hint is shown and act accordingly
+
+    // FIM accept full (TAB) - check if FIM shown, accept if yes, insert tab if no
+    let _ = api::set_keymap(
+        Mode::Insert,
+        "<Tab>",
+        "<C-O>:LttwFimAcceptFullOrTab<CR>",
+        &Default::default(),
+    );
+
+     // Note: ESC is not mapped in Insert mode to avoid interfering with normal ESC behavior
+    // ESC will naturally exit Insert mode. If FIM hint is shown, it will be hidden when
+    // the user presses ESC to exit Insert mode (handled by fim_hide_on_escape autocmd if needed)
+
+    // FIM accept line (S-Tab) - check if FIM shown, accept line if yes, re-inject S-Tab if no
+    let _ = api::set_keymap(
+        Mode::Insert,
+        "<S-Tab>",
+        "<C-O>:LttwFimAcceptLineOrSTab<CR>",
+        &Default::default(),
+    );
+
     Ok(())
 }
 
@@ -1655,6 +1686,11 @@ fn remove_keymaps() -> NvimResult<()> {
     if !config.keymap_debug_toggle.is_empty() {
         let _ = api::del_keymap(Mode::Normal, &config.keymap_debug_toggle);
     }
+
+    // Unmap FIM insert-mode keymaps for accept/cancel (these are always set up)
+    let _ = api::del_keymap(Mode::Insert, "<Tab>");
+    let _ = api::del_keymap(Mode::Insert, "<Esc>");
+    let _ = api::del_keymap(Mode::Insert, "<S-Tab>");
 
     Ok(())
 }
@@ -2146,6 +2182,19 @@ fn setup_autocmds() -> NvimResult<()> {
     .unwrap_or(0);
     state.autocmd_ids.push(id as u64);
 
+    // InsertLeavePre - hide FIM hint when leaving Insert mode
+    let id = api::create_autocmd(
+        ["InsertLeavePre"],
+        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+            .callback(|_| {
+                let _ = fim_hide();
+                true
+            })
+            .build(),
+    )
+    .unwrap_or(0);
+    state.autocmd_ids.push(id as u64);
+
     // Setup timer-based ring buffer updates (every ring_update_ms)
     drop(state);
     setup_ring_buffer_timer()?;
@@ -2264,6 +2313,51 @@ fn register_commands() -> NvimResult<()> {
         "LttwFimAcceptWord",
         |_| -> NvimResult<()> {
             fim_accept("word")?;
+            Ok(())
+        },
+        &Default::default(),
+    );
+
+    // FIM hide command
+    let _ = api::create_user_command(
+        "LttwFimHide",
+        |_| -> NvimResult<()> {
+            fim_hide()?;
+            Ok(())
+        },
+        &Default::default(),
+    );
+
+// FIM accept full or insert tab - for TAB key handling
+    let _ = api::create_user_command(
+        "LttwFimAcceptFullOrTab",
+        |_| -> NvimResult<()> {
+            if let Ok(true) = fim_is_hint_shown() {
+                let _ = fim_accept("full");
+            } else {
+                // Insert tab character by calling vim.feedkeys
+                let _ = api::call_function::<(&str, &str, bool), ()>("feedkeys", ("\t", "i", false));
+            }
+            Ok(())
+        },
+        &Default::default(),
+    );
+
+ // Note: LttwFimCancelOrEsc command removed - ESC is no longer mapped in Insert mode
+    // to avoid interfering with normal ESC behavior
+
+    // FIM accept line or re-inject S-Tab - for S-Tab key handling  
+    let _ = api::create_user_command(
+        "LttwFimAcceptLineOrSTab",
+        |_| -> NvimResult<()> {
+            if let Ok(true) = fim_is_hint_shown() {
+                let _ = fim_accept("line");
+                // Key is consumed
+            } else {
+                // Re-inject S-Tab key by calling vim.feedkeys
+                // S-Tab is \x1bOP3~ in terminal
+                let _ = api::call_function::<(&str, &str, bool), ()>("feedkeys", ("\x1bOP3~", "n", false));
+            }
             Ok(())
         },
         &Default::default(),
