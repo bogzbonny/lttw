@@ -14,7 +14,7 @@ pub mod utils;
 use {
     nvim_oxi::{
         api::{
-            opts::SetExtmarkOptsBuilder,
+            opts::{SetExtmarkOptsBuilder, OptionOpts},
             types::Mode,
             {self, Buffer, Window},
             ToFunction,
@@ -1470,16 +1470,16 @@ fn debug_open_buffer(state: &mut PluginState) -> NvimResult<()> {
         buf.handle().try_into().unwrap_or(0)
     };
     
-    // Set buffer options for debug pane using set_option
-    let _ = api::set_option("buftype", "nofile");
-    let _ = api::set_option("bufhidden", "hide");
-    let _ = api::set_option("swapfile", false);
-    let _ = api::set_option("modifiable", false);
-    let _ = api::set_option("spell", false);
-    let _ = api::set_option("wrap", false);
-    let _ = api::set_option("number", false);
-    let _ = api::set_option("relativenumber", false);
-    let _ = api::set_option("signcolumn", "no");
+    // Set buffer options for debug pane
+    let _ = api::set_option_value("buftype", "nofile", &OptionOpts::default());
+    let _ = api::set_option_value("bufhidden", "hide", &OptionOpts::default());
+    let _ = api::set_option_value("swapfile", false, &OptionOpts::default());
+    let _ = api::set_option_value("modifiable", false, &OptionOpts::default());
+    let _ = api::set_option_value("spell", false, &OptionOpts::default());
+    let _ = api::set_option_value("wrap", false, &OptionOpts::default());
+    let _ = api::set_option_value("number", false, &OptionOpts::default());
+    let _ = api::set_option_value("relativenumber", false, &OptionOpts::default());
+    let _ = api::set_option_value("signcolumn", "no", &OptionOpts::default());
     
     // Set buffer name via command
     let _ = api::command("file llama_debug");
@@ -1876,8 +1876,8 @@ fn on_cursor_moved_i() -> NvimResult<()> {
         return Ok(());
     }
 
-    let pos_x = state.fim_state.pos_x;
-    let pos_y = state.fim_state.pos_y;
+    // Get CURRENT cursor position
+    let (pos_x, pos_y) = get_pos();
     let buf = get_current_buffer();
     let lines = buf_get_lines(buf, 0, -1);
 
@@ -1899,8 +1899,10 @@ fn on_cursor_moved_i() -> NvimResult<()> {
     ));
 
     // Check cache for primary hash
+    let mut found_cached = false;
     for hash in &hashes {
         if let Some(response_text) = state.cache.get_fim(hash) {
+            found_cached = true;
             state.debug_manager.log(
                 "on_cursor_moved_i",
                 &[&format!("Found cached completion for hash {}", &hash[..16])],
@@ -1940,6 +1942,43 @@ fn on_cursor_moved_i() -> NvimResult<()> {
                     }
 
                     break;
+                }
+            }
+        }
+    }
+
+    // If no cached hint found and we're not already showing a hint, try normal FIM
+    if !found_cached && !state.fim_state.hint_shown {
+        // Only trigger FIM if we're in a reasonable position
+        if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
+            // Use the synchronous fim_completion wrapper
+            let result = fim_completion(true); // is_auto = true
+            
+            // If we got a suggestion from server, display it
+            if let Ok(Some(ref content)) = result {
+                // Parse response and render
+                if let Ok(response) = serde_json::from_str::<serde_json::Value>(content) {
+                    if let Some(content_str) = response.get("content").and_then(|c| c.as_str()) {
+                        let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &state.config);
+                        let rendered = fim::render_fim_suggestion(
+                            pos_x,
+                            pos_y,
+                            content_str,
+                            &ctx.line_cur_suffix,
+                            &state.config,
+                        );
+
+                        // Update FIM state
+                        state.fim_state.hint_shown = rendered.can_accept;
+                        state.fim_state.pos_x = pos_x;
+                        state.fim_state.pos_y = pos_y;
+                        state.fim_state.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
+                        state.fim_state.can_accept = rendered.can_accept;
+                        state.fim_state.content = rendered.content;
+
+                        // Display virtual text using extmarks
+                        let _ = display_fim_hint(&mut state);
+                    }
                 }
             }
         }
