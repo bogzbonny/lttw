@@ -17,6 +17,7 @@ use {
             opts::SetExtmarkOptsBuilder,
             types::Mode,
             {self, Buffer, Window},
+            ToFunction,
         },
         Dictionary, Function, Result as NvimResult,
     },
@@ -287,10 +288,11 @@ struct PluginState {
     instruction_requests: std::collections::HashMap<i64, InstructionRequestState>,
     next_inst_req_id: i64,
     fim_state: FimState,
-    extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
-    inst_ns: Option<u32>,    // Namespace for instruction extmarks
-    enabled: bool,           // Plugin enabled flag
-    autocmd_ids: Vec<u64>,   // Track autocmd IDs for cleanup
+    extmark_ns: Option<u32>,    // Namespace for extmarks (virtual text)
+    inst_ns: Option<u32>,       // Namespace for instruction extmarks
+    debug_bufnr: Option<u64>,   // Debug buffer number
+    enabled: bool,              // Plugin enabled flag
+    autocmd_ids: Vec<u64>,      // Track autocmd IDs for cleanup
 }
 
 impl PluginState {
@@ -314,6 +316,7 @@ impl PluginState {
             fim_state: FimState::default(),
             extmark_ns,
             inst_ns,
+            debug_bufnr: None,
             enabled: config.enable_at_startup,
             autocmd_ids: Vec::new(),
         }
@@ -375,29 +378,54 @@ fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
 
         drop(state); // Drop borrow before async call
 
-        let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
-            let mut state = get_state_mut();
-            unsafe {
-                let cache_ptr: *mut Cache = &mut *(&mut state.cache as *mut _);
-                let ring_ptr: *mut RingBuffer = &mut *(&mut state.ring_buffer as *mut _);
-                let config = state.config.clone();
+               let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
+                    let mut state = get_state_mut();
+                    unsafe {
+                        let cache_ptr: *mut Cache = &mut *(&mut state.cache as *mut _);
+                        let ring_ptr: *mut RingBuffer = &mut *(&mut state.ring_buffer as *mut _);
+                        let config = state.config.clone();
 
-                // Trigger speculative FIM with previous content as prev parameter
-                fim::fim_completion(
-                    pos_x,
-                    pos_y,
-                    false, // Not auto - use longer timeout
-                    &lines,
-                    &config,
-                    &mut *cache_ptr,
-                    &mut *ring_ptr,
-                    Some(&prev_content),
-                )
-                .await
-            }
-        });
+                        // Trigger speculative FIM with previous content as prev parameter
+                        let result = fim::fim_completion(
+                            pos_x,
+                            pos_y,
+                            false, // Not auto - use longer timeout
+                            &lines,
+                            &config,
+                            &mut *cache_ptr,
+                            &mut *ring_ptr,
+                            Some(&prev_content),
+                        )
+                        .await;
 
-        return result.map_err(|e| nvim_oxi::Error::Api(api::Error::Other(e.to_string())));
+                       // If we got a new suggestion, render and display it
+                          if let Ok(Some(ref content)) = result {
+                              // Parse response and render
+                              let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &config);
+                              let rendered = fim::render_fim_suggestion(
+                                  pos_x,
+                                  pos_y,
+                                  content,
+                                  &ctx.line_cur_suffix,
+                                  &config,
+                              );
+
+                              state.fim_state.hint_shown = rendered.can_accept;
+                              state.fim_state.pos_x = pos_x;
+                              state.fim_state.pos_y = pos_y;
+                              state.fim_state.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
+                              state.fim_state.can_accept = rendered.can_accept;
+                              state.fim_state.content = rendered.content;
+                              
+                              // Display the virtual text using extmarks
+                              let _ = display_fim_hint(&mut state);
+                          }
+
+                         result
+                    }
+                });
+
+                return result.map_err(|e| nvim_oxi::Error::Api(api::Error::Other(e.to_string())));
     }
 
     drop(state); // Drop immutable borrow for normal FIM
@@ -408,7 +436,7 @@ fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
             let cache_ptr: *mut Cache = &mut *(&mut state.cache as *mut _);
             let ring_ptr: *mut RingBuffer = &mut *(&mut state.ring_buffer as *mut _);
             let config = state.config.clone();
-            fim::fim_completion(
+            let result = fim::fim_completion(
                 pos_x,
                 pos_y,
                 is_auto,
@@ -418,7 +446,67 @@ fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
                 &mut *ring_ptr,
                 None,
             )
-            .await
+            .await;
+
+            // If we got a suggestion from server, display it
+            if let Ok(Some(ref content)) = result {
+                // Parse response and render
+                if let Ok(response) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(content_str) = response.get("content").and_then(|c| c.as_str()) {
+                        let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &config);
+                        let rendered = fim::render_fim_suggestion(
+                            pos_x,
+                            pos_y,
+                            content_str,
+                            &ctx.line_cur_suffix,
+                            &config,
+                        );
+
+                        // Update FIM state
+                        state.fim_state.hint_shown = rendered.can_accept;
+                        state.fim_state.pos_x = pos_x;
+                        state.fim_state.pos_y = pos_y;
+                        state.fim_state.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
+                        state.fim_state.can_accept = rendered.can_accept;
+                        state.fim_state.content = rendered.content;
+
+                        // Display virtual text using extmarks
+                        if rendered.can_accept {
+                            let _ = display_fim_hint(&mut state);
+                        }
+
+                        // Return the original content string
+                        return Ok(Some(content_str.to_string()));
+                    }
+                } else {
+                    // Direct string content (from speculative FIM)
+                    let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &config);
+                    let rendered = fim::render_fim_suggestion(
+                        pos_x,
+                        pos_y,
+                        content,
+                        &ctx.line_cur_suffix,
+                        &config,
+                    );
+
+                    // Update FIM state
+                    state.fim_state.hint_shown = rendered.can_accept;
+                    state.fim_state.pos_x = pos_x;
+                    state.fim_state.pos_y = pos_y;
+                    state.fim_state.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
+                    state.fim_state.can_accept = rendered.can_accept;
+                    state.fim_state.content = rendered.content.clone();
+
+                    // Display virtual text using extmarks
+                    if rendered.can_accept {
+                        let _ = display_fim_hint(&mut state);
+                    }
+
+                    return Ok(Some(content.clone()));
+                }
+            }
+
+            result
         }
     });
 
@@ -1333,12 +1421,105 @@ fn debug_log(msg: &str, details: Vec<&str>) -> NvimResult<()> {
     Ok(())
 }
 
-/// Debug toggle function
+/// Debug toggle function - opens/closes the debug buffer and toggles logging
 fn debug_toggle() -> NvimResult<bool> {
     let mut state = get_state_mut();
     let enabled = state.debug_manager.is_enabled();
+    
+    // Toggle logging
     state.debug_manager.set_enabled(!enabled);
+    
+      // If debug buffer exists, toggle its visibility
+    if let Some(bufnr) = state.debug_bufnr {
+        // Check if the buffer exists by trying to switch to it
+        // If bufwinnr returns -1, the buffer exists but window is closed
+        let winnr = api::call_function::<(String,), i64>("bufwinnr", (format!("#{}", bufnr),)).unwrap_or(-1);
+        if winnr != -1 {
+            // Buffer is visible - close it
+            let _ = api::call_function::<(i64, bool), ()>("win_close", (winnr, true));
+            state.debug_bufnr = None;
+        } else {
+            // Buffer exists but window is closed - show it
+            let cmd = format!("silent b {}", bufnr);
+            let _ = api::command(&cmd);
+        }
+    } else {
+        // Create new debug buffer
+        debug_open_buffer(&mut state)?;
+    }
+    
     Ok(!enabled)
+}
+
+/// Open the debug buffer for displaying logs
+fn debug_open_buffer(state: &mut PluginState) -> NvimResult<()> {
+    // Check if debug buffer already exists by name
+    let bufname = "llama_debug";
+    let bufnr_opt: Option<i64> = api::call_function("bufnr", (bufname.to_string(),)).ok();
+    
+    let bufnr = if let Some(nr) = bufnr_opt {
+        // Buffer exists, switch to it
+        let cmd = format!("silent b {}", nr);
+        let _ = api::command(&cmd);
+        nr as u64
+    } else {
+        // Create new scratch buffer for the debug pane using vim command
+        let _ = api::command("botright new");
+        
+        let buf = Buffer::current();
+        buf.handle().try_into().unwrap_or(0)
+    };
+    
+    // Set buffer options for debug pane using set_option
+    let _ = api::set_option("buftype", "nofile");
+    let _ = api::set_option("bufhidden", "hide");
+    let _ = api::set_option("swapfile", false);
+    let _ = api::set_option("modifiable", false);
+    let _ = api::set_option("spell", false);
+    let _ = api::set_option("wrap", false);
+    let _ = api::set_option("number", false);
+    let _ = api::set_option("relativenumber", false);
+    let _ = api::set_option("signcolumn", "no");
+    
+    // Set buffer name via command
+    let _ = api::command("file llama_debug");
+    
+    // Store the buffer number
+    state.debug_bufnr = Some(bufnr);
+    
+    // Show the log content
+    debug_flush_buffer(state)?;
+    
+    Ok(())
+}
+
+/// Flush debug log to the debug buffer
+fn debug_flush_buffer(state: &mut PluginState) -> NvimResult<()> {
+    if let Some(bufnr) = state.debug_bufnr {
+        // Set current buffer to the debug buffer
+        let cmd = format!("silent b {}", bufnr);
+        if let Err(_) = api::command(&cmd) {
+            return Ok(()); // Buffer doesn't exist, nothing to flush
+        }
+        
+        // Get log entries
+        let log = state.debug_manager.get_log();
+        
+        // Convert to lines
+        let mut lines: Vec<String> = Vec::new();
+        for entry in log {
+            lines.push(entry.clone());
+        }
+        
+        // Set buffer lines
+        let mut buf = Buffer::current();
+        let _ = buf.set_lines(.., true, lines.into_iter());
+        
+        // Switch back to the previous buffer
+        let _ = api::command("b #");
+    }
+    
+    Ok(())
 }
 
 /// Debug clear function
@@ -1864,7 +2045,10 @@ fn setup_autocmds() -> NvimResult<()> {
         let id = api::create_autocmd(
             ["CursorMovedI"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-                .command(":call v:lua.on_cursor_moved_i()")
+                .callback(|_| {
+                    let _ = on_cursor_moved_i();
+                    true
+                })
                 .build(),
         )
         .unwrap_or(0);
@@ -1875,7 +2059,10 @@ fn setup_autocmds() -> NvimResult<()> {
     let id = api::create_autocmd(
         ["TextYankPost"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .command(":call v:lua.on_text_yank_post()")
+            .callback(|_| {
+                let _ = on_text_yank_post();
+                true
+            })
             .build(),
     )
     .unwrap_or(0);
@@ -1885,7 +2072,10 @@ fn setup_autocmds() -> NvimResult<()> {
     let id = api::create_autocmd(
         ["BufEnter"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .command(":call v:lua.on_buf_enter_and_check_filetype()")
+            .callback(|_| {
+                let _ = on_buf_enter_and_check_filetype();
+                true
+            })
             .build(),
     )
     .unwrap_or(0);
@@ -1895,7 +2085,10 @@ fn setup_autocmds() -> NvimResult<()> {
     let id = api::create_autocmd(
         ["BufLeave"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .command(":call v:lua.on_buf_leave()")
+            .callback(|_| {
+                let _ = on_buf_leave();
+                true
+            })
             .build(),
     )
     .unwrap_or(0);
@@ -1905,7 +2098,10 @@ fn setup_autocmds() -> NvimResult<()> {
     let id = api::create_autocmd(
         ["BufWritePost"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .command(":call v:lua.on_buf_write_post()")
+            .callback(|_| {
+                let _ = on_buf_write_post();
+                true
+            })
             .build(),
     )
     .unwrap_or(0);
@@ -1948,17 +2144,30 @@ fn setup_ring_buffer_timer() -> NvimResult<()> {
         state.config.ring_update_ms
     };
 
-    // Use Neovim's vim.fn.timer_start() to create a repeating timer
-    // This calls our process_ring_buffer function periodically
-    let callback = nvim_oxi::String::from("v:lua.process_ring_buffer");
+    // Create a Lua function from our Rust callback and store it in the Lua registry
+    // The Function type needs explicit type annotations for the callback
+    let callback_func: Function<(), Result<(), nvim_oxi::Error>> = Function::from(|_: ()| {
+        let _ = process_ring_buffer();
+        Ok(())
+    });
 
+    // Get the reference to the stored function
+    let callback_ref = callback_func.into_luaref();
+
+    // Build the command string that calls vim.loop.timer_start
+    // This calls: vim.loop.timer_start(timeout, repeat, callback_ref, opts)
+    let timeout = interval as i64;
+    let repeat = interval as i64;
+
+    // Create opts dictionary with repeat count (-1 for infinite)
     let mut opts = Dictionary::new();
-    opts.insert("repeat", -1i32); // -1 means repeat forever
+    opts.insert("repeat", -1i32);
 
-    // Call vim.fn.timer_start(interval, callback, opts) - returns timer ID
-    match api::call_function::<(i64, nvim_oxi::String, Dictionary), i64>(
-        "timer_start",
-        (interval as i64, callback, opts),
+    // Call vim.loop.timer_start using nvim_call_function
+    // The callback_ref is a Lua reference that points to our function
+    match nvim_oxi::api::call_function::<(i64, i64, i32, Dictionary), i64>(
+        "vim.loop.timer_start",
+        (timeout, repeat, callback_ref, opts),
     ) {
         Ok(timer_id) => {
             let mut state = get_state_mut();
