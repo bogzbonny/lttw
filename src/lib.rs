@@ -1513,24 +1513,27 @@ fn inst_continue() -> NvimResult<Option<String>> {
 /// Ring buffer pick chunk function
 fn ring_pick_chunk(lines: Vec<String>, no_mod: bool, do_evict: bool) -> NvimResult<()> {
     let state = get_state();
-    let mut ring_buffer_lock = state.ring_buffer.write();
-    ring_buffer_lock.pick_chunk(lines, no_mod, do_evict);
+    state
+        .ring_buffer
+        .write()
+        .pick_chunk(lines, no_mod, do_evict);
     Ok(())
 }
 
 /// Ring buffer update function
 fn ring_update() -> NvimResult<()> {
     let state = get_state();
-    let mut ring_buffer_lock = state.ring_buffer.write();
-    ring_buffer_lock.update();
+    state.ring_buffer.write().update();
     Ok(())
 }
 
 /// Cache insert function
 fn cache_insert(key: &str, value: &str) -> NvimResult<()> {
     let state = get_state();
-    let mut cache_lock = state.cache.write();
-    cache_lock.insert(key.to_string(), value.to_string());
+    state
+        .cache
+        .write()
+        .insert(key.to_string(), value.to_string());
     Ok(())
 }
 
@@ -1580,8 +1583,7 @@ fn debug_toggle() -> NvimResult<bool> {
 /// Debug clear function
 fn debug_clear() -> NvimResult<()> {
     let state = get_state();
-    let mut debug_manager_lock = state.debug_manager.write();
-    debug_manager_lock.clear();
+    state.debug_manager.write().clear();
     Ok(())
 }
 
@@ -2204,12 +2206,13 @@ fn process_ring_buffer() -> NvimResult<()> {
     // Get configuration
     let update_interval = state.config.read().ring_update_ms;
 
-    // Move first queued chunk to ring
-    let mut ring_buffer_lock = state.ring_buffer.write();
-    ring_buffer_lock.update();
-
     // Check if we have chunks before logging
-    let chunk_count = ring_buffer_lock.len();
+    let chunk_count = {
+        // Move first queued chunk to ring
+        let mut ring_buffer_lock = state.ring_buffer.write();
+        ring_buffer_lock.update();
+        ring_buffer_lock.len()
+    };
 
     if chunk_count > 0 {
         state.debug_manager.read().log(
@@ -2221,7 +2224,7 @@ fn process_ring_buffer() -> NvimResult<()> {
         );
 
         // Build request with ring buffer context
-        let extra = ring_buffer_lock.get_extra();
+        let extra = state.ring_buffer.read().get_extra();
         let request = serde_json::json!({
             "input_extra": extra,
             "cache_prompt": true
@@ -2282,8 +2285,10 @@ fn setup_autocmds() -> NvimResult<()> {
             .build(),
     )
     .unwrap_or(0);
-    let mut autocmd_ids_lock = state.autocmd_ids.write();
-    autocmd_ids_lock.push(id as u64);
+    {
+        let mut autocmd_ids_lock = state.autocmd_ids.write();
+        autocmd_ids_lock.push(id as u64);
+    }
 
     // Buffer enter for ring buffer AND filetype check
     let id = api::create_autocmd(
@@ -2296,8 +2301,10 @@ fn setup_autocmds() -> NvimResult<()> {
             .build(),
     )
     .unwrap_or(0);
-    let mut autocmd_ids_lock = state.autocmd_ids.write();
-    autocmd_ids_lock.push(id as u64);
+    {
+        let mut autocmd_ids_lock = state.autocmd_ids.write();
+        autocmd_ids_lock.push(id as u64);
+    }
 
     // Buffer leave for ring buffer
     let id = api::create_autocmd(
@@ -2310,8 +2317,10 @@ fn setup_autocmds() -> NvimResult<()> {
             .build(),
     )
     .unwrap_or(0);
-    let mut autocmd_ids_lock = state.autocmd_ids.write();
-    autocmd_ids_lock.push(id as u64);
+    {
+        let mut autocmd_ids_lock = state.autocmd_ids.write();
+        autocmd_ids_lock.push(id as u64);
+    }
 
     // Buffer write for ring buffer
     let id = api::create_autocmd(
@@ -2324,8 +2333,10 @@ fn setup_autocmds() -> NvimResult<()> {
             .build(),
     )
     .unwrap_or(0);
-    let mut autocmd_ids_lock = state.autocmd_ids.write();
-    autocmd_ids_lock.push(id as u64);
+    {
+        let mut autocmd_ids_lock = state.autocmd_ids.write();
+        autocmd_ids_lock.push(id as u64);
+    }
 
     // InsertLeavePre - hide FIM hint when leaving Insert mode
     let id = api::create_autocmd(
@@ -2338,8 +2349,10 @@ fn setup_autocmds() -> NvimResult<()> {
             .build(),
     )
     .unwrap_or(0);
-    let mut autocmd_ids_lock = state.autocmd_ids.write();
-    autocmd_ids_lock.push(id as u64);
+    {
+        let mut autocmd_ids_lock = state.autocmd_ids.write();
+        autocmd_ids_lock.push(id as u64);
+    }
 
     // Setup timer-based ring buffer updates (every ring_update_ms)
     setup_ring_buffer_timer()?;

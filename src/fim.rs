@@ -150,9 +150,6 @@ pub async fn fim_completion(
 ) -> Result<Option<String>, FimError> {
     // Lock the cache and ring buffer for setup
     let request_data = {
-        let cache_lock = cache.write();
-        let mut ring_buffer_lock = ring_buffer.write();
-
         // Get local context
         debug_manager.log("fim_completion 1", &[]);
         let ctx = get_local_context(lines, pos_x, pos_y, prev, config);
@@ -171,16 +168,19 @@ pub async fn fim_completion(
         }
         debug_manager.log("fim_completion 3", &[]);
 
-       // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
+        // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
         // This prevents redundant context from cluttering the ring buffer
-        let current_prefix_lines: Vec<String> = ctx.prefix.split('\n').map(|s| s.to_string()).collect();
+        let current_prefix_lines: Vec<String> =
+            ctx.prefix.split('\n').map(|s| s.to_string()).collect();
         if !current_prefix_lines.is_empty() {
-            ring_buffer_lock.evict_similar(&current_prefix_lines, 0.5);
+            ring_buffer
+                .write()
+                .evict_similar(&current_prefix_lines, 0.5);
         }
         debug_manager.log("fim_completion 4", &[]);
 
         // Build request
-        let extra = ring_buffer_lock.get_extra();
+        let extra = ring_buffer.read().get_extra();
         debug_manager.log("fim_completion 5", &[]);
 
         let hashes = compute_hashes(&ctx);
@@ -189,6 +189,7 @@ pub async fn fim_completion(
         // Check cache
         if config.auto_fim {
             for hash in &hashes {
+                let cache_lock = cache.read();
                 if cache_lock.contains_key(hash) {
                     return Ok(None);
                 }
@@ -258,9 +259,9 @@ pub async fn fim_completion(
         let mut cache_lock = cache.write();
         // Ring buffer is read but not modified here
         let _ring_buffer_lock = ring_buffer.read();
-           for hash in &hashes {
-                cache_lock.insert(hash.clone(), response_text.clone());
-            }
+        for hash in &hashes {
+            cache_lock.insert(hash.clone(), response_text.clone());
+        }
         debug_manager.log("fim_completion 11", &[]);
     }
 
