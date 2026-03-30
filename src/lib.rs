@@ -14,10 +14,9 @@ pub mod utils;
 use {
     nvim_oxi::{
         api::{
-            opts::{SetExtmarkOptsBuilder, OptionOpts},
+            opts::{OptionOpts, SetExtmarkOptsBuilder},
             types::Mode,
-            {self, Buffer, Window},
-            ToFunction,
+            ToFunction, {self, Buffer, Window},
         },
         Dictionary, Function, Result as NvimResult,
     },
@@ -294,11 +293,11 @@ struct PluginState {
     instruction_requests: std::collections::HashMap<i64, InstructionRequestState>,
     next_inst_req_id: i64,
     fim_state: FimState,
-    extmark_ns: Option<u32>,    // Namespace for extmarks (virtual text)
-    inst_ns: Option<u32>,       // Namespace for instruction extmarks
-    debug_bufnr: Option<u64>,   // Debug buffer number
-    enabled: bool,              // Plugin enabled flag
-    autocmd_ids: Vec<u64>,      // Track autocmd IDs for cleanup
+    extmark_ns: Option<u32>,  // Namespace for extmarks (virtual text)
+    inst_ns: Option<u32>,     // Namespace for instruction extmarks
+    debug_bufnr: Option<u64>, // Debug buffer number
+    enabled: bool,            // Plugin enabled flag
+    autocmd_ids: Vec<u64>,    // Track autocmd IDs for cleanup
 }
 
 impl PluginState {
@@ -384,54 +383,54 @@ fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
 
         drop(state); // Drop borrow before async call
 
-               let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
-                    let mut state = get_state_mut();
-                    unsafe {
-                        let cache_ptr: *mut Cache = &mut *(&mut state.cache as *mut _);
-                        let ring_ptr: *mut RingBuffer = &mut *(&mut state.ring_buffer as *mut _);
-                        let config = state.config.clone();
+        let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let mut state = get_state_mut();
+            unsafe {
+                let cache_ptr: *mut Cache = &mut *(&mut state.cache as *mut _);
+                let ring_ptr: *mut RingBuffer = &mut *(&mut state.ring_buffer as *mut _);
+                let config = state.config.clone();
 
-                        // Trigger speculative FIM with previous content as prev parameter
-                        let result = fim::fim_completion(
-                            pos_x,
-                            pos_y,
-                            false, // Not auto - use longer timeout
-                            &lines,
-                            &config,
-                            &mut *cache_ptr,
-                            &mut *ring_ptr,
-                            Some(&prev_content),
-                        )
-                        .await;
+                // Trigger speculative FIM with previous content as prev parameter
+                let result = fim::fim_completion(
+                    pos_x,
+                    pos_y,
+                    false, // Not auto - use longer timeout
+                    &lines,
+                    &config,
+                    &mut *cache_ptr,
+                    &mut *ring_ptr,
+                    Some(&prev_content),
+                )
+                .await;
 
-                       // If we got a new suggestion, render and display it
-                          if let Ok(Some(ref content)) = result {
-                              // Parse response and render
-                              let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &config);
-                              let rendered = fim::render_fim_suggestion(
-                                  pos_x,
-                                  pos_y,
-                                  content,
-                                  &ctx.line_cur_suffix,
-                                  &config,
-                              );
+                // If we got a new suggestion, render and display it
+                if let Ok(Some(ref content)) = result {
+                    // Parse response and render
+                    let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &config);
+                    let rendered = fim::render_fim_suggestion(
+                        pos_x,
+                        pos_y,
+                        content,
+                        &ctx.line_cur_suffix,
+                        &config,
+                    );
 
-                              state.fim_state.hint_shown = rendered.can_accept;
-                              state.fim_state.pos_x = pos_x;
-                              state.fim_state.pos_y = pos_y;
-                              state.fim_state.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
-                              state.fim_state.can_accept = rendered.can_accept;
-                              state.fim_state.content = rendered.content;
-                              
-                              // Display the virtual text using extmarks
-                              let _ = display_fim_hint(&mut state);
-                          }
+                    state.fim_state.hint_shown = rendered.can_accept;
+                    state.fim_state.pos_x = pos_x;
+                    state.fim_state.pos_y = pos_y;
+                    state.fim_state.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
+                    state.fim_state.can_accept = rendered.can_accept;
+                    state.fim_state.content = rendered.content;
 
-                         result
-                    }
-                });
+                    // Display the virtual text using extmarks
+                    let _ = display_fim_hint(&mut state);
+                }
 
-                return result.map_err(|e| nvim_oxi::Error::Api(api::Error::Other(e.to_string())));
+                result
+            }
+        });
+
+        return result.map_err(|e| nvim_oxi::Error::Api(api::Error::Other(e.to_string())));
     }
 
     drop(state); // Drop immutable borrow for normal FIM
@@ -1431,15 +1430,16 @@ fn debug_log(msg: &str, details: Vec<&str>) -> NvimResult<()> {
 fn debug_toggle() -> NvimResult<bool> {
     let mut state = get_state_mut();
     let enabled = state.debug_manager.is_enabled();
-    
+
     // Toggle logging
     state.debug_manager.set_enabled(!enabled);
-    
-      // If debug buffer exists, toggle its visibility
+
+    // If debug buffer exists, toggle its visibility
     if let Some(bufnr) = state.debug_bufnr {
         // Check if the buffer exists by trying to switch to it
         // If bufwinnr returns -1, the buffer exists but window is closed
-        let winnr = api::call_function::<(String,), i64>("bufwinnr", (format!("#{}", bufnr),)).unwrap_or(-1);
+        let winnr = api::call_function::<(String,), i64>("bufwinnr", (format!("#{}", bufnr),))
+            .unwrap_or(-1);
         if winnr != -1 {
             // Buffer is visible - close it
             let _ = api::call_function::<(i64, bool), ()>("win_close", (winnr, true));
@@ -1453,7 +1453,7 @@ fn debug_toggle() -> NvimResult<bool> {
         // Create new debug buffer
         debug_open_buffer(&mut state)?;
     }
-    
+
     Ok(!enabled)
 }
 
@@ -1462,7 +1462,7 @@ fn debug_open_buffer(state: &mut PluginState) -> NvimResult<()> {
     // Check if debug buffer already exists by name
     let bufname = "llama_debug";
     let bufnr_opt: Option<i64> = api::call_function("bufnr", (bufname.to_string(),)).ok();
-    
+
     let bufnr = if let Some(nr) = bufnr_opt {
         // Buffer exists, switch to it
         let cmd = format!("silent b {}", nr);
@@ -1471,11 +1471,11 @@ fn debug_open_buffer(state: &mut PluginState) -> NvimResult<()> {
     } else {
         // Create new scratch buffer for the debug pane using vim command
         let _ = api::command("botright new");
-        
+
         let buf = Buffer::current();
         buf.handle().try_into().unwrap_or(0)
     };
-    
+
     // Set buffer options for debug pane
     let _ = api::set_option_value("buftype", "nofile", &OptionOpts::default());
     let _ = api::set_option_value("bufhidden", "hide", &OptionOpts::default());
@@ -1486,16 +1486,16 @@ fn debug_open_buffer(state: &mut PluginState) -> NvimResult<()> {
     let _ = api::set_option_value("number", false, &OptionOpts::default());
     let _ = api::set_option_value("relativenumber", false, &OptionOpts::default());
     let _ = api::set_option_value("signcolumn", "no", &OptionOpts::default());
-    
+
     // Set buffer name via command
     let _ = api::command("file llama_debug");
-    
+
     // Store the buffer number
     state.debug_bufnr = Some(bufnr);
-    
+
     // Show the log content
     debug_flush_buffer(state)?;
-    
+
     Ok(())
 }
 
@@ -1507,24 +1507,24 @@ fn debug_flush_buffer(state: &mut PluginState) -> NvimResult<()> {
         if let Err(_) = api::command(&cmd) {
             return Ok(()); // Buffer doesn't exist, nothing to flush
         }
-        
+
         // Get log entries
         let log = state.debug_manager.get_log();
-        
+
         // Convert to lines
         let mut lines: Vec<String> = Vec::new();
         for entry in log {
             lines.push(entry.clone());
         }
-        
+
         // Set buffer lines
         let mut buf = Buffer::current();
         let _ = buf.set_lines(.., true, lines.into_iter());
-        
+
         // Switch back to the previous buffer
         let _ = api::command("b #");
     }
-    
+
     Ok(())
 }
 
@@ -1631,7 +1631,7 @@ fn setup_keymaps() -> NvimResult<()> {
         &Default::default(),
     );
 
-     // Note: ESC is not mapped in Insert mode to avoid interfering with normal ESC behavior
+    // Note: ESC is not mapped in Insert mode to avoid interfering with normal ESC behavior
     // ESC will naturally exit Insert mode. If FIM hint is shown, it will be hidden when
     // the user presses ESC to exit Insert mode (handled by fim_hide_on_escape autocmd if needed)
 
@@ -1989,13 +1989,14 @@ fn on_cursor_moved_i() -> NvimResult<()> {
         if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
             // Use the synchronous fim_completion wrapper
             let result = fim_completion(true); // is_auto = true
-            
+
             // If we got a suggestion from server, display it
             if let Ok(Some(ref content)) = result {
                 // Parse response and render
                 if let Ok(response) = serde_json::from_str::<serde_json::Value>(content) {
                     if let Some(content_str) = response.get("content").and_then(|c| c.as_str()) {
-                        let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &state.config);
+                        let ctx =
+                            context::get_local_context(&lines, pos_x, pos_y, None, &state.config);
                         let rendered = fim::render_fim_suggestion(
                             pos_x,
                             pos_y,
@@ -2328,7 +2329,7 @@ fn register_commands() -> NvimResult<()> {
         &Default::default(),
     );
 
-// FIM accept full or insert tab - for TAB key handling
+    // FIM accept full or insert tab - for TAB key handling
     let _ = api::create_user_command(
         "LttwFimAcceptFullOrTab",
         |_| -> NvimResult<()> {
@@ -2336,17 +2337,18 @@ fn register_commands() -> NvimResult<()> {
                 let _ = fim_accept("full");
             } else {
                 // Insert tab character by calling vim.feedkeys
-                let _ = api::call_function::<(&str, &str, bool), ()>("feedkeys", ("\t", "i", false));
+                let _ =
+                    api::call_function::<(&str, &str, bool), ()>("feedkeys", ("\t", "i", false));
             }
             Ok(())
         },
         &Default::default(),
     );
 
- // Note: LttwFimCancelOrEsc command removed - ESC is no longer mapped in Insert mode
+    // Note: LttwFimCancelOrEsc command removed - ESC is no longer mapped in Insert mode
     // to avoid interfering with normal ESC behavior
 
-    // FIM accept line or re-inject S-Tab - for S-Tab key handling  
+    // FIM accept line or re-inject S-Tab - for S-Tab key handling
     let _ = api::create_user_command(
         "LttwFimAcceptLineOrSTab",
         |_| -> NvimResult<()> {
@@ -2356,7 +2358,10 @@ fn register_commands() -> NvimResult<()> {
             } else {
                 // Re-inject S-Tab key by calling vim.feedkeys
                 // S-Tab is \x1bOP3~ in terminal
-                let _ = api::call_function::<(&str, &str, bool), ()>("feedkeys", ("\x1bOP3~", "n", false));
+                let _ = api::call_function::<(&str, &str, bool), ()>(
+                    "feedkeys",
+                    ("\x1bOP3~", "n", false),
+                );
             }
             Ok(())
         },
