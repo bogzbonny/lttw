@@ -2086,7 +2086,7 @@ fn setup_autocmds() -> NvimResult<()> {
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
                 .callback(|_| {
                     let _ = on_cursor_moved_i();
-                    true
+                    false // DO NOT DELETE this autocommand once used
                 })
                 .build(),
         )
@@ -2100,7 +2100,7 @@ fn setup_autocmds() -> NvimResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 let _ = on_text_yank_post();
-                true
+                false // DO NOT DELETE this autocommand once used
             })
             .build(),
     )
@@ -2113,7 +2113,7 @@ fn setup_autocmds() -> NvimResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 let _ = on_buf_enter_and_check_filetype();
-                true
+                false // DO NOT DELETE this autocommand once used
             })
             .build(),
     )
@@ -2126,7 +2126,7 @@ fn setup_autocmds() -> NvimResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 let _ = on_buf_leave();
-                true
+                false // DO NOT DELETE this autocommand once used
             })
             .build(),
     )
@@ -2139,7 +2139,7 @@ fn setup_autocmds() -> NvimResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 let _ = on_buf_write_post();
-                true
+                false // DO NOT DELETE this autocommand once used
             })
             .build(),
     )
@@ -2152,7 +2152,7 @@ fn setup_autocmds() -> NvimResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 let _ = fim_hide();
-                true
+                false // DO NOT DELETE this autocommand once used
             })
             .build(),
     )
