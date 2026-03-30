@@ -371,7 +371,6 @@ fn get_current_buffer() -> u64 {
 #[allow(clippy::await_holding_lock)] // Uses unsafe pointers to work around async mutex issue
 fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
     let (pos_x, pos_y) = get_pos();
-    let _buf = get_current_buffer();
     let lines = buf_get_lines();
 
     // Check if we should trigger speculative FIM after showing a cached hint
@@ -456,7 +455,7 @@ fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
             // If we got a suggestion from server, display it
             if let Ok(Some(ref content)) = result {
                 // Parse response and render
-                if let Ok(response) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Ok(response) = serde_json::from_str::<serde_json::Value>(content) {
                     if let Some(content_str) = response.get("content").and_then(|c| c.as_str()) {
                         let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &config);
                         let rendered = fim::render_fim_suggestion(
@@ -679,7 +678,6 @@ fn display_fim_hint(state: &mut PluginState) -> NvimResult<()> {
 fn fim_try_hint() -> NvimResult<Option<String>> {
     let mut state = get_state_mut();
     let (pos_x, pos_y) = get_pos();
-    let buf = get_current_buffer();
     let lines = buf_get_lines();
 
     // Get local context
@@ -1504,7 +1502,7 @@ fn debug_flush_buffer(state: &mut PluginState) -> NvimResult<()> {
     if let Some(bufnr) = state.debug_bufnr {
         // Set current buffer to the debug buffer
         let cmd = format!("silent b {}", bufnr);
-        if let Err(_) = api::command(&cmd) {
+        if api::command(&cmd).is_err() {
             return Ok(()); // Buffer doesn't exist, nothing to flush
         }
 
@@ -1519,7 +1517,7 @@ fn debug_flush_buffer(state: &mut PluginState) -> NvimResult<()> {
 
         // Set buffer lines
         let mut buf = Buffer::current();
-        let _ = buf.set_lines(.., true, lines.into_iter());
+        let _ = buf.set_lines(.., true, lines);
 
         // Switch back to the previous buffer
         let _ = api::command("b #");
@@ -1914,7 +1912,6 @@ fn on_cursor_moved_i() -> NvimResult<()> {
 
     // Get CURRENT cursor position
     let (pos_x, pos_y) = get_pos();
-    let buf = get_current_buffer();
     let lines = buf_get_lines();
 
     state.debug_manager.log(
