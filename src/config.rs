@@ -268,19 +268,20 @@ impl LttwConfig {
 
     /// Check if a filetype is enabled
     pub fn is_filetype_enabled(&self, filetype: &str) -> bool {
+        // If enabled_filetypes is empty, check disabled_filetypes
+        let mut enabled = !self
+            .disabled_filetypes
+            .iter()
+            .any(|ft| ft == filetype || ft == "*");
+
         // If enabled_filetypes is not empty, only allow those types
         if !self.enabled_filetypes.is_empty() {
-            return self
+            enabled = self
                 .enabled_filetypes
                 .iter()
                 .any(|ft| ft == filetype || ft == "*");
         }
-
-        // If enabled_filetypes is empty, check disabled_filetypes
-        !self
-            .disabled_filetypes
-            .iter()
-            .any(|ft| ft == filetype || ft == "*")
+        enabled
     }
 }
 

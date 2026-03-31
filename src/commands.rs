@@ -1,7 +1,7 @@
 use {
     crate::{
-        debug_clear, debug_log, debug_toggle, disable_plugin, enable_plugin, instruction,
-        toggle_auto_fim,
+        autocommands::clear_filetype_autocommand, debug_clear, debug_log, debug_toggle,
+        disable_plugin, enable_plugin, instruction, is_enabled, toggle_auto_fim,
     },
     nvim_oxi::{
         api::{self},
@@ -23,6 +23,8 @@ pub fn register_commands() -> NvimResult<()> {
     let _ = api::create_user_command(
         "LttwDisable",
         |_| -> NvimResult<()> {
+            // manual disabling also removes the filetype check autocommand
+            clear_filetype_autocommand()?;
             let _ = disable_plugin();
             Ok(())
         },
@@ -34,6 +36,15 @@ pub fn register_commands() -> NvimResult<()> {
         |_| -> NvimResult<()> {
             let _ = enable_plugin();
             Ok(())
+        },
+        &Default::default(),
+    );
+
+    let _ = api::create_user_command(
+        "LttwIsEnabled",
+        |_| -> NvimResult<String> {
+            let en = is_enabled().to_string();
+            Ok(en)
         },
         &Default::default(),
     );

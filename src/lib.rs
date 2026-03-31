@@ -19,6 +19,7 @@ use {
     instruction::InstructionRequestState,
     nvim_oxi::{
         api::{
+            del_autocmd,
             opts::SetExtmarkOptsBuilder,
             {self, Buffer, Window},
         },
@@ -76,8 +77,9 @@ fn lttw_setup() -> NvimResult<()> {
     // Setup keymaps
     keymap::setup_keymaps()?;
 
-    // Setup autocmds
-    autocommands::setup_autocmds()?;
+    // Setup filetype
+    // XXX setup others or not?
+    autocommands::setup_non_filetype_autocmds()?;
 
     // Setup timer-based ring buffer updates (every ring_update_ms)
     ring_buffer::setup_ring_buffer_timer()?;
@@ -98,7 +100,8 @@ struct PluginState {
     fim_state: Arc<RwLock<FimState>>,
     extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
     inst_ns: Option<u32>,    // Namespace for instruction extmarks
-    autocmd_ids: Arc<RwLock<Vec<u64>>>,
+    autocmd_ids: Arc<RwLock<Vec<u32>>>,
+    autocmd_id_filetype_check: Arc<RwLock<Option<u32>>>,
     ring_buffer_timer_handle: Arc<RwLock<RingBufferTimerHandle>>,
     // FIM completion channel for async worker communication
     fim_completion_tx:
@@ -138,6 +141,7 @@ impl PluginState {
             extmark_ns,
             enabled: Arc::new(AtomicBool::new(enable_at_startup)),
             autocmd_ids: Arc::new(RwLock::new(Vec::new())),
+            autocmd_id_filetype_check: Arc::new(RwLock::new(None)),
             ring_buffer_timer_handle: Arc::new(RwLock::new(None)),
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(parking_lot::Mutex::new(None)),
@@ -295,6 +299,7 @@ fn init_tokio_runtime() {
     // Set up a Neovim timer to periodically process the pending display queue
     // This ensures display updates happen on the main thread
 
+    // NOTE I tested this with a tokio thread and it didn't work
     let _ = nvim_oxi::libuv::TimerHandle::start(
         std::time::Duration::from_millis(500),
         std::time::Duration::from_millis(100), // repeat
@@ -331,8 +336,8 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> NvimResult<()> {
     state.debug_manager.read().log(
         "handle_fim_completion_message",
         &[&format!(
-            "Received completion for buffer {} at ({}, {}), msg.content {}",
-            msg.buffer_handle, msg.cursor_x, msg.cursor_y, msg.content
+            "Received completion for buffer {} at ({}, {})",
+            msg.buffer_handle, msg.cursor_x, msg.cursor_y
         )],
     );
 
@@ -477,9 +482,26 @@ async fn spawn_fim_worker(
     Ok(())
 }
 
+// are we in insert mode
+fn in_insert_mode() -> NvimResult<bool> {
+    Ok(api::get_mode()?
+        .mode
+        .as_bytes()
+        .first()
+        .copied()
+        .expect("mode is not empty")
+        == b'i')
+}
+
 /// Process pending FIM display queue - drains and displays messages on the main thread
 fn process_pending_display() -> NvimResult<()> {
     let state = get_state();
+
+    // Only display if we are in insert mode
+    if !in_insert_mode()? {
+        fim_hide()?; // failsafe if somehow a hint weezled its way in there
+        return Ok(());
+    }
 
     // Take all pending messages (clear the queue)
     let messages: Vec<FimCompletionMessage> = {
@@ -663,14 +685,7 @@ fn display_fim_hint(state: &Arc<PluginState>) -> NvimResult<()> {
     }
 
     // Only display if we are in insert mode
-    if !api::get_mode()?
-        .mode
-        .as_bytes()
-        .first()
-        .copied()
-        .expect("mode is not empty")
-        == b'i'
-    {
+    if !in_insert_mode()? {
         return Ok(());
     }
 
@@ -704,6 +719,10 @@ fn display_fim_hint(state: &Arc<PluginState>) -> NvimResult<()> {
             }
 
             opts.virt_lines(virt_lines);
+        }
+
+        if !in_insert_mode()? {
+            return Ok(());
         }
 
         // Set the extmark at cursor position
@@ -752,6 +771,14 @@ fn debug_clear() -> NvimResult<()> {
     Ok(())
 }
 
+fn is_enabled() -> bool {
+    let state = get_state();
+    if state.enabled.load(Ordering::SeqCst) {
+        return true;
+    }
+    false
+}
+
 /// Enable the plugin - sets up keymaps, autocmds, and state
 fn enable_plugin() -> NvimResult<()> {
     let state = get_state();
@@ -780,7 +807,7 @@ fn enable_plugin() -> NvimResult<()> {
     keymap::setup_keymaps()?;
 
     // Setup autocmds
-    autocommands::setup_autocmds()?;
+    autocommands::setup_non_filetype_autocmds()?;
 
     // Hide any existing FIM hints
     fim_hide()?;
@@ -811,11 +838,11 @@ fn disable_plugin() -> NvimResult<()> {
     // Remove keymaps
     keymap::remove_keymaps()?;
 
-    // Clear autocmds (marked for cleanup)
-    // Note: nvim-oxi doesn't provide direct autocmd deletion, so we just clear tracking
     {
         let mut autocmd_ids_lock = state.autocmd_ids.write();
-        autocmd_ids_lock.clear();
+        for id in autocmd_ids_lock.drain(..) {
+            del_autocmd(id)?
+        }
     }
 
     // Mark as disabled
@@ -836,7 +863,7 @@ fn toggle_auto_fim() -> NvimResult<bool> {
     }
 
     // Re-setup autocmds with new config
-    autocommands::setup_autocmds()?;
+    autocommands::setup_non_filetype_autocmds()?;
 
     Ok(new_value)
 }
@@ -876,7 +903,7 @@ fn on_text_yank_post() -> NvimResult<()> {
 }
 
 /// Handle BufEnter event - gather chunks from entered buffer
-fn on_buf_enter() -> NvimResult<()> {
+fn on_buf_enter_gather_chunks() -> NvimResult<()> {
     let state = get_state();
 
     let buf = Buffer::current();

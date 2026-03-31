@@ -37,7 +37,7 @@ pub fn setup_keymaps() -> NvimResult<()> {
         &Default::default(),
     );
 
-    // FIM keymaps - use command-based callbacks for proper ESC/TAB handling
+    // FIM keymaps - use command-based callbacks for proper TAB handling
     // These commands check if FIM hint is shown and act accordingly
 
     // FIM accept full (TAB) - check if FIM shown, accept if yes, insert tab if no
@@ -57,13 +57,10 @@ pub fn setup_keymaps() -> NvimResult<()> {
                             .log("Tab accept", &[&format!("Error accepting FIM: {:?}", e)]);
                     }
                 }
+                // TODO insert tab if not in hint mode
             })
             .build(),
     );
-
-    // Note: ESC is not mapped in Insert mode to avoid interfering with normal ESC behavior
-    // ESC will naturally exit Insert mode. If FIM hint is shown, it will be hidden when
-    // the user presses ESC to exit Insert mode (handled by fim_hide_on_escape autocmd if needed)
 
     // FIM accept line (S-Tab) - check if FIM shown, accept line if yes, re-inject S-Tab if no
     let _ = api::set_keymap(
@@ -82,6 +79,7 @@ pub fn setup_keymaps() -> NvimResult<()> {
                         );
                     }
                 }
+                // TODO insert tab if not in hint mode
             })
             .build(),
     );
