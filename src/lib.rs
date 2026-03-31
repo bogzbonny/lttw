@@ -25,7 +25,7 @@ use {
         collections::HashMap,
         convert::TryInto,
         sync::{
-            atomic::{AtomicBool, AtomicI64},
+            atomic::{AtomicBool, AtomicI64, Ordering},
             Arc, OnceLock,
         },
     },
@@ -52,213 +52,6 @@ pub fn lttw() -> NvimResult<Dictionary> {
     let mut functions = Dictionary::new();
 
     functions.insert::<&str, Function<(), ()>>("lttw_setup", Function::from(|_| lttw_setup()));
-
-    //// FIM functions
-    //functions.insert::<&str, Function<Dictionary, Option<String>>>(
-    //    "fim_completion",
-    //    Function::from(|_: Dictionary| fim_completion(false)),
-    //);
-
-    //functions.insert::<&str, Function<Dictionary, Option<String>>>(
-    //    "fim_completion_auto",
-    //    Function::from(|_: Dictionary| fim_completion(true)),
-    //);
-
-    //// Note: fim_render is now handled internally via display_fim_hint
-
-    //functions.insert::<&str, Function<String, Option<String>>>(
-    //    "fim_accept",
-    //    Function::from(|accept_type: String| fim_accept(&accept_type)),
-    //);
-
-    //functions.insert::<&str, Function<(), ()>>("fim_hide", Function::from(|_| fim_hide()));
-
-    //functions.insert::<&str, Function<(), Option<String>>>(
-    //    "fim_try_hint",
-    //    Function::from(|_| fim_try_hint()),
-    //);
-
-    //// Instruction functions
-    //functions.insert::<&str, Function<(Vec<String>, i64, i64, String), Dictionary>>(
-    //    "inst_build",
-    //    Function::from(|(lines, l0, l1, inst): (Vec<String>, i64, i64, String)| {
-    //        inst_build(lines, l0, l1, &inst)
-    //    }),
-    //);
-
-    //// New instruction API with proper state tracking
-    //functions.insert::<&str, Function<(i64, i64, String), NvimResult<i64>>>(
-    //    "inst_start",
-    //    Function::from(|(l0, l1, inst): (i64, i64, String)| -> NvimResult<i64> {
-    //        inst_start(l0, l1, &inst)
-    //    }),
-    //);
-
-    //functions.insert::<&str, Function<(i64, String), String>>(
-    //    "inst_update",
-    //    Function::from(|(req_id, response): (i64, String)| -> NvimResult<String> {
-    //        inst_update(req_id, &response)
-    //    }),
-    //);
-
-    //functions.insert::<&str, Function<i64, Option<String>>>(
-    //    "inst_send",
-    //    Function::from(|req_id: i64| inst_send(req_id)),
-    //);
-
-    //functions.insert::<&str, Function<i64, ()>>(
-    //    "inst_finalize",
-    //    Function::from(|req_id: i64| {
-    //        let _ = inst_finalize(req_id);
-    //    }),
-    //);
-
-    //functions.insert::<&str, Function<(), ()>>("inst_accept", Function::from(|_| inst_accept()));
-
-    //functions.insert::<&str, Function<(), ()>>("inst_cancel", Function::from(|_| inst_cancel()));
-
-    //functions.insert::<&str, Function<(), Option<String>>>(
-    //    "inst_rerun",
-    //    Function::from(|_| inst_rerun()),
-    //);
-
-    //functions.insert::<&str, Function<(), Option<String>>>(
-    //    "inst_continue",
-    //    Function::from(|_| inst_continue()),
-    //);
-
-    //// Warm-up function
-    //functions.insert::<&str, Function<(), ()>>(
-    //    "inst_warmup",
-    //    Function::from(|_| {
-    //        let state = get_state();
-    //        let config = state.config.read().clone();
-    //        let _ = tokio::runtime::Runtime::new()
-    //            .unwrap()
-    //            .block_on(instruction::send_instruction_warmup(&config));
-    //    }),
-    //);
-
-    //// Ring buffer functions
-    //functions.insert::<&str, Function<(Vec<String>, bool, bool), ()>>(
-    //    "ring_pick_chunk",
-    //    Function::from(|(lines, no_mod, do_evict): (Vec<String>, bool, bool)| {
-    //        ring_pick_chunk(lines, no_mod, do_evict)
-    //    }),
-    //);
-
-    //functions.insert::<&str, Function<(), ()>>("ring_update", Function::from(|_| ring_update()));
-
-    //functions.insert::<&str, Function<(), Vec<Dictionary>>>(
-    //    "ring_get_extra",
-    //    Function::from(|_| ring_get_extra()),
-    //);
-
-    //// Timer-based ring buffer processing
-    //functions.insert::<&str, Function<(), ()>>(
-    //    "process_ring_buffer",
-    //    Function::from(|_| {
-    //        let _ = process_ring_buffer();
-    //    }),
-    //);
-
-    //functions.insert::<&str, Function<(), ()>>(
-    //    "on_text_yank_post",
-    //    Function::from(|_| {
-    //        let _ = on_text_yank_post();
-    //    }),
-    //);
-
-    //functions.insert::<&str, Function<(), ()>>(
-    //    "on_buf_enter_and_check_filetype",
-    //    Function::from(|_| {
-    //        let _ = on_buf_enter_and_check_filetype();
-    //    }),
-    //);
-
-    //functions.insert::<&str, Function<(), ()>>(
-    //    "on_buf_write_post",
-    //    Function::from(|_| {
-    //        let _ = on_buf_write_post();
-    //    }),
-    //);
-
-    //functions.insert::<&str, Function<(), ()>>(
-    //    "on_buf_leave",
-    //    Function::from(|_| {
-    //        let _ = on_buf_leave();
-    //    }),
-    //);
-
-    //functions.insert::<&str, Function<(), ()>>(
-    //    "on_cursor_moved_i",
-    //    Function::from(|_| {
-    //        let _ = on_cursor_moved_i();
-    //    }),
-    //);
-
-    //// Cache functions
-    //functions.insert::<&str, Function<(String, String), ()>>(
-    //    "cache_insert",
-    //    Function::from(|(key, value): (String, String)| cache_insert(&key, &value)),
-    //);
-
-    //functions.insert::<&str, Function<String, Option<String>>>(
-    //    "cache_get",
-    //    Function::from(|key: String| cache_get(&key)),
-    //);
-
-    //// Debug functions
-    //functions.insert::<&str, Function<(String, Vec<String>), ()>>(
-    //    "debug_log",
-    //    Function::from(|(msg, details): (String, Vec<String>)| {
-    //        debug_log(&msg, details.iter().map(|s| s.as_str()).collect::<Vec<_>>())
-    //    }),
-    //);
-
-    //functions
-    //    .insert::<&str, Function<(), bool>>("debug_toggle", Function::from(|_| debug_toggle()));
-
-    //functions.insert::<&str, Function<(), ()>>("debug_clear", Function::from(|_| debug_clear()));
-
-    //functions.insert::<&str, Function<(), Vec<String>>>(
-    //    "debug_get_log",
-    //    Function::from(|_| debug_get_log()),
-    //);
-
-    //// Utility functions
-    //functions
-    //    .insert::<&str, Function<(), String>>("get_filetype", Function::from(|_| get_filetype()));
-
-    //functions.insert::<&str, Function<(), bool>>(
-    //    "is_filetype_enabled",
-    //    Function::from(|_| is_filetype_enabled()),
-    //);
-
-    //// Plugin lifecycle management
-    //functions
-    //    .insert::<&str, Function<(), ()>>("enable_plugin", Function::from(|_| enable_plugin()));
-
-    //functions
-    //    .insert::<&str, Function<(), ()>>("disable_plugin", Function::from(|_| disable_plugin()));
-
-    //functions
-    //    .insert::<&str, Function<(), bool>>("toggle_plugin", Function::from(|_| toggle_plugin()));
-
-    //functions.insert::<&str, Function<(), bool>>(
-    //    "toggle_auto_fim",
-    //    Function::from(|_| toggle_auto_fim()),
-    //);
-
-    //// FIM state query
-    //functions.insert::<&str, Function<(), bool>>(
-    //    "is_fim_hint_shown",
-    //    Function::from(|_| {
-    //        let state = get_state();
-    //        let fim_state_lock = state.fim_state.read();
-    //        fim_state_lock.hint_shown
-    //    }),
-    //);
 
     Ok(functions)
 }
@@ -391,7 +184,7 @@ fn get_current_buffer() -> u64 {
 }
 
 /// FIM completion function
-fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
+async fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
     let (pos_x, pos_y) = get_pos();
     let lines = buf_get_lines();
 
@@ -416,29 +209,84 @@ fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
             (config_lock.clone(), debug_lock.clone())
         };
 
-        let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
-            // Trigger speculative FIM with previous content as prev parameter
-            let result = fim::fim_completion(
-                debug_manager,
-                pos_x,
-                pos_y,
-                false, // Not auto - use longer timeout
-                &lines,
-                &config,
-                state.cache.clone(),
-                state.ring_buffer.clone(),
-                Some(&prev_content),
-            )
-            .await;
+        // Trigger speculative FIM with previous content as prev parameter
+        let result = fim::fim_completion(
+            debug_manager,
+            pos_x,
+            pos_y,
+            false, // Not auto - use longer timeout
+            &lines,
+            &config,
+            state.cache.clone(),
+            state.ring_buffer.clone(),
+            Some(&prev_content),
+        )
+        .await;
+        state.debug_manager.read().log(
+            "fim_completion result",
+            &[&format!("fim_completion result {result:?}")],
+        );
 
-            // If we got a new suggestion, render and display it
-            if let Ok(Some(ref content)) = result {
-                // Parse response and render
+        // If we got a new suggestion, render and display it
+        if let Ok(Some(ref content)) = result {
+            // Parse response and render
+            let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &config);
+            let rendered =
+                fim::render_fim_suggestion(pos_x, pos_y, content, &ctx.line_cur_suffix, &config);
+
+            // Update FIM state
+            {
+                let mut fim_state_lock = state.fim_state.write();
+                fim_state_lock.hint_shown = rendered.can_accept;
+                fim_state_lock.pos_x = pos_x;
+                fim_state_lock.pos_y = pos_y;
+                fim_state_lock.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
+                fim_state_lock.can_accept = rendered.can_accept;
+                fim_state_lock.content = rendered.content;
+            }
+
+            // Display the virtual text using extmarks
+            let _ = display_fim_hint(&state);
+        }
+
+        return result.map_err(|e| nvim_oxi::Error::Api(api::Error::Other(e.to_string())));
+    }
+
+    // Normal FIM (no speculative hint)
+    let (config, debug_manager) = {
+        let config_lock = state.config.read();
+        let debug_lock = state.debug_manager.read();
+        (config_lock.clone(), debug_lock.clone())
+    };
+
+    let result = fim::fim_completion(
+        debug_manager,
+        pos_x,
+        pos_y,
+        is_auto,
+        &lines,
+        &config,
+        state.cache.clone(),
+        state.ring_buffer.clone(),
+        None,
+    )
+    .await;
+
+    state.debug_manager.read().log(
+        "fim_completion result",
+        &[&format!("fim_completion result {result:?}")],
+    );
+
+    // If we got a suggestion from server, display it
+    if let Ok(Some(ref content)) = result {
+        // Parse response and render
+        if let Ok(response) = serde_json::from_str::<serde_json::Value>(content) {
+            if let Some(content_str) = response.get("content").and_then(|c| c.as_str()) {
                 let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &config);
                 let rendered = fim::render_fim_suggestion(
                     pos_x,
                     pos_y,
-                    content,
+                    content_str,
                     &ctx.line_cur_suffix,
                     &config,
                 );
@@ -454,103 +302,39 @@ fn fim_completion(is_auto: bool) -> NvimResult<Option<String>> {
                     fim_state_lock.content = rendered.content;
                 }
 
-                // Display the virtual text using extmarks
-                let _ = display_fim_hint(&state);
-            }
-
-            result
-        });
-
-        return result.map_err(|e| nvim_oxi::Error::Api(api::Error::Other(e.to_string())));
-    }
-
-    // Normal FIM (no speculative hint)
-    let (config, debug_manager) = {
-        let config_lock = state.config.read();
-        let debug_lock = state.debug_manager.read();
-        (config_lock.clone(), debug_lock.clone())
-    };
-
-    let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
-        let result = fim::fim_completion(
-            debug_manager,
-            pos_x,
-            pos_y,
-            is_auto,
-            &lines,
-            &config,
-            state.cache.clone(),
-            state.ring_buffer.clone(),
-            None,
-        )
-        .await;
-
-        // If we got a suggestion from server, display it
-        if let Ok(Some(ref content)) = result {
-            // Parse response and render
-            if let Ok(response) = serde_json::from_str::<serde_json::Value>(content) {
-                if let Some(content_str) = response.get("content").and_then(|c| c.as_str()) {
-                    let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &config);
-                    let rendered = fim::render_fim_suggestion(
-                        pos_x,
-                        pos_y,
-                        content_str,
-                        &ctx.line_cur_suffix,
-                        &config,
-                    );
-
-                    // Update FIM state
-                    {
-                        let mut fim_state_lock = state.fim_state.write();
-                        fim_state_lock.hint_shown = rendered.can_accept;
-                        fim_state_lock.pos_x = pos_x;
-                        fim_state_lock.pos_y = pos_y;
-                        fim_state_lock.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
-                        fim_state_lock.can_accept = rendered.can_accept;
-                        fim_state_lock.content = rendered.content;
-                    }
-
-                    // Display virtual text using extmarks
-                    if rendered.can_accept {
-                        let _ = display_fim_hint(&state);
-                    }
-
-                    // Return the original content string
-                    return Ok(Some(content_str.to_string()));
-                }
-            } else {
-                // JSON string content (from speculative FIM)
-                let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &config);
-                let rendered = fim::render_fim_suggestion(
-                    pos_x,
-                    pos_y,
-                    content,
-                    &ctx.line_cur_suffix,
-                    &config,
-                );
-
-                // Update FIM state
-                {
-                    let mut fim_state_lock = state.fim_state.write();
-                    fim_state_lock.hint_shown = rendered.can_accept;
-                    fim_state_lock.pos_x = pos_x;
-                    fim_state_lock.pos_y = pos_y;
-                    fim_state_lock.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
-                    fim_state_lock.can_accept = rendered.can_accept;
-                    fim_state_lock.content = rendered.content.clone();
-                }
-
                 // Display virtual text using extmarks
                 if rendered.can_accept {
                     let _ = display_fim_hint(&state);
                 }
 
-                return Ok(Some(content.clone()));
+                // Return the original content string
+                return Ok(Some(content_str.to_string()));
             }
-        }
+        } else {
+            // JSON string content (from speculative FIM)
+            let ctx = context::get_local_context(&lines, pos_x, pos_y, None, &config);
+            let rendered =
+                fim::render_fim_suggestion(pos_x, pos_y, content, &ctx.line_cur_suffix, &config);
 
-        result
-    });
+            // Update FIM state
+            {
+                let mut fim_state_lock = state.fim_state.write();
+                fim_state_lock.hint_shown = rendered.can_accept;
+                fim_state_lock.pos_x = pos_x;
+                fim_state_lock.pos_y = pos_y;
+                fim_state_lock.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
+                fim_state_lock.can_accept = rendered.can_accept;
+                fim_state_lock.content = rendered.content.clone();
+            }
+
+            // Display virtual text using extmarks
+            if rendered.can_accept {
+                let _ = display_fim_hint(&state);
+            }
+
+            return Ok(Some(content.clone()));
+        }
+    }
 
     result.map_err(|e| nvim_oxi::Error::Api(api::Error::Other(e.to_string())))
 }
@@ -974,9 +758,7 @@ fn inst_start(l0: i64, l1: i64, inst: &str) -> NvimResult<i64> {
     let lines = buf_get_lines();
 
     // Create new instruction request
-    let req_id = state
-        .next_inst_req_id
-        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let req_id = state.next_inst_req_id.fetch_add(1, Ordering::SeqCst);
 
     let mut req =
         InstructionRequestState::new(req_id, bufnr, (l0 as usize, l1 as usize), inst.to_string());
@@ -1818,7 +1600,7 @@ fn enable_plugin() -> NvimResult<()> {
     let state = get_state();
 
     // Check if already enabled
-    if state.enabled.load(std::sync::atomic::Ordering::SeqCst) {
+    if state.enabled.load(Ordering::SeqCst) {
         return Ok(());
     }
 
@@ -1847,9 +1629,7 @@ fn enable_plugin() -> NvimResult<()> {
     fim_hide()?;
 
     // Mark as enabled
-    state
-        .enabled
-        .store(true, std::sync::atomic::Ordering::SeqCst);
+    state.enabled.store(true, Ordering::SeqCst);
 
     Ok(())
 }
@@ -1859,7 +1639,7 @@ fn disable_plugin() -> NvimResult<()> {
     let state = get_state();
 
     // Check if already disabled
-    if !state.enabled.load(std::sync::atomic::Ordering::SeqCst) {
+    if !state.enabled.load(Ordering::SeqCst) {
         return Ok(());
     }
 
@@ -1882,9 +1662,7 @@ fn disable_plugin() -> NvimResult<()> {
     }
 
     // Mark as disabled
-    state
-        .enabled
-        .store(false, std::sync::atomic::Ordering::SeqCst);
+    state.enabled.store(false, Ordering::SeqCst);
 
     Ok(())
 }
@@ -1892,7 +1670,7 @@ fn disable_plugin() -> NvimResult<()> {
 /// Toggle the plugin on/off
 fn toggle_plugin() -> NvimResult<bool> {
     let state = get_state();
-    let currently_enabled = state.enabled.load(std::sync::atomic::Ordering::SeqCst);
+    let currently_enabled = state.enabled.load(Ordering::SeqCst);
     drop(state);
 
     if currently_enabled {
@@ -2035,179 +1813,186 @@ fn on_buf_leave() -> NvimResult<()> {
 
 /// Handle CursorMovedI event - trigger speculative FIM completion
 fn on_cursor_moved_i() -> NvimResult<()> {
-    let state = get_state();
-    state.debug_manager.read().log(
-        "on_cursor_moved_i",
-        &[&format!(
-            "state.enabled {}, state.config.auto_fim {}",
-            state.enabled.load(std::sync::atomic::Ordering::SeqCst),
-            state.config.read().auto_fim
-        )],
-    );
+    let _result = tokio::runtime::Runtime::new().unwrap().spawn(async {
+        let state = get_state();
+        state.debug_manager.read().log(
+            "on_cursor_moved_i",
+            &[&format!(
+                "state.enabled {}, state.config.auto_fim {}",
+                state.enabled.load(Ordering::SeqCst),
+                state.config.read().auto_fim
+            )],
+        );
 
-    // Check if FIM is enabled and auto_fim is true
-    if !state.enabled.load(std::sync::atomic::Ordering::SeqCst) || !state.config.read().auto_fim {
-        return Ok(());
-    }
+        // Check if FIM is enabled and auto_fim is true
+        if !state.enabled.load(Ordering::SeqCst) || !state.config.read().auto_fim {
+            return;
+        }
 
-    // Get CURRENT cursor position
-    let (pos_x, pos_y) = get_pos();
-    let lines = buf_get_lines();
+        // Get CURRENT cursor position
+        let (pos_x, pos_y) = get_pos();
+        let lines = buf_get_lines();
 
-    state.debug_manager.read().log(
-        "on_cursor_moved_i",
-        &[&format!(
-            "Cursor moved in insert mode at ({}, {})",
-            pos_x, pos_y
-        )],
-    );
+        state.debug_manager.read().log(
+            "on_cursor_moved_i",
+            &[&format!(
+                "Cursor moved in insert mode at ({}, {})",
+                pos_x, pos_y
+            )],
+        );
 
-    state.debug_manager.read().log("on_cursor_moved_i 1", &[]);
+        state.debug_manager.read().log("on_cursor_moved_i 1", &[]);
 
-    // Try to show a cached hint
-    let hashes = fim::compute_hashes(&{
-        let config_lock = state.config.read();
-        context::get_local_context(&lines, pos_x, pos_y, None, &config_lock)
-    });
-    state.debug_manager.read().log("on_cursor_moved_i 2", &[]);
+        // Try to show a cached hint
+        let hashes = fim::compute_hashes(&{
+            let config_lock = state.config.read();
+            context::get_local_context(&lines, pos_x, pos_y, None, &config_lock)
+        });
+        state.debug_manager.read().log("on_cursor_moved_i 2", &[]);
 
-    // Check cache for primary hash
-    let mut found_cached = false;
-    for hash in &hashes {
-        state
-            .debug_manager
-            .read()
-            .log("on_cursor_moved_i hashes 3", &[&hash.to_string()]);
-        if let Some(response_text) = {
-            let cache_lock = state.cache.read();
-            cache_lock.get_fim(hash)
-        } {
-            found_cached = true;
-            state.debug_manager.read().log(
-                "on_cursor_moved_i",
-                &[&format!("Found cached completion for hash {}", &hash[..16])],
-            );
+        // Check cache for primary hash
+        let mut found_cached = false;
+        for hash in &hashes {
+            state
+                .debug_manager
+                .read()
+                .log("on_cursor_moved_i hashes 3", &[&hash.to_string()]);
+            if let Some(response_text) = {
+                let cache_lock = state.cache.read();
+                cache_lock.get_fim(hash)
+            } {
+                found_cached = true;
+                state.debug_manager.read().log(
+                    "on_cursor_moved_i",
+                    &[&format!("Found cached completion for hash {}", &hash[..16])],
+                );
 
-            // Parse response and render
-            if let Ok(response) = serde_json::from_str::<serde_json::Value>(&response_text) {
-                if let Some(content) = response.get("content").and_then(|c| c.as_str()) {
-                    let ctx = {
-                        let config_lock = state.config.read();
-                        context::get_local_context(&lines, pos_x, pos_y, None, &config_lock)
-                    };
-                    let rendered = {
-                        let config_lock = state.config.read();
-                        fim::render_fim_suggestion(
-                            pos_x,
-                            pos_y,
-                            content,
-                            &ctx.line_cur_suffix,
-                            &config_lock,
-                        )
-                    };
+                // Parse response and render
+                if let Ok(response) = serde_json::from_str::<serde_json::Value>(&response_text) {
+                    if let Some(content) = response.get("content").and_then(|c| c.as_str()) {
+                        let ctx = {
+                            let config_lock = state.config.read();
+                            context::get_local_context(&lines, pos_x, pos_y, None, &config_lock)
+                        };
+                        let rendered = {
+                            let config_lock = state.config.read();
+                            fim::render_fim_suggestion(
+                                pos_x,
+                                pos_y,
+                                content,
+                                &ctx.line_cur_suffix,
+                                &config_lock,
+                            )
+                        };
 
-                    // Update FIM state
-                    {
-                        let mut fim_state_lock = state.fim_state.write();
-                        fim_state_lock.hint_shown = rendered.can_accept;
-                        fim_state_lock.pos_x = pos_x;
-                        fim_state_lock.pos_y = pos_y;
-                        fim_state_lock.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
-                        fim_state_lock.can_accept = rendered.can_accept;
-                        fim_state_lock.content = rendered.content.clone();
+                        // Update FIM state
+                        {
+                            let mut fim_state_lock = state.fim_state.write();
+                            fim_state_lock.hint_shown = rendered.can_accept;
+                            fim_state_lock.pos_x = pos_x;
+                            fim_state_lock.pos_y = pos_y;
+                            fim_state_lock.line_cur = lines.get(pos_y).cloned().unwrap_or_default();
+                            fim_state_lock.can_accept = rendered.can_accept;
+                            fim_state_lock.content = rendered.content.clone();
+                        }
+
+                        // Display virtual text using extmarks
+                        if rendered.can_accept {
+                            let _ = display_fim_hint(&state);
+
+                            state.debug_manager.read().log(
+                                "on_cursor_moved_i",
+                                &[&format!(
+                                    "Showing FIM hint from cursor move: {} lines",
+                                    rendered.content.len()
+                                )],
+                            );
+                        }
+
+                        break;
                     }
-
-                    // Display virtual text using extmarks
-                    if rendered.can_accept {
-                        let _ = display_fim_hint(&state);
-
-                        state.debug_manager.read().log(
-                            "on_cursor_moved_i",
-                            &[&format!(
-                                "Showing FIM hint from cursor move: {} lines",
-                                rendered.content.len()
-                            )],
-                        );
-                    }
-
-                    break;
                 }
             }
         }
-    }
-    state.debug_manager.read().log("on_cursor_moved_i 4", &[]);
+        state.debug_manager.read().log("on_cursor_moved_i 4", &[]);
 
-    // If no cached hint found and we're not already showing a hint, try normal FIM
-    {
-        let fim_state_lock = state.fim_state.read();
-        if !found_cached && !fim_state_lock.hint_shown {
-            drop(fim_state_lock);
-            // Only trigger FIM if we're in a reasonable position
-            state.debug_manager.read().log(
-                "on_cursor_moved_i 4.1",
-                &[&format!(
-                    "pos_y {pos_y}, pos_x {pos_x}, lines_len: {}",
-                    lines.len()
-                )],
-            );
-            if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
-                // Use the synchronous fim_completion wrapper
-                state
-                    .debug_manager
-                    .read()
-                    .log("on_cursor_moved_i 4.21", &[]);
-                let result = fim_completion(true); // is_auto = true
+        // If no cached hint found and we're not already showing a hint, try normal FIM
+        {
+            let hint_shown = state.fim_state.read().hint_shown;
+            if !found_cached && !hint_shown {
+                // Only trigger FIM if we're in a reasonable position
+                state.debug_manager.read().log(
+                    "on_cursor_moved_i 4.1",
+                    &[&format!(
+                        "pos_y {pos_y}, pos_x {pos_x}, lines_len: {}",
+                        lines.len()
+                    )],
+                );
+                if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
+                    // Use the synchronous fim_completion wrapper
+                    state
+                        .debug_manager
+                        .read()
+                        .log("on_cursor_moved_i 4.21", &[]);
+                    let result = fim_completion(true).await; // is_auto = true
 
-                // If we got a suggestion from server, display it
-                if let Ok(Some(ref content)) = result {
-                    state.debug_manager.read().log("on_cursor_moved_i 4.3", &[]);
-                    // Parse response and render
-                    if let Ok(response) = serde_json::from_str::<serde_json::Value>(content) {
-                        state.debug_manager.read().log("on_cursor_moved_i 4.4", &[]);
-                        if let Some(content_str) = response.get("content").and_then(|c| c.as_str())
-                        {
-                            state.debug_manager.read().log("on_cursor_moved_i 4.5", &[]);
-                            let ctx = {
-                                let config_lock = state.config.read();
-                                context::get_local_context(&lines, pos_x, pos_y, None, &config_lock)
-                            };
-                            let rendered = {
-                                let config_lock = state.config.read();
-                                fim::render_fim_suggestion(
-                                    pos_x,
-                                    pos_y,
-                                    content_str,
-                                    &ctx.line_cur_suffix,
-                                    &config_lock,
-                                )
-                            };
-                            state.debug_manager.read().log("on_cursor_moved_i 4.6", &[]);
-
-                            // Update FIM state
+                    // If we got a suggestion from server, display it
+                    if let Ok(Some(ref content)) = result {
+                        state.debug_manager.read().log("on_cursor_moved_i 4.3", &[]);
+                        // Parse response and render
+                        if let Ok(response) = serde_json::from_str::<serde_json::Value>(content) {
+                            state.debug_manager.read().log("on_cursor_moved_i 4.4", &[]);
+                            if let Some(content_str) =
+                                response.get("content").and_then(|c| c.as_str())
                             {
-                                let mut fim_state_lock = state.fim_state.write();
-                                fim_state_lock.hint_shown = rendered.can_accept;
-                                fim_state_lock.pos_x = pos_x;
-                                fim_state_lock.pos_y = pos_y;
-                                fim_state_lock.line_cur =
-                                    lines.get(pos_y).cloned().unwrap_or_default();
-                                fim_state_lock.can_accept = rendered.can_accept;
-                                fim_state_lock.content = rendered.content;
-                            }
+                                state.debug_manager.read().log("on_cursor_moved_i 4.5", &[]);
+                                let ctx = {
+                                    let config_lock = state.config.read();
+                                    context::get_local_context(
+                                        &lines,
+                                        pos_x,
+                                        pos_y,
+                                        None,
+                                        &config_lock,
+                                    )
+                                };
+                                let rendered = {
+                                    let config_lock = state.config.read();
+                                    fim::render_fim_suggestion(
+                                        pos_x,
+                                        pos_y,
+                                        content_str,
+                                        &ctx.line_cur_suffix,
+                                        &config_lock,
+                                    )
+                                };
+                                state.debug_manager.read().log("on_cursor_moved_i 4.6", &[]);
 
-                            state.debug_manager.read().log("on_cursor_moved_i 4.7", &[]);
-                            // Display virtual text using extmarks
-                            let _ = display_fim_hint(&state);
-                            state.debug_manager.read().log("on_cursor_moved_i 4.8", &[]);
+                                // Update FIM state
+                                {
+                                    let mut fim_state_lock = state.fim_state.write();
+                                    fim_state_lock.hint_shown = rendered.can_accept;
+                                    fim_state_lock.pos_x = pos_x;
+                                    fim_state_lock.pos_y = pos_y;
+                                    fim_state_lock.line_cur =
+                                        lines.get(pos_y).cloned().unwrap_or_default();
+                                    fim_state_lock.can_accept = rendered.can_accept;
+                                    fim_state_lock.content = rendered.content;
+                                }
+
+                                state.debug_manager.read().log("on_cursor_moved_i 4.7", &[]);
+                                // Display virtual text using extmarks
+                                let _ = display_fim_hint(&state);
+                                state.debug_manager.read().log("on_cursor_moved_i 4.8", &[]);
+                            }
                         }
                     }
                 }
             }
         }
-    }
-    let state = get_state();
-    state.debug_manager.read().log("on_cursor_moved_i 5", &[]);
-
+        let state = get_state();
+        state.debug_manager.read().log("on_cursor_moved_i 5", &[]);
+    });
     Ok(())
 }
 
@@ -2312,23 +2097,7 @@ fn setup_autocmds() -> NvimResult<()> {
     // Cursor movement for auto-FIM (CursorMovedI in insert mode)
     if state.config.read().auto_fim {
         let id = api::create_autocmd(
-            ["CursorMovedI"],
-            &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-                .callback(|_| {
-                    let _ = on_cursor_moved_i();
-                    false // DO NOT DELETE this autocommand once used
-                })
-                .build(),
-        )
-        .unwrap_or(0);
-        let mut autocmd_ids_lock = state.autocmd_ids.write();
-        autocmd_ids_lock.push(id as u64);
-    }
-
-    // Insert mode entry for auto-FIM (InsertEnter)
-    if state.config.read().auto_fim {
-        let id = api::create_autocmd(
-            ["InsertEnter"],
+            ["CursorMovedI", "InsertEnter"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
                 .callback(|_| {
                     let _ = on_cursor_moved_i();
@@ -2430,7 +2199,7 @@ fn setup_autocmds() -> NvimResult<()> {
 /// Filetype check autocmd handler - enables/disables plugin based on filetype
 fn on_buf_enter_and_check_filetype() -> NvimResult<()> {
     let state = get_state();
-    let is_enabled = state.enabled.load(std::sync::atomic::Ordering::SeqCst);
+    let is_enabled = state.enabled.load(Ordering::SeqCst);
     drop(state);
 
     // Check if current filetype should enable/disable the plugin
@@ -2492,14 +2261,14 @@ fn setup_ring_buffer_timer() -> NvimResult<()> {
 /// Register nvim-oxi commands for the plugin
 fn register_commands() -> NvimResult<()> {
     // FIM commands - use closure without args parameter
-    let _ = api::create_user_command(
-        "LttwFim",
-        |_| -> NvimResult<()> {
-            fim_completion(false)?;
-            Ok(())
-        },
-        &Default::default(),
-    );
+    //let _ = api::create_user_command(
+    //    "LttwFim",
+    //    |_| -> NvimResult<()> {
+    //        fim_completion(false)?;
+    //        Ok(())
+    //    },
+    //    &Default::default(),
+    //);
 
     let _ = api::create_user_command(
         "LttwFimAcceptFull",
