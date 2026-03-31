@@ -35,9 +35,6 @@ use {
     },
 };
 
-/// Type alias for ring buffer timer handle to simplify type declarations
-type RingBufferTimerHandle = Option<Arc<parking_lot::Mutex<tokio::task::JoinHandle<()>>>>;
-
 // FIM completion channel types for async communication between worker and main thread
 /// Message sent from async worker to main thread when completion is ready
 #[derive(Debug, Clone)]
@@ -111,6 +108,9 @@ struct PluginState {
     // Persistent tokio runtime for async operations
     tokio_runtime: Arc<parking_lot::Mutex<Option<tokio::runtime::Runtime>>>,
 }
+
+/// Type alias for ring buffer timer handle to simplify type declarations
+type RingBufferTimerHandle = Option<Arc<parking_lot::Mutex<tokio::task::JoinHandle<()>>>>;
 
 impl PluginState {
     fn new() -> Self {
