@@ -3,8 +3,128 @@
 // This module implements a ring buffer that collects and manages chunks of
 // text from the buffer to provide additional context to the language model.
 
-use crate::context::chunk_similarity;
-use serde::Serialize;
+use {
+    crate::{context::chunk_similarity, get_state},
+    nvim_oxi::{Dictionary, Result as NvimResult},
+    serde::Serialize,
+    std::sync::Arc,
+};
+
+/// Process ring buffer updates - moves queued chunks to active ring and sends to server
+fn process_ring_buffer() -> NvimResult<()> {
+    let state = get_state();
+
+    // Get configuration
+    let update_interval = state.config.read().ring_update_ms;
+
+    // Check if we have chunks before logging
+    let chunk_count = {
+        // Move first queued chunk to ring
+        let mut ring_buffer_lock = state.ring_buffer.write();
+        ring_buffer_lock.update();
+        ring_buffer_lock.len()
+    };
+
+    if chunk_count > 0 {
+        state.debug_manager.read().log(
+            "process_ring_buffer",
+            &[&format!(
+                "Processing {} ring buffer chunks (interval: {}ms)",
+                chunk_count, update_interval
+            )],
+        );
+
+        // Build request with ring buffer context
+        let extra = state.ring_buffer.read().get_extra();
+        let request = serde_json::json!({
+            "input_extra": extra,
+            "cache_prompt": true
+        });
+
+        // Send to server (fire and forget - non-blocking)
+        let config = state.config.read().clone();
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(async move {
+                let client = reqwest::Client::new();
+                let _ = client
+                    .post(&config.endpoint_fim)
+                    .json(&request)
+                    .bearer_auth(&config.api_key)
+                    .send()
+                    .await;
+            });
+    }
+
+    Ok(())
+}
+
+/// Setup a repeating timer to process ring buffer updates using tokio
+pub fn setup_ring_buffer_timer() -> NvimResult<()> {
+    let state = get_state();
+    let interval = state.config.read().ring_update_ms;
+    let interval_duration = std::time::Duration::from_millis(interval as u64);
+
+    // Create a new tokio runtime and spawn the timer task
+    // This follows the same pattern used elsewhere in the codebase
+    let timer_handle = tokio::runtime::Runtime::new().unwrap().spawn(async move {
+        // Create a recurring interval timer
+        let mut interval = tokio::time::interval(interval_duration);
+
+        loop {
+            // Wait for the next tick
+            interval.tick().await;
+
+            // Process the ring buffer
+            let _ = process_ring_buffer();
+        }
+    });
+
+    // Store the handle in the plugin state
+    {
+        let mut ring_buffer_timer_handle_lock = state.ring_buffer_timer_handle.write();
+        *ring_buffer_timer_handle_lock = Some(Arc::new(parking_lot::Mutex::new(timer_handle)));
+    }
+
+    state.debug_manager.read().log(
+        "setup_ring_buffer_timer",
+        &[&format!(
+            "Started ring buffer timer (interval: {}ms)",
+            interval
+        )],
+    );
+
+    Ok(())
+}
+
+/// Ring buffer pick chunk function
+fn ring_pick_chunk(lines: Vec<String>, no_mod: bool, do_evict: bool) -> NvimResult<()> {
+    let state = get_state();
+    state
+        .ring_buffer
+        .write()
+        .pick_chunk(lines, no_mod, do_evict);
+    Ok(())
+}
+
+/// Ring buffer get extra function
+fn ring_get_extra() -> NvimResult<Vec<Dictionary>> {
+    let state = get_state();
+    let ring_buffer_lock = state.ring_buffer.read();
+    let extra = ring_buffer_lock.get_extra();
+
+    let mut result = Vec::new();
+    for e in extra {
+        let mut dict = Dictionary::new();
+        dict.insert("text", e.text);
+        dict.insert("filename", e.filename);
+        result.push(dict);
+    }
+
+    Ok(result)
+}
+
+// -----------------------------
 
 /// A chunk of text from the buffer
 #[derive(Debug, Clone, Serialize)]
