@@ -1,4 +1,5 @@
 /target
+/testing_plugin
 /llama.vim
 /tests-integration/target
 /.ralph
