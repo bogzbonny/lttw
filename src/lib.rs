@@ -1813,7 +1813,9 @@ fn on_buf_leave() -> NvimResult<()> {
 
 /// Handle CursorMovedI event - trigger speculative FIM completion
 fn on_cursor_moved_i() -> NvimResult<()> {
-    let _result = tokio::runtime::Runtime::new().unwrap().spawn(async {
+    // XXX understand why this doesn't display when using regular spawn
+    //let _result = tokio::runtime::Runtime::new().unwrap().spawn(async {
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
         let state = get_state();
         state.debug_manager.read().log(
             "on_cursor_moved_i",
