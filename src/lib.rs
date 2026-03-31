@@ -428,12 +428,12 @@ fn init_tokio_runtime() {
     // Set up a Neovim timer to periodically process the pending display queue
     // This ensures display updates happen on the main thread
 
-    // TODO use the errors
     let _ = nvim_oxi::libuv::TimerHandle::start(
         std::time::Duration::from_millis(500),
         std::time::Duration::from_millis(100), // repeat
         |_| {
-            let _ = process_pending_display();
+            // Need this so that it executes on the main thread (or else extmarks won't display)
+            nvim_oxi::schedule(|_| process_pending_display());
         },
     );
 
