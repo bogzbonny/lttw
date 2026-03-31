@@ -166,15 +166,7 @@ fn get_state() -> Arc<PluginState> {
 /// Check if FIM hint is shown - internal helper for commands
 fn fim_is_hint_shown() -> Result<bool, nvim_oxi::Error> {
     let state = get_state();
-
     let fim_state_lock = state.fim_state.read();
-    {
-        let debug_manager = state.debug_manager.read().clone();
-        debug_manager.log(
-            "fim_is_hint_shown",
-            &[&(fim_state_lock.hint_shown).to_string()],
-        );
-    }
     Ok(fim_state_lock.hint_shown)
 }
 
@@ -187,14 +179,34 @@ struct FimState {
     line_cur: String,
     can_accept: bool,
     content: Vec<String>,
-    cur_line: String, // the line which the FIM is for
 }
 
-/// Get buffer lines from Neovim
-fn buf_get_lines() -> Vec<String> {
-    let buf = Buffer::current();
-    let lines = buf.get_lines(.., false).unwrap();
-    lines.map(|s| s.to_string()).collect()
+impl FimState {
+    fn update(
+        &mut self,
+        hint_shown: bool,
+        pos_x: usize,
+        pos_y: usize,
+        line_cur: String,
+        can_accept: bool,
+        content: Vec<String>,
+    ) {
+        self.hint_shown = hint_shown;
+        self.pos_x = pos_x;
+        self.pos_y = pos_y;
+        self.line_cur = line_cur;
+        self.can_accept = can_accept;
+        self.content = content;
+    }
+
+    fn clear(&mut self) {
+        self.hint_shown = false;
+        self.pos_x = 0;
+        self.pos_y = 0;
+        self.line_cur.clear();
+        self.can_accept = false;
+        self.content.clear();
+    }
 }
 
 /// Get current buffer position
@@ -205,6 +217,13 @@ fn get_pos() -> (usize, usize) {
     let col = col.saturating_sub(1);
     let line = line.saturating_sub(1);
     (col, line)
+}
+
+/// Get buffer lines from Neovim
+fn buf_get_lines() -> Vec<String> {
+    let buf = Buffer::current();
+    let lines = buf.get_lines(.., false).unwrap();
+    lines.map(|s| s.to_string()).collect()
 }
 
 /// Get current buffer
@@ -337,19 +356,17 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> NvimResult<()> {
     let content_len = rendered.content.len();
 
     // Update FIM state
-    {
-        let mut fim_state_lock = state.fim_state.write();
-        fim_state_lock.hint_shown = rendered.can_accept;
-        fim_state_lock.pos_x = msg.cursor_x;
-        fim_state_lock.pos_y = msg.cursor_y;
-        fim_state_lock.line_cur = msg
-            .buffer_lines
+    state.fim_state.write().update(
+        rendered.can_accept,
+        msg.cursor_x,
+        msg.cursor_y,
+        msg.buffer_lines
             .get(msg.cursor_y)
             .cloned()
-            .unwrap_or_default();
-        fim_state_lock.can_accept = rendered.can_accept;
-        fim_state_lock.content = rendered.content;
-    }
+            .unwrap_or_default(),
+        rendered.can_accept,
+        rendered.content,
+    );
 
     // Display virtual text using extmarks
     display_fim_hint(&state)?;
@@ -567,11 +584,7 @@ fn fim_accept(accept_type: &str) -> NvimResult<Option<String>> {
     let _ = window.set_cursor(pos_y + 1, new_col + 1);
 
     // Clear the FIM hint - use write lock
-    {
-        let mut fim_state_lock = state.fim_state.write();
-        fim_state_lock.hint_shown = false;
-        fim_state_lock.content.clear();
-    }
+    state.fim_state.write().clear();
 
     // Clear virtual text from display
     if let Some(ns_id) = state.extmark_ns {
@@ -623,21 +636,17 @@ fn fim_hide() -> NvimResult<()> {
 /// Display FIM hint as virtual text using extmarks with optional inline info
 fn display_fim_hint(state: &Arc<PluginState>) -> NvimResult<()> {
     // Lock the fim_state and config to get the data we need
-    let (hint_shown, content, extmark_ns, pos_y, pos_x, _config, debug_manager) = {
-        let fim_state_lock = state.fim_state.read();
-        let fim_state_hint_shown = fim_state_lock.hint_shown;
-        let fim_state_content = fim_state_lock.content.clone();
-        let fim_state_pos_y = fim_state_lock.pos_y;
-        let fim_state_pos_x = fim_state_lock.pos_x;
-        let extmark_ns = state.extmark_ns;
+    let (hint_shown, content, extmark_ns, pos_y, pos_x, line_cur, _config, debug_manager) = {
+        let fs = state.fim_state.read();
         let config = state.config.read().clone();
         let debug_manager = state.debug_manager.read().clone();
         (
-            fim_state_hint_shown,
-            fim_state_content,
-            extmark_ns,
-            fim_state_pos_y,
-            fim_state_pos_x,
+            fs.hint_shown,
+            fs.content.clone(),
+            state.extmark_ns,
+            fs.pos_y,
+            fs.pos_x,
+            fs.line_cur.clone(),
             config,
             debug_manager,
         )
@@ -670,10 +679,11 @@ fn display_fim_hint(state: &Arc<PluginState>) -> NvimResult<()> {
 
         // Build virtual text string - first line of suggestion
         let suggestion_text = content[0].clone();
+        let suggestion_text = fim::trim_suggestion_curr_line(&suggestion_text, pos_x, &line_cur);
 
         // Build inline info string if show_info is enabled (mode 2 = inline)
         let virt_text_vec: Vec<(String, String)> =
-            { vec![(suggestion_text, "Comment".to_string())] };
+            { vec![(suggestion_text.to_string(), "Comment".to_string())] };
 
         // Create extmark opts with virtual text using builder pattern
         let mut opts = SetExtmarkOptsBuilder::default();
