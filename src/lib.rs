@@ -844,11 +844,11 @@ fn display_fim_hint(state: &Arc<PluginState>) -> NvimResult<()> {
         }
 
         // Set the extmark at cursor position
-        match buf.set_extmark(ns_id, pos_y, pos_x, &opts.build()) {
+        match buf.set_extmark(ns_id, pos_y, pos_x + 1, &opts.build()) {
             Ok(_id) => {
                 debug_manager.log(
                     "display_fim_hint",
-                    &[&format!("Set extmark at line {}, col {}", pos_y, pos_x)],
+                    &[&format!("Set extmark at line {}, col {}", pos_y, pos_x + 1)],
                 );
             }
             Err(e) => {

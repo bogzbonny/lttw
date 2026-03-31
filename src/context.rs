@@ -51,6 +51,9 @@ fn get_local_context_no_prev(
         String::new()
     };
 
+    // manual correction
+    let pos_x = pos_x + 1;
+
     let line_cur_prefix = if pos_x <= line_cur.len() {
         line_cur[..pos_x].to_string()
     } else {
@@ -62,8 +65,6 @@ fn get_local_context_no_prev(
     } else {
         String::new()
     };
-
-    let _pos_x = pos_x;
 
     let lines_prefix_start = if pos_y > 0 {
         pos_y.saturating_sub(config.n_prefix as usize)

@@ -151,15 +151,18 @@ pub async fn fim_completion(
     // Lock the cache and ring buffer for setup
     let request_data = {
         // Get local context
-        debug_manager.log("fim_completion 1", &[]);
+        debug_manager.log("fim_completion 0", &[]);
         let ctx = get_local_context(lines, pos_x, pos_y, prev, config);
         debug_manager.log(
-            "fim_completion 2",
+            "fim_completion 1",
             &[&format!(
-                "is_auto {is_auto}, ctx.line_cur_suffix.len() {}, config.max_line_suffix {}",
-                ctx.line_cur_suffix.len(),
-                config.max_line_suffix
+                "lines: {lines:#?}, pos_x: {pos_x}, pos_y: {pos_y}, prev: {prev:?}, config: {config:#?}"
             )],
+        );
+
+        debug_manager.log(
+            "fim_completion 2",
+            &[&format!("is_auto {is_auto}, ctx \n{ctx:#?}",)],
         );
 
         // Skip auto FIM if too much suffix
@@ -508,11 +511,24 @@ pub fn accept_fim_suggestion(
     // Handle whitespace-only lines
     let line_cur_stripped = line_cur.trim();
     if line_cur_stripped.is_empty() {
-        let content_stripped = first_line.trim_start();
-        first_line = content_stripped.to_string();
+        first_line = first_line.trim_start().to_string();
     }
 
-    let new_line = line_cur[..pos_x].to_string() + &first_line;
+    let pos_x = pos_x + 1; // Adjust for 0-based indexing
+
+    let new_line = if content.len() == 1 {
+        // If only one line, just replace the current line
+        let suffix = &line_cur[pos_x..];
+
+        // trim the first_line suffix if it is the same as the suffix
+        if first_line.ends_with(suffix) {
+            first_line = first_line.trim_end_matches(suffix).to_string();
+        }
+
+        line_cur[..pos_x].to_string() + &first_line + suffix
+    } else {
+        line_cur[..pos_x].to_string() + &first_line
+    };
 
     // Handle accept type
     match accept_type {
@@ -524,10 +540,7 @@ pub fn accept_fim_suggestion(
             }
         }
         "line" => {
-            // Insert only the second line
-            if content.len() > 1 {
-                return (new_line, Some(vec![content[1].clone()]));
-            }
+            return (new_line, None);
         }
         "word" => {
             // Accept only the first word
