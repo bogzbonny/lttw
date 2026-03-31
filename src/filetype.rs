@@ -10,21 +10,29 @@ use {
 /// Get filetype function
 pub fn get_filetype() -> NvimResult<String> {
     let ft = get_option_value::<String>("filetype", &OptionOpts::default())?;
+    ///
     Ok(ft)
 }
 
 /// Filetype check autocmd handler - enables/disables plugin based on filetype
 pub fn on_buf_enter_check_filetype() -> NvimResult<()> {
-    let state = get_state();
-    let is_enabled = state.enabled.load(Ordering::SeqCst);
-    drop(state);
+    let is_enabled = {
+        let state = get_state();
+        state.enabled.load(Ordering::SeqCst)
+    };
 
     // Check if current filetype should enable/disable the plugin
     let should_be_enabled = {
         let state = get_state();
         let filetype = get_filetype().unwrap_or_default();
         let config = state.config.read();
-        config.is_filetype_enabled(&filetype)
+        let out = config.is_filetype_enabled(&filetype);
+
+        state.debug_manager.read().log(
+            "on_buf_enter_check_filetype",
+            &[&format!("filetype {filetype}, should_be_enabled {out}",)],
+        );
+        out
     };
 
     if should_be_enabled && !is_enabled {

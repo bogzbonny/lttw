@@ -42,9 +42,12 @@ pub fn register_commands() -> NvimResult<()> {
 
     let _ = api::create_user_command(
         "LttwIsEnabled",
-        |_| -> NvimResult<String> {
-            let en = is_enabled().to_string();
-            Ok(en)
+        |_| -> NvimResult<()> {
+            let en = is_enabled();
+            let msg = format!("LttwIsEnabled: {}", en);
+            // Use nvim_command to execute an echo command
+            api::command(&format!("echo '{}'", msg))?;
+            Ok(())
         },
         &Default::default(),
     );

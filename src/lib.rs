@@ -78,8 +78,8 @@ fn lttw_setup() -> NvimResult<()> {
     keymap::setup_keymaps()?;
 
     // Setup filetype
-    // XXX setup others or not?
-    autocommands::setup_non_filetype_autocmds()?;
+    // XXX setup regular?
+    autocommands::setup_filetype_autocmd()?;
 
     // Setup timer-based ring buffer updates (every ring_update_ms)
     ring_buffer::setup_ring_buffer_timer()?;
@@ -267,6 +267,7 @@ fn init_tokio_runtime() {
 
     // Spawn a task that receives completion messages and adds them to the pending display queue
     // This runs on its own dedicated current-thread runtime separate from the main multi-threaded one
+    // TODO use a tokio thread?
     let state_for_receiver = state.clone();
     std::thread::spawn(move || {
         let rt = match tokio::runtime::Builder::new_current_thread()

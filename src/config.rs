@@ -24,6 +24,7 @@ pub struct LttwConfig {
     pub stop_strings: Vec<String>,
     pub t_max_prompt_ms: u32,
     pub t_max_predict_ms: u32,
+    pub debounce_ms: u32,
 
     // Display configuration
     pub show_info: u8,
@@ -71,6 +72,7 @@ impl Default for LttwConfig {
             stop_strings: Vec::new(),
             t_max_prompt_ms: 500,
             t_max_predict_ms: 1000,
+            debounce_ms: 500,
             show_info: 2,
             auto_fim: true,
             max_line_suffix: 8,
@@ -175,6 +177,9 @@ impl LttwConfig {
         }
         if let Some(v) = get_i64("t_max_predict_ms") {
             config.t_max_predict_ms = v as u32;
+        }
+        if let Some(v) = get_i64("debounce_ms") {
+            config.debounce_ms = v as u32;
         }
         if let Some(v) = get_i64("show_info") {
             config.show_info = v as u8;

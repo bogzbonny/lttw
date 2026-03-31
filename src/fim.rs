@@ -27,6 +27,7 @@ pub struct FimRequest {
     pub n_predict: u32,
     pub stop: Vec<String>,
     pub n_indent: usize,
+
     pub top_k: u32,
     pub top_p: f32,
     pub samplers: Vec<String>,
@@ -156,7 +157,8 @@ pub async fn fim_completion(
         debug_manager.log(
             "fim_completion 1",
             &[&format!(
-                "lines: {lines:#?}, pos_x: {pos_x}, pos_y: {pos_y}, prev: {prev:?}, config: {config:#?}"
+                //"lines: {lines:#?}, pos_x: {pos_x}, pos_y: {pos_y}, prev: {prev:?}, config: {config:#?}"
+                "pos_x: {pos_x}, pos_y: {pos_y}, prev: {prev:?}, config: {config:#?}"
             )],
         );
 
