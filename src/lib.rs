@@ -87,11 +87,11 @@ fn lttw_setup() -> NvimResult<()> {
     // Initialize plugin state
     init_state();
 
-    // Initialize persistent tokio runtime and completion channel
-    init_tokio_runtime();
-
     // Register nvim-oxi commands
     register_commands()?;
+
+    // Initialize persistent tokio runtime and completion channel
+    init_tokio_runtime();
 
     // Setup keymaps
     setup_keymaps()?;
@@ -131,6 +131,8 @@ struct PluginState {
     // FIM completion channel for async worker communication
     fim_completion_tx:
         Arc<parking_lot::Mutex<Option<tokio::sync::mpsc::Sender<FimCompletionMessage>>>>,
+    // Pending display queue - holds messages waiting to be rendered on main thread
+    pending_display: Arc<RwLock<Vec<FimCompletionMessage>>>,
     // Persistent tokio runtime for async operations
     tokio_runtime: Arc<parking_lot::Mutex<Option<tokio::runtime::Runtime>>>,
 }
@@ -164,6 +166,7 @@ impl PluginState {
             ring_buffer_timer_handle: Arc::new(RwLock::new(None)),
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(parking_lot::Mutex::new(None)),
+            pending_display: Arc::new(RwLock::new(Vec::new())),
             tokio_runtime: Arc::new(parking_lot::Mutex::new(None)),
         }
     }
@@ -383,7 +386,7 @@ fn init_tokio_runtime() {
     };
 
     // Create channel for completion messages
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<FimCompletionMessage>(16);
+    let (tx, rx) = tokio::sync::mpsc::channel::<FimCompletionMessage>(16);
 
     // Store the sender in state
     {
@@ -391,19 +394,9 @@ fn init_tokio_runtime() {
         *fim_completion_tx_lock = Some(tx);
     }
 
-    // Store the runtime in state
-    {
-        let mut tokio_runtime_lock = state.tokio_runtime.lock();
-        *tokio_runtime_lock = Some(runtime);
-    }
-
-    state
-        .debug_manager
-        .read()
-        .log("init_tokio_runtime", &["Runtime initialized"]);
-
-    // Spawn the main thread receiver loop
-    // This will receive completion results and render them on the main thread
+    // Spawn a task that receives completion messages and adds them to the pending display queue
+    // This runs on its own dedicated current-thread runtime separate from the main multi-threaded one
+    let state_for_receiver = state.clone();
     std::thread::spawn(move || {
         let rt = match tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -411,22 +404,48 @@ fn init_tokio_runtime() {
         {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("Failed to create receiver runtime: {}", e);
+                eprintln!("Failed to create queue receiver runtime: {}", e);
                 return;
             }
         };
 
         rt.block_on(async move {
+            let mut rx = rx; // make mutable
             while let Some(msg) = rx.recv().await {
-                // Handle completion message on main thread
-                handle_fim_completion_message(msg).await;
+                // Push to pending display queue (this is thread-safe)
+                state_for_receiver
+                    .debug_manager
+                    .read()
+                    //.log("pending_queue msg", &[&format!("msg {msg:?}")]);
+                    .log("pending_queue msg", &[]);
+                let mut pending_queue = state_for_receiver.pending_display.write();
+                pending_queue.push(msg);
+                // Release lock automatically when pending_queue goes out of scope
             }
         });
     });
+
+    // Set up a Neovim timer to periodically process the pending display queue
+    // This ensures display updates happen on the main thread
+
+    // TODO use the errors
+    let _ = nvim_oxi::libuv::TimerHandle::start(
+        std::time::Duration::from_millis(500),
+        std::time::Duration::from_millis(100), // repeat
+        |_| {
+            let _ = process_pending_display();
+        },
+    );
+
+    // Store the multi-threaded runtime (used by other operations like ring buffer timer)
+    {
+        let mut tokio_runtime_lock = state.tokio_runtime.lock();
+        *tokio_runtime_lock = Some(runtime);
+    }
 }
 
 /// Handle FIM completion message received from async worker
-async fn handle_fim_completion_message(msg: FimCompletionMessage) {
+fn handle_fim_completion_message(msg: FimCompletionMessage) -> NvimResult<()> {
     let state = get_state();
 
     // Check if we're still in the same buffer
@@ -439,62 +458,60 @@ async fn handle_fim_completion_message(msg: FimCompletionMessage) {
                 msg.buffer_handle, current_buf
             )],
         );
-        return;
+        return Ok(());
     }
 
     state.debug_manager.read().log(
         "handle_fim_completion_message",
         &[&format!(
-            "Received completion for buffer {} at ({}, {})",
-            msg.buffer_handle, msg.cursor_x, msg.cursor_y
+            "Received completion for buffer {} at ({}, {}), msg.content {}",
+            msg.buffer_handle, msg.cursor_x, msg.cursor_y, msg.content
         )],
     );
 
     // Parse response and render
-    if let Ok(response) = serde_json::from_str::<serde_json::Value>(&msg.content) {
-        if let Some(content_str) = response.get("content").and_then(|c| c.as_str()) {
-            let ctx = context::get_local_context(
-                &msg.buffer_lines,
-                msg.cursor_x,
-                msg.cursor_y,
-                None,
-                &state.config.read(),
-            );
-            let rendered = fim::render_fim_suggestion(
-                msg.cursor_x,
-                msg.cursor_y,
-                content_str,
-                &ctx.line_cur_suffix,
-                &state.config.read(),
-            );
+    let ctx = context::get_local_context(
+        &msg.buffer_lines,
+        msg.cursor_x,
+        msg.cursor_y,
+        None,
+        &state.config.read(),
+    );
+    let rendered = fim::render_fim_suggestion(
+        msg.cursor_x,
+        msg.cursor_y,
+        &msg.content,
+        &ctx.line_cur_suffix,
+        &state.config.read(),
+    );
 
-            // Get line count before moving content
-            let content_len = rendered.content.len();
+    // Get line count before moving content
+    let content_len = rendered.content.len();
 
-            // Update FIM state
-            {
-                let mut fim_state_lock = state.fim_state.write();
-                fim_state_lock.hint_shown = rendered.can_accept;
-                fim_state_lock.pos_x = msg.cursor_x;
-                fim_state_lock.pos_y = msg.cursor_y;
-                fim_state_lock.line_cur = msg
-                    .buffer_lines
-                    .get(msg.cursor_y)
-                    .cloned()
-                    .unwrap_or_default();
-                fim_state_lock.can_accept = rendered.can_accept;
-                fim_state_lock.content = rendered.content;
-            }
-
-            // Display virtual text using extmarks
-            let _ = display_fim_hint(&state);
-
-            state.debug_manager.read().log(
-                "handle_fim_completion_message",
-                &[&format!("Displaying FIM hint: {} lines", content_len)],
-            );
-        }
+    // Update FIM state
+    {
+        let mut fim_state_lock = state.fim_state.write();
+        fim_state_lock.hint_shown = rendered.can_accept;
+        fim_state_lock.pos_x = msg.cursor_x;
+        fim_state_lock.pos_y = msg.cursor_y;
+        fim_state_lock.line_cur = msg
+            .buffer_lines
+            .get(msg.cursor_y)
+            .cloned()
+            .unwrap_or_default();
+        fim_state_lock.can_accept = rendered.can_accept;
+        fim_state_lock.content = rendered.content;
     }
+
+    // Display virtual text using extmarks
+    display_fim_hint(&state)?;
+
+    state.debug_manager.read().log(
+        "handle_fim_completion_message",
+        &[&format!("Displaying FIM hint: {} lines", content_len)],
+    );
+
+    Ok(())
 }
 
 /// Async worker task that collects neovim information and sends completion results through channel
@@ -592,6 +609,34 @@ async fn spawn_fim_worker(
             }
         }
     });
+
+    Ok(())
+}
+
+/// Process pending FIM display queue - drains and displays messages on the main thread
+fn process_pending_display() -> NvimResult<()> {
+    let state = get_state();
+
+    // Take all pending messages (clear the queue)
+    let messages: Vec<FimCompletionMessage> = {
+        let mut pending_queue = state.pending_display.write();
+        std::mem::take(&mut *pending_queue)
+    };
+
+    if !messages.is_empty() {
+        state.debug_manager.read().log(
+            "process_pending_display",
+            &[&format!(
+                "Processing {} pending display messages",
+                messages.len()
+            )],
+        );
+    }
+
+    // Process each message
+    for msg in messages {
+        handle_fim_completion_message(msg)?;
+    }
 
     Ok(())
 }
