@@ -2,20 +2,24 @@
 //
 // This module provides the entry point for the Neovim plugin using nvim-oxi.
 // All core logic is implemented in Rust modules and exposed to Neovim via FFI.
+pub mod autocommands;
 pub mod cache;
+pub mod commands;
 pub mod config;
 pub mod context;
 pub mod debug;
+pub mod filetype;
 pub mod fim;
 pub mod instruction;
+pub mod keymap;
 pub mod ring_buffer;
 pub mod utils;
 
 use {
+    instruction::InstructionRequestState,
     nvim_oxi::{
         api::{
-            opts::{SetExtmarkOptsBuilder, SetKeymapOptsBuilder},
-            types::Mode,
+            opts::SetExtmarkOptsBuilder,
             {self, Buffer, Window},
         },
         Dictionary, Function, Result as NvimResult,
@@ -45,11 +49,6 @@ struct FimCompletionMessage {
     content: String,           // Raw JSON response content
 }
 
-use crate::instruction::InstructionStatus;
-
-/// State for a single instruction request
-pub use crate::instruction::InstructionRequestState;
-
 /// Initialize the plugin with configuration
 ///
 /// # Arguments
@@ -67,50 +66,26 @@ pub fn lttw() -> NvimResult<Dictionary> {
     Ok(functions)
 }
 
-/// Check if FIM hint is shown - internal helper for commands
-fn fim_is_hint_shown() -> Result<bool, nvim_oxi::Error> {
-    let state = get_state();
-
-    let fim_state_lock = state.fim_state.read();
-    {
-        let debug_manager = state.debug_manager.read().clone();
-        debug_manager.log(
-            "fim_is_hint_shown",
-            &[&(fim_state_lock.hint_shown).to_string()],
-        );
-    }
-    Ok(fim_state_lock.hint_shown)
-}
-
 fn lttw_setup() -> NvimResult<()> {
     // Initialize plugin state
     init_state();
 
     // Register nvim-oxi commands
-    register_commands()?;
+    commands::register_commands()?;
 
     // Initialize persistent tokio runtime and completion channel
     init_tokio_runtime();
 
     // Setup keymaps
-    setup_keymaps()?;
+    keymap::setup_keymaps()?;
 
     // Setup autocmds
-    setup_autocmds()?;
+    autocommands::setup_autocmds()?;
+
+    // Setup timer-based ring buffer updates (every ring_update_ms)
+    setup_ring_buffer_timer()?;
 
     Ok(())
-}
-
-/// State for FIM (Fill-in-Middle) completion
-#[derive(Debug, Clone, Default)]
-struct FimState {
-    hint_shown: bool,
-    pos_x: usize,
-    pos_y: usize,
-    line_cur: String,
-    can_accept: bool,
-    content: Vec<String>,
-    cur_line: String, // the line which the FIM is for
 }
 
 // State management
@@ -184,6 +159,35 @@ fn init_state() {
 fn get_state() -> Arc<PluginState> {
     init_state();
     PLUGIN_STATE.get().unwrap().clone()
+}
+
+// ---------------------------
+
+/// Check if FIM hint is shown - internal helper for commands
+fn fim_is_hint_shown() -> Result<bool, nvim_oxi::Error> {
+    let state = get_state();
+
+    let fim_state_lock = state.fim_state.read();
+    {
+        let debug_manager = state.debug_manager.read().clone();
+        debug_manager.log(
+            "fim_is_hint_shown",
+            &[&(fim_state_lock.hint_shown).to_string()],
+        );
+    }
+    Ok(fim_state_lock.hint_shown)
+}
+
+/// State for FIM (Fill-in-Middle) completion
+#[derive(Debug, Clone, Default)]
+struct FimState {
+    hint_shown: bool,
+    pos_x: usize,
+    pos_y: usize,
+    line_cur: String,
+    can_accept: bool,
+    content: Vec<String>,
+    cur_line: String, // the line which the FIM is for
 }
 
 /// Get buffer lines from Neovim
@@ -359,7 +363,7 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> NvimResult<()> {
 }
 
 /// Async worker task that collects neovim information and sends completion results through channel
-/// This function is called from on_cursor_moved_i and spawns a non-blocking task
+/// This function is called from trigger_fim and spawns a non-blocking task
 async fn spawn_fim_worker(
     state: Arc<PluginState>,
     buffer_handle: u64,
@@ -756,13 +760,6 @@ fn ring_get_extra() -> NvimResult<Vec<Dictionary>> {
     Ok(result)
 }
 
-/// Cache get function
-fn cache_get(key: &str) -> NvimResult<Option<String>> {
-    let state = get_state();
-    let cache_lock = state.cache.read();
-    Ok(cache_lock.get_fim(key))
-}
-
 /// Debug log function
 fn debug_log(msg: &str, details: Vec<&str>) -> NvimResult<()> {
     let state = get_state();
@@ -789,207 +786,6 @@ fn debug_clear() -> NvimResult<()> {
     Ok(())
 }
 
-/// Open the debug buffer - kept for compatibility but now does nothing
-#[allow(dead_code)]
-fn debug_open_buffer(_state: &mut PluginState) -> NvimResult<()> {
-    // No longer needed - logs go to file
-    Ok(())
-}
-
-/// Flush debug log to the debug buffer - kept for compatibility but now does nothing
-#[allow(dead_code)]
-fn debug_flush_buffer(_state: &mut PluginState) -> NvimResult<()> {
-    // No longer needed - logs go to file
-    Ok(())
-}
-
-/// Debug get log function - for compatibility, returns empty vec since logs are in file
-fn debug_get_log() -> NvimResult<Vec<String>> {
-    // Logs are now written to file, this returns empty for compatibility
-    Ok(Vec::new())
-}
-
-/// Get filetype function
-fn get_filetype() -> NvimResult<String> {
-    let buf = Buffer::current();
-    let path = buf.get_name().map_err(|_| {
-        nvim_oxi::Error::Api(api::Error::Other("Failed to get buffer name".to_string()))
-    })?;
-
-    let filetype = if path.ends_with(".rs") {
-        "rust"
-    } else if path.ends_with(".py") {
-        "python"
-    } else if path.ends_with(".js") || path.ends_with(".ts") {
-        "javascript"
-    } else {
-        "unknown"
-    };
-
-    Ok(filetype.to_string())
-}
-
-/// Check if filetype is enabled
-fn is_filetype_enabled() -> NvimResult<bool> {
-    let state = get_state();
-    let filetype = get_filetype()?;
-    let config = state.config.read();
-    Ok(config.is_filetype_enabled(&filetype))
-}
-
-// Expression mapping helper functions removed - using command-based callbacks instead
-
-/// Setup keymaps function - maps keys to call nvim-oxi commands directly
-fn setup_keymaps() -> NvimResult<()> {
-    // FIM trigger - calls the LttwFim command
-    let _ = api::set_keymap(
-        Mode::Normal,
-        "<leader>llf",
-        ":LttwFim<CR>",
-        &Default::default(),
-    );
-
-    // FIM accept word
-    let _ = api::set_keymap(
-        Mode::Normal,
-        "<leader>ll]",
-        ":LttwFimAcceptWord<CR>",
-        &Default::default(),
-    );
-
-    // Instruction trigger
-    let _ = api::set_keymap(
-        Mode::Normal,
-        "<leader>lli",
-        ":LttwInst<CR>",
-        &Default::default(),
-    );
-
-    // Instruction rerun
-    let _ = api::set_keymap(
-        Mode::Normal,
-        "<leader>llr",
-        ":LttwInstRerun<CR>",
-        &Default::default(),
-    );
-
-    // Instruction continue
-    let _ = api::set_keymap(
-        Mode::Normal,
-        "<leader>llc",
-        ":LttwInstContinue<CR>",
-        &Default::default(),
-    );
-
-    // Debug toggle
-    let _ = api::set_keymap(
-        Mode::Normal,
-        "<leader>lld",
-        ":LttwDebugToggle<CR>",
-        &Default::default(),
-    );
-
-    // FIM keymaps - use command-based callbacks for proper ESC/TAB handling
-    // These commands check if FIM hint is shown and act accordingly
-
-    // FIM accept full (TAB) - check if FIM shown, accept if yes, insert tab if no
-    let _ = api::set_keymap(
-        Mode::Insert,
-        "<Tab>",
-        "",
-        &SetKeymapOptsBuilder::default()
-            .callback(|_| {
-                if let Ok(true) = fim_is_hint_shown() {
-                    if let Err(e) = fim_accept("full") {
-                        // Log error but don't crash
-                        let state = get_state();
-                        state
-                            .debug_manager
-                            .read()
-                            .log("Tab accept", &[&format!("Error accepting FIM: {:?}", e)]);
-                    }
-                }
-            })
-            .build(),
-    );
-
-    // Note: ESC is not mapped in Insert mode to avoid interfering with normal ESC behavior
-    // ESC will naturally exit Insert mode. If FIM hint is shown, it will be hidden when
-    // the user presses ESC to exit Insert mode (handled by fim_hide_on_escape autocmd if needed)
-
-    // FIM accept line (S-Tab) - check if FIM shown, accept line if yes, re-inject S-Tab if no
-    let _ = api::set_keymap(
-        Mode::Insert,
-        "<S-Tab>",
-        "",
-        &SetKeymapOptsBuilder::default()
-            .callback(|_| {
-                if let Ok(true) = fim_is_hint_shown() {
-                    if let Err(e) = fim_accept("line") {
-                        // Log error but don't crash
-                        let state = get_state();
-                        state.debug_manager.read().log(
-                            "LttwFimAcceptFullOrTab",
-                            &[&format!("Error accepting FIM: {:?}", e)],
-                        );
-                    }
-                }
-            })
-            .build(),
-    );
-
-    Ok(())
-}
-
-/// Remove keymaps function - unmaps all plugin keymaps
-fn remove_keymaps() -> NvimResult<()> {
-    let state = get_state();
-    let config = state.config.read();
-
-    // Unmap FIM keymaps
-    if !config.keymap_fim_trigger.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_fim_trigger);
-    }
-    if !config.keymap_fim_accept_full.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_fim_accept_full);
-    }
-    if !config.keymap_fim_accept_line.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_fim_accept_line);
-    }
-    if !config.keymap_fim_accept_word.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_fim_accept_word);
-    }
-
-    // Unmap instruction keymaps
-    if !config.keymap_inst_trigger.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_inst_trigger);
-    }
-    if !config.keymap_inst_rerun.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_inst_rerun);
-    }
-    if !config.keymap_inst_continue.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_inst_continue);
-    }
-    if !config.keymap_inst_accept.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_inst_accept);
-    }
-    if !config.keymap_inst_cancel.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_inst_cancel);
-    }
-
-    // Unmap debug keymaps
-    if !config.keymap_debug_toggle.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_debug_toggle);
-    }
-
-    // Unmap FIM insert-mode keymaps for accept/cancel (these are always set up)
-    let _ = api::del_keymap(Mode::Insert, "<Tab>");
-    let _ = api::del_keymap(Mode::Insert, "<Esc>");
-    let _ = api::del_keymap(Mode::Insert, "<S-Tab>");
-
-    Ok(())
-}
-
 /// Enable the plugin - sets up keymaps, autocmds, and state
 fn enable_plugin() -> NvimResult<()> {
     let state = get_state();
@@ -1000,7 +796,7 @@ fn enable_plugin() -> NvimResult<()> {
     }
 
     // Check filetype
-    let filetype = get_filetype()?;
+    let filetype = filetype::get_filetype()?;
     if !state.config.read().is_filetype_enabled(&filetype) {
         state.debug_manager.read().log(
             "enable_plugin",
@@ -1015,10 +811,10 @@ fn enable_plugin() -> NvimResult<()> {
         .log("enable_plugin", &["Enabling plugin"]);
 
     // Setup keymaps
-    setup_keymaps()?;
+    keymap::setup_keymaps()?;
 
     // Setup autocmds
-    setup_autocmds()?;
+    autocommands::setup_autocmds()?;
 
     // Hide any existing FIM hints
     fim_hide()?;
@@ -1047,7 +843,7 @@ fn disable_plugin() -> NvimResult<()> {
     fim_hide()?;
 
     // Remove keymaps
-    remove_keymaps()?;
+    keymap::remove_keymaps()?;
 
     // Clear autocmds (marked for cleanup)
     // Note: nvim-oxi doesn't provide direct autocmd deletion, so we just clear tracking
@@ -1062,21 +858,6 @@ fn disable_plugin() -> NvimResult<()> {
     Ok(())
 }
 
-/// Toggle the plugin on/off
-fn toggle_plugin() -> NvimResult<bool> {
-    let state = get_state();
-    let currently_enabled = state.enabled.load(Ordering::SeqCst);
-    drop(state);
-
-    if currently_enabled {
-        disable_plugin()?;
-        Ok(false)
-    } else {
-        enable_plugin()?;
-        Ok(true)
-    }
-}
-
 /// Toggle auto_fim configuration
 fn toggle_auto_fim() -> NvimResult<bool> {
     let state = get_state();
@@ -1089,7 +870,7 @@ fn toggle_auto_fim() -> NvimResult<bool> {
     }
 
     // Re-setup autocmds with new config
-    setup_autocmds()?;
+    autocommands::setup_autocmds()?;
 
     Ok(new_value)
 }
@@ -1207,11 +988,11 @@ fn on_buf_leave() -> NvimResult<()> {
 }
 
 /// Handle CursorMovedI event - trigger speculative FIM completion using async worker
-fn on_cursor_moved_i() -> NvimResult<()> {
+fn trigger_fim() -> NvimResult<()> {
     let _ = fim_hide();
     let state = get_state();
     state.debug_manager.read().log(
-        "on_cursor_moved_i",
+        "trigger_fim",
         &[&format!(
             "state.enabled {}, state.config.auto_fim {}",
             state.enabled.load(Ordering::SeqCst),
@@ -1230,21 +1011,21 @@ fn on_cursor_moved_i() -> NvimResult<()> {
     let buffer_handle: u64 = Buffer::current().handle().try_into().unwrap_or(0);
 
     state.debug_manager.read().log(
-        "on_cursor_moved_i",
+        "trigger_fim",
         &[&format!(
             "Cursor moved in insert mode at ({}, {})",
             pos_x, pos_y
         )],
     );
 
-    state.debug_manager.read().log("on_cursor_moved_i 1", &[]);
+    state.debug_manager.read().log("trigger_fim 1", &[]);
 
     // Try to show a cached hint (synchronous - fast)
     let hashes = fim::compute_hashes(&{
         let config_lock = state.config.read();
         context::get_local_context(&lines, pos_x, pos_y, None, &config_lock)
     });
-    state.debug_manager.read().log("on_cursor_moved_i 2", &[]);
+    state.debug_manager.read().log("trigger_fim 2", &[]);
 
     // Check cache for primary hash
     let mut found_cached = false;
@@ -1252,14 +1033,14 @@ fn on_cursor_moved_i() -> NvimResult<()> {
         state
             .debug_manager
             .read()
-            .log("on_cursor_moved_i hashes 3", &[&hash.to_string()]);
+            .log("trigger_fim hashes 3", &[&hash.to_string()]);
         if let Some(response_text) = {
             let cache_lock = state.cache.read();
             cache_lock.get_fim(hash)
         } {
             found_cached = true;
             state.debug_manager.read().log(
-                "on_cursor_moved_i",
+                "trigger_fim",
                 &[&format!("Found cached completion for hash {}", &hash[..16])],
             );
 
@@ -1297,7 +1078,7 @@ fn on_cursor_moved_i() -> NvimResult<()> {
                         let _ = display_fim_hint(&state);
 
                         state.debug_manager.read().log(
-                            "on_cursor_moved_i",
+                            "trigger_fim",
                             &[&format!(
                                 "Showing FIM hint from cursor move: {} lines",
                                 rendered.content.len()
@@ -1310,7 +1091,7 @@ fn on_cursor_moved_i() -> NvimResult<()> {
             }
         }
     }
-    state.debug_manager.read().log("on_cursor_moved_i 4", &[]);
+    state.debug_manager.read().log("trigger_fim 4", &[]);
 
     // If no cached hint found and we're not already showing a hint, spawn async worker
     {
@@ -1318,17 +1099,14 @@ fn on_cursor_moved_i() -> NvimResult<()> {
         if !found_cached && !hint_shown {
             // Only trigger FIM if we're in a reasonable position
             state.debug_manager.read().log(
-                "on_cursor_moved_i 4.1",
+                "trigger_fim 4.1",
                 &[&format!(
                     "pos_y {pos_y}, pos_x {pos_x}, lines_len: {}",
                     lines.len()
                 )],
             );
             if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
-                state
-                    .debug_manager
-                    .read()
-                    .log("on_cursor_moved_i 4.21", &[]);
+                state.debug_manager.read().log("trigger_fim 4.21", &[]);
 
                 // Collect all neovim information at the start
                 // This is critical - we capture everything needed before spawning async task
@@ -1360,20 +1138,17 @@ fn on_cursor_moved_i() -> NvimResult<()> {
                         });
                     } else {
                         state.debug_manager.read().log(
-                            "on_cursor_moved_i",
+                            "trigger_fim",
                             &["Tokio runtime not initialized, falling back to blocking"],
                         );
                     }
                 }
 
-                state
-                    .debug_manager
-                    .read()
-                    .log("on_cursor_moved_i 4.22", &[]);
+                state.debug_manager.read().log("trigger_fim 4.22", &[]);
             }
         }
     }
-    state.debug_manager.read().log("on_cursor_moved_i 5", &[]);
+    state.debug_manager.read().log("trigger_fim 5", &[]);
 
     Ok(())
 }
@@ -1466,142 +1241,6 @@ fn process_ring_buffer() -> NvimResult<()> {
     Ok(())
 }
 
-/// Setup autocmds function - creates autocmds for auto-triggering FIM and ring buffer
-fn setup_autocmds() -> NvimResult<()> {
-    let state = get_state();
-
-    // Clear existing autocmd IDs first (cleanup)
-    {
-        let mut autocmd_ids_lock = state.autocmd_ids.write();
-        autocmd_ids_lock.clear();
-    }
-
-    // Cursor movement for auto-FIM (CursorMovedI in insert mode)
-    if state.config.read().auto_fim {
-        let id = api::create_autocmd(
-            ["CursorMovedI", "InsertEnter", "InsertChange"],
-            &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-                .callback(|_| {
-                    let _ = on_cursor_moved_i();
-                    false // DO NOT DELETE this autocommand once used
-                })
-                .build(),
-        )
-        .unwrap_or(0);
-        let mut autocmd_ids_lock = state.autocmd_ids.write();
-        autocmd_ids_lock.push(id as u64);
-    }
-
-    // Yank text for ring buffer (TextYankPost)
-    let id = api::create_autocmd(
-        ["TextYankPost"],
-        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .callback(|_| {
-                let _ = on_text_yank_post();
-                false // DO NOT DELETE this autocommand once used
-            })
-            .build(),
-    )
-    .unwrap_or(0);
-    {
-        let mut autocmd_ids_lock = state.autocmd_ids.write();
-        autocmd_ids_lock.push(id as u64);
-    }
-
-    // Buffer enter for ring buffer AND filetype check
-    let id = api::create_autocmd(
-        ["BufEnter"],
-        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .callback(|_| {
-                let _ = on_buf_enter_and_check_filetype();
-                false // DO NOT DELETE this autocommand once used
-            })
-            .build(),
-    )
-    .unwrap_or(0);
-    {
-        let mut autocmd_ids_lock = state.autocmd_ids.write();
-        autocmd_ids_lock.push(id as u64);
-    }
-
-    // Buffer leave for ring buffer
-    let id = api::create_autocmd(
-        ["BufLeave"],
-        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .callback(|_| {
-                let _ = on_buf_leave();
-                false // DO NOT DELETE this autocommand once used
-            })
-            .build(),
-    )
-    .unwrap_or(0);
-    {
-        let mut autocmd_ids_lock = state.autocmd_ids.write();
-        autocmd_ids_lock.push(id as u64);
-    }
-
-    // Buffer write for ring buffer
-    let id = api::create_autocmd(
-        ["BufWritePost"],
-        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .callback(|_| {
-                let _ = on_buf_write_post();
-                false // DO NOT DELETE this autocommand once used
-            })
-            .build(),
-    )
-    .unwrap_or(0);
-    {
-        let mut autocmd_ids_lock = state.autocmd_ids.write();
-        autocmd_ids_lock.push(id as u64);
-    }
-
-    // InsertLeave - hide FIM hint when leaving Insert mode
-    let id = api::create_autocmd(
-        ["InsertLeave"],
-        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .callback(|_| {
-                let _ = fim_hide();
-                false // DO NOT DELETE this autocommand once used
-            })
-            .build(),
-    )
-    .unwrap_or(0);
-    {
-        let mut autocmd_ids_lock = state.autocmd_ids.write();
-        autocmd_ids_lock.push(id as u64);
-    }
-
-    // Setup timer-based ring buffer updates (every ring_update_ms)
-    setup_ring_buffer_timer()?;
-
-    Ok(())
-}
-
-/// Filetype check autocmd handler - enables/disables plugin based on filetype
-fn on_buf_enter_and_check_filetype() -> NvimResult<()> {
-    let state = get_state();
-    let is_enabled = state.enabled.load(Ordering::SeqCst);
-    drop(state);
-
-    // Check if current filetype should enable/disable the plugin
-    let should_be_enabled = {
-        let state = get_state();
-        let filetype = get_filetype().unwrap_or_default();
-        let config = state.config.read();
-        config.is_filetype_enabled(&filetype)
-    };
-
-    if should_be_enabled && !is_enabled {
-        enable_plugin()?;
-    } else if !should_be_enabled && is_enabled {
-        disable_plugin()?;
-    }
-
-    // Also gather ring buffer chunks (original BufEnter behavior)
-    on_buf_enter()
-}
-
 /// Setup a repeating timer to process ring buffer updates using tokio
 fn setup_ring_buffer_timer() -> NvimResult<()> {
     let state = get_state();
@@ -1635,106 +1274,6 @@ fn setup_ring_buffer_timer() -> NvimResult<()> {
             "Started ring buffer timer (interval: {}ms)",
             interval
         )],
-    );
-
-    Ok(())
-}
-
-/// Register nvim-oxi commands for the plugin
-fn register_commands() -> NvimResult<()> {
-    // FIM commands - use closure without args parameter
-    //let _ = api::create_user_command(
-    //    "LttwFim",
-    //    |_| -> NvimResult<()> {
-    //        fim_completion(false)?;
-    //        Ok(())
-    //    },
-    //    &Default::default(),
-    //);
-
-    let _ = api::create_user_command(
-        "LttwFimAcceptFull",
-        |_| -> NvimResult<()> {
-            fim_accept("full")?;
-            Ok(())
-        },
-        &Default::default(),
-    );
-
-    let _ = api::create_user_command(
-        "LttwFimAcceptLine",
-        |_| -> NvimResult<()> {
-            fim_accept("line")?;
-            Ok(())
-        },
-        &Default::default(),
-    );
-
-    let _ = api::create_user_command(
-        "LttwFimAcceptWord",
-        |_| -> NvimResult<()> {
-            fim_accept("word")?;
-            Ok(())
-        },
-        &Default::default(),
-    );
-
-    // FIM hide command
-    let _ = api::create_user_command(
-        "LttwFimHide",
-        |_| -> NvimResult<()> {
-            fim_hide()?;
-            Ok(())
-        },
-        &Default::default(),
-    );
-
-    // Instruction commands
-    let _ = api::create_user_command(
-        "LttwInst",
-        |_| -> NvimResult<()> {
-            // TODO: Get visual range and start instruction
-            debug_log("Starting instruction editing", vec![])?;
-            Ok(())
-        },
-        &Default::default(),
-    );
-
-    let _ = api::create_user_command(
-        "LttwInstRerun",
-        |_| -> NvimResult<()> {
-            instruction::inst_rerun()?;
-            Ok(())
-        },
-        &Default::default(),
-    );
-
-    let _ = api::create_user_command(
-        "LttwInstContinue",
-        |_| -> NvimResult<()> {
-            instruction::inst_continue()?;
-            Ok(())
-        },
-        &Default::default(),
-    );
-
-    // Debug commands
-    let _ = api::create_user_command(
-        "LttwDebugToggle",
-        |_| -> NvimResult<()> {
-            debug_toggle()?;
-            Ok(())
-        },
-        &Default::default(),
-    );
-
-    let _ = api::create_user_command(
-        "LttwDebugClear",
-        |_| -> NvimResult<()> {
-            debug_clear()?;
-            Ok(())
-        },
-        &Default::default(),
     );
 
     Ok(())

@@ -66,7 +66,7 @@ this project, all plugin functionality is achieved PURELY by using nvim-oxi
 
 The following issues have been identified which should be resolved:
 
- - in lib.rs there is a `on_cursor_moved_i` function which is called within
+ - in lib.rs there is a \x60trigger_fim\x60 function which is called within
    setup_autocmds() however this function has not been implemented. refer to
    `llama.vim` to understand how this function should be implemented then
    implement it and add it to the functions defined within lib.rs `lttw()`.
