@@ -499,6 +499,18 @@ pub fn render_fim_suggestion(
     }
 }
 
+pub fn trim_suggestion_curr_line<'a>(suggestion: &'a str, pos_x: usize, line_cur: &str) -> &'a str {
+    // If only one line, just replace the current line
+    let suffix = &line_cur[pos_x..];
+
+    // trim the first_line suffix if it is the same as the suffix
+    if suggestion.ends_with(suffix) {
+        suggestion.trim_end_matches(suffix)
+    } else {
+        suggestion
+    }
+}
+
 /// Accept FIM suggestion - returns the modified line
 pub fn accept_fim_suggestion(
     accept_type: &str,

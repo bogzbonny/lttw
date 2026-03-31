@@ -3,8 +3,12 @@
 // This module handles instruction-based editing where the user provides
 // an instruction and the model modifies the selected text accordingly.
 
-use crate::config::LttwConfig;
-use serde::{Deserialize, Serialize};
+use {
+    crate::{buf_get_lines, config::LttwConfig, get_current_buffer, get_pos, get_state},
+    nvim_oxi::{api::Buffer, Dictionary, Result as NvimResult},
+    serde::{Deserialize, Serialize},
+    std::sync::atomic::Ordering,
+};
 
 /// Instruction request
 #[derive(Debug, Clone, Serialize)]
@@ -484,6 +488,562 @@ pub fn build_instruction_virt_text(
     }
 
     virt_text
+}
+
+/// Instruction start function - creates a new instruction request with visual markers
+fn inst_start(l0: i64, l1: i64, inst: &str) -> NvimResult<i64> {
+    let state = get_state();
+    let bufnr = get_current_buffer();
+    let lines = buf_get_lines();
+
+    // Create new instruction request
+    let req_id = state.next_inst_req_id.fetch_add(1, Ordering::SeqCst);
+
+    let mut req =
+        InstructionRequestState::new(req_id, bufnr, (l0 as usize, l1 as usize), inst.to_string());
+
+    // Set namespace for extmarks
+    req.ns_id = state.inst_ns;
+
+    // Add visual marker at the end of the range
+    if let Some(ns_id) = req.ns_id {
+        let mut buf = Buffer::current();
+
+        // Create extmark at end of range to show instruction status
+        let opts = nvim_oxi::api::opts::SetExtmarkOptsBuilder::default()
+            .virt_text(vec![(
+                format!("[Instr: {}]", inst),
+                "llama_hl_inst_virt_proc".to_string(),
+            )])
+            .virt_text_pos(nvim_oxi::api::types::ExtmarkVirtTextPosition::Eol)
+            .build();
+
+        match buf.set_extmark(ns_id, l1 as usize, 0, &opts) {
+            Ok(id) => {
+                req.extmark_id = Some(id);
+                state.debug_manager.read().log(
+                    "inst_start",
+                    &[&format!(
+                        "Created extmark {} for instruction {}",
+                        id, req_id
+                    )],
+                );
+            }
+            Err(e) => {
+                state.debug_manager.read().log(
+                    "inst_start",
+                    &[&format!("Failed to create extmark: {:?}", e)],
+                );
+            }
+        }
+    }
+
+    // Build messages for server request
+    let messages =
+        build_instruction_payload(&lines, l0 as usize, l1 as usize, inst, &state.config.read());
+
+    req.inst_prev = messages;
+
+    // Store request
+    {
+        let mut instruction_requests_lock = state.instruction_requests.write();
+        instruction_requests_lock.insert(req_id, req);
+    }
+
+    state.debug_manager.read().log(
+        "inst_start",
+        &[&format!(
+            "Started instruction {} at range ({}, {})",
+            req_id, l0, l1
+        )],
+    );
+
+    Ok(req_id)
+}
+
+/// Instruction build function - builds payload without starting request
+fn inst_build(lines: Vec<String>, l0: i64, l1: i64, inst: &str) -> NvimResult<Dictionary> {
+    let state = get_state();
+    let messages =
+        build_instruction_payload(&lines, l0 as usize, l1 as usize, inst, &state.config.read());
+
+    let mut result = Dictionary::new();
+    let mut messages_dict = Vec::new();
+
+    for msg in messages {
+        let mut msg_dict = Dictionary::new();
+        msg_dict.insert("role", msg.role);
+        msg_dict.insert("content", msg.content);
+        messages_dict.push(msg_dict);
+    }
+
+    let messages_array: nvim_oxi::Array = messages_dict.into_iter().collect();
+    result.insert("messages", messages_array);
+    Ok(result)
+}
+
+/// Instruction send function - sends request and streams response
+#[allow(clippy::await_holding_lock)] // Uses state access within block_on for async call
+fn inst_send(req_id: i64) -> NvimResult<Option<String>> {
+    let state = get_state();
+
+    // Get the request
+    let (_req, messages, debug_manager, config) = {
+        let instruction_requests_lock = state.instruction_requests.read();
+        let r = match instruction_requests_lock.get(&req_id) {
+            Some(r) => r,
+            None => {
+                let debug_manager = state.debug_manager.read().clone();
+                debug_manager.log("inst_send", &[&format!("Request {} not found", req_id)]);
+                return Ok(None);
+            }
+        };
+
+        (
+            r.clone(),
+            r.inst_prev.clone(),
+            state.debug_manager.read().clone(),
+            state.config.read().clone(),
+        )
+    };
+
+    debug_manager.log(
+        "inst_send",
+        &[&format!(
+            "Sending instruction request {} with {} messages",
+            req_id,
+            messages.len()
+        )],
+    );
+
+    // Send request asynchronously
+    let result = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(async { send_instruction_stream(&messages, &config, req_id).await });
+
+    match result {
+        Ok(response) => {
+            // Process streaming response
+            let req_id_clone = req_id;
+
+            // Spawn a task to process the stream
+            tokio::runtime::Runtime::new().unwrap().spawn(async move {
+                // Read the response body
+                let body = match response.text().await {
+                    Ok(b) => b,
+                    Err(e) => {
+                        let _ = inst_update(req_id_clone, &format!("Error: {}", e));
+                        return;
+                    }
+                };
+
+                // Process SSE stream and update state
+                for line in body.lines() {
+                    if let Ok(updated_content) = inst_update(req_id_clone, line) {
+                        // Content has been updated
+                        let _ = updated_content;
+                    }
+                }
+
+                // Mark as finalized
+                let _ = inst_finalize(req_id_clone);
+            });
+
+            // Update request status
+            {
+                let mut instruction_requests_lock = state.instruction_requests.write();
+                if let Some(req) = instruction_requests_lock.get_mut(&req_id) {
+                    req.status = InstructionStatus::Generating;
+                }
+            }
+            inst_update_virt_text(req_id)?;
+            Ok(Some("streaming".to_string()))
+        }
+        Err(e) => {
+            // Log the error
+            let debug_manager = state.debug_manager.read().clone();
+            debug_manager.log("inst_send", &[&format!("Error: {:?}", e)]);
+
+            // Update request status
+            {
+                let mut instruction_requests_lock = state.instruction_requests.write();
+                if let Some(req) = instruction_requests_lock.get_mut(&req_id) {
+                    req.status = InstructionStatus::Error(e.to_string());
+                }
+            }
+            inst_update_virt_text(req_id)?;
+            Ok(None)
+        }
+    }
+}
+
+/// Update virtual text for instruction request
+fn inst_update_virt_text(req_id: i64) -> NvimResult<()> {
+    let state = get_state();
+
+    // Get request info first, then release borrow for logging
+    let (ns_id, extmark_id, range_1, virt_text) = {
+        let instruction_requests_lock = state.instruction_requests.read();
+        match instruction_requests_lock.get(&req_id) {
+            Some(r) => {
+                if let Some(ns_id) = r.ns_id {
+                    if let Some(_extmark_id) = r.extmark_id {
+                        let virt_text = build_instruction_virt_text(r, 50);
+                        (ns_id, r.extmark_id, r.range.1, virt_text)
+                    } else {
+                        return Ok(());
+                    }
+                } else {
+                    return Ok(());
+                }
+            }
+            None => return Ok(()),
+        }
+    };
+
+    let mut buf = Buffer::current();
+
+    // Clear old extmark
+    if let Some(old_id) = extmark_id {
+        let _ = buf.del_extmark(ns_id, old_id);
+    }
+
+    // Create new extmark with updated status
+    let opts = nvim_oxi::api::opts::SetExtmarkOptsBuilder::default()
+        .virt_text(virt_text)
+        .virt_text_pos(nvim_oxi::api::types::ExtmarkVirtTextPosition::Eol)
+        .build();
+
+    match buf.set_extmark(ns_id, range_1, 0, &opts) {
+        Ok(new_id) => {
+            // Update the request with new extmark id
+            let mut instruction_requests_lock = state.instruction_requests.write();
+            if let Some(req) = instruction_requests_lock.get_mut(&req_id) {
+                req.extmark_id = Some(new_id);
+            }
+            // Log after releasing borrow
+        }
+        Err(_e) => {
+            // Error case - nothing to log here
+        }
+    }
+
+    Ok(())
+}
+
+/// Instruction update function - processes streaming response chunk and updates state
+fn inst_update(req_id: i64, response_chunk: &str) -> NvimResult<String> {
+    let state = get_state();
+
+    // Get the request and accumulate response
+    let new_content = {
+        let mut instruction_requests_lock = state.instruction_requests.write();
+        if let Some(req) = instruction_requests_lock.get_mut(&req_id) {
+            // Parse the SSE chunk and extract content
+            let new_content = process_streaming_response(response_chunk, &req.result);
+
+            req.result = new_content.clone();
+            req.n_gen += 1;
+            req.status = InstructionStatus::Generating;
+
+            new_content
+        } else {
+            let debug_manager = state.debug_manager.read().clone();
+            debug_manager.log(
+                "inst_update",
+                &[&format!(
+                    "Request {} not found for streaming update",
+                    req_id
+                )],
+            );
+            return Ok(String::new());
+        }
+    };
+
+    // Update virtual text to show new content
+    inst_update_virt_text(req_id)?;
+
+    Ok(new_content)
+}
+
+/// Instruction finalize function - marks request as ready after streaming completes
+fn inst_finalize(req_id: i64) -> NvimResult<()> {
+    let state = get_state();
+
+    let result_len = {
+        let mut instruction_requests_lock = state.instruction_requests.write();
+        if let Some(req) = instruction_requests_lock.get_mut(&req_id) {
+            req.status = InstructionStatus::Ready;
+            req.result.len()
+        } else {
+            let debug_manager = state.debug_manager.read().clone();
+            debug_manager.log(
+                "inst_finalize",
+                &[&format!("Request {} not found for finalize", req_id)],
+            );
+            return Ok(());
+        }
+    };
+
+    // Log after updating state
+    {
+        let state = get_state();
+        state.debug_manager.read().log(
+            "inst_finalize",
+            &[&format!(
+                "Request {} finalized with {} chars",
+                req_id, result_len
+            )],
+        );
+    }
+
+    // Update virtual text to show ready status
+    inst_update_virt_text(req_id)?;
+
+    Ok(())
+}
+
+/// Instruction accept function - applies the generated result to the buffer
+fn inst_accept() -> NvimResult<()> {
+    let state = get_state();
+    let bufnr = get_current_buffer();
+
+    // Find instruction request for current buffer (prioritize Ready status)
+    let (req_id_to_accept, req) = {
+        let mut instruction_requests_lock = state.instruction_requests.write();
+        let req_to_accept = instruction_requests_lock
+            .iter()
+            .find(|(_, req)| {
+                req.bufnr == bufnr
+                    && (req.status == InstructionStatus::Ready
+                        || req.status == InstructionStatus::Generating)
+            })
+            .map(|(id, req)| (*id, req.clone()));
+
+        if let Some((req_id, req)) = req_to_accept {
+            instruction_requests_lock.remove(&req_id);
+            (Some(req_id), Some(req))
+        } else {
+            (None, None)
+        }
+    };
+
+    if let Some(req_id) = req_id_to_accept {
+        if let Some(req) = req {
+            if req.result.is_empty() {
+                state.debug_manager.read().log(
+                    "inst_accept",
+                    &[&format!(
+                        "Request {} has empty result, skipping apply",
+                        req_id
+                    )],
+                );
+                // Still clean up the visual marker
+                if let Some(ns_id) = req.ns_id {
+                    if let Some(extmark_id) = req.extmark_id {
+                        let mut buf = Buffer::current();
+                        let _ = buf.del_extmark(ns_id, extmark_id);
+                    }
+                }
+                return Ok(());
+            }
+
+            let result_lines: Vec<String> = req.result.split('\n').map(|s| s.to_string()).collect();
+            let (l0, l1) = req.range;
+
+            state.debug_manager.read().log(
+                "inst_accept",
+                &[&format!(
+                    "Applying {} lines to buffer {} at range ({}, {})",
+                    result_lines.len(),
+                    bufnr,
+                    l0,
+                    l1
+                )],
+            );
+
+            // Apply the result to the buffer using current buffer (assuming we're on the right buffer)
+            let mut buf = Buffer::current();
+
+            // Delete the original range and insert new lines in one operation
+            // set_lines replaces lines in range [start, end) with new lines
+            match buf.set_lines(l0..(l1 + 1), true, result_lines) {
+                Ok(_) => {
+                    let state = get_state();
+                    state.debug_manager.read().log(
+                        "inst_accept",
+                        &["Successfully applied instruction result to buffer"],
+                    );
+                }
+                Err(e) => {
+                    let state = get_state();
+                    state.debug_manager.read().log(
+                        "inst_accept",
+                        &[&format!("Failed to set buffer lines: {:?}", e)],
+                    );
+                }
+            }
+
+            // Clear the visual marker from the original location
+            if req.ns_id.is_some() && req.extmark_id.is_some() {
+                let mut buf = Buffer::current();
+                if let (Some(ns_id), Some(extmark_id)) = (req.ns_id, req.extmark_id) {
+                    let _ = buf.del_extmark(ns_id, extmark_id);
+                }
+            }
+
+            return Ok(());
+        }
+    }
+
+    state.debug_manager.read().log(
+        "inst_accept",
+        &["No ready instruction request found for current buffer"],
+    );
+
+    Ok(())
+}
+
+/// Instruction cancel function - cancels an instruction request and removes markers
+fn inst_cancel() -> NvimResult<()> {
+    let state = get_state();
+    let bufnr = get_current_buffer();
+    let (_, pos_y) = get_pos();
+
+    // Find and cancel the instruction request at the current line
+    let (req_id_to_cancel, req) = {
+        let mut instruction_requests_lock = state.instruction_requests.write();
+        let req_to_cancel = instruction_requests_lock
+            .iter()
+            .find(|(_, req)| req.bufnr == bufnr && pos_y >= req.range.0 && pos_y <= req.range.1)
+            .map(|(id, req)| (*id, req.clone()));
+
+        if let Some((req_id, req)) = req_to_cancel {
+            instruction_requests_lock.remove(&req_id);
+            (Some(req_id), Some(req))
+        } else {
+            (None, None)
+        }
+    };
+
+    if let Some(req_id) = req_id_to_cancel {
+        if let Some(req) = req {
+            state
+                .debug_manager
+                .read()
+                .log("inst_cancel", &[&format!("Cancelling request {}", req_id)]);
+
+            // Delete the visual marker
+            if let Some(ns_id) = req.ns_id {
+                if let Some(extmark_id) = req.extmark_id {
+                    let mut buf = Buffer::current();
+                    match buf.del_extmark(ns_id, extmark_id) {
+                        Ok(_) => {
+                            let state = get_state();
+                            state.debug_manager.read().log(
+                                "inst_cancel",
+                                &[&format!("Deleted extmark for request {}", req_id)],
+                            );
+                        }
+                        Err(e) => {
+                            let state = get_state();
+                            state.debug_manager.read().log(
+                                "inst_cancel",
+                                &[&format!("Failed to delete extmark: {:?}", e)],
+                            );
+                        }
+                    }
+                }
+            }
+
+            return Ok(());
+        }
+    }
+
+    Ok(())
+}
+
+/// Instruction rerun function - re-runs the last instruction
+pub fn inst_rerun() -> NvimResult<Option<String>> {
+    let state = get_state();
+    let bufnr = get_current_buffer();
+    let (_, pos_y) = get_pos();
+
+    // Find the instruction request at the current line
+    let req_id_to_rerun = {
+        let instruction_requests_lock = state.instruction_requests.read();
+        instruction_requests_lock
+            .iter()
+            .find(|(_, req)| {
+                req.bufnr == bufnr
+                    && pos_y >= req.range.0
+                    && pos_y <= req.range.1
+                    && req.status == InstructionStatus::Ready
+            })
+            .map(|(id, _)| *id)
+    };
+
+    if let Some(req_id) = req_id_to_rerun {
+        let mut instruction_requests_lock = state.instruction_requests.write();
+        if let Some(req) = instruction_requests_lock.get_mut(&req_id) {
+            // Reset status and result
+            req.status = InstructionStatus::Processing;
+            req.result.clear();
+            req.n_gen = 0;
+
+            // Remove the last assistant message from inst_prev
+            if let Some(pos) = req.inst_prev.iter().position(|m| m.role == "assistant") {
+                req.inst_prev.remove(pos);
+            }
+        }
+
+        state
+            .debug_manager
+            .read()
+            .log("inst_rerun", &[&format!("Re-running request {}", req_id)]);
+        return Ok(Some(format!("Re-running request {}", req_id)));
+    }
+
+    Ok(None)
+}
+
+/// Instruction continue function - continues with a new instruction
+pub fn inst_continue() -> NvimResult<Option<String>> {
+    let state = get_state();
+    let bufnr = get_current_buffer();
+    let (_, pos_y) = get_pos();
+
+    // Find the instruction request at the current line
+    let req_id_to_continue = {
+        let instruction_requests_lock = state.instruction_requests.read();
+        instruction_requests_lock
+            .iter()
+            .find(|(_, req)| {
+                req.bufnr == bufnr
+                    && pos_y >= req.range.0
+                    && pos_y <= req.range.1
+                    && req.status == InstructionStatus::Ready
+            })
+            .map(|(id, _)| *id)
+    };
+
+    if let Some(req_id) = req_id_to_continue {
+        let mut instruction_requests_lock = state.instruction_requests.write();
+        if let Some(req) = instruction_requests_lock.get_mut(&req_id) {
+            // Reset for continuation
+            req.status = InstructionStatus::Processing;
+            req.result.clear();
+            req.n_gen = 0;
+        }
+
+        state.debug_manager.read().log(
+            "inst_continue",
+            &[&format!("Continuing request {}", req_id)],
+        );
+        return Ok(Some(format!("Continuing request {}", req_id)));
+    }
+
+    Ok(None)
 }
 
 #[cfg(test)]
