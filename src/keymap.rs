@@ -1,5 +1,5 @@
 use {
-    crate::{fim_accept, fim_is_hint_shown, get_state},
+    crate::{fim::FimAcceptType, fim_accept, fim_is_hint_shown, get_state},
     nvim_oxi::{
         api::{
             opts::SetKeymapOptsBuilder,
@@ -48,7 +48,7 @@ pub fn setup_keymaps() -> NvimResult<()> {
         &SetKeymapOptsBuilder::default()
             .callback(|_| {
                 if let Ok(true) = fim_is_hint_shown() {
-                    if let Err(e) = fim_accept("full") {
+                    if let Err(e) = fim_accept(FimAcceptType::Full) {
                         // Log error but don't crash
                         let state = get_state();
                         state
@@ -70,7 +70,7 @@ pub fn setup_keymaps() -> NvimResult<()> {
         &SetKeymapOptsBuilder::default()
             .callback(|_| {
                 if let Ok(true) = fim_is_hint_shown() {
-                    if let Err(e) = fim_accept("line") {
+                    if let Err(e) = fim_accept(FimAcceptType::Line) {
                         // Log error but don't crash
                         let state = get_state();
                         state.debug_manager.read().log(

@@ -2,6 +2,7 @@
 01. sometimes sending two updates (not just one) probably on 'o' because it is
     both a cursor move and entering insert mode. Solved with debounce
 01. Panic condition when tab from an empty line 
+01. fix cursor positioning on accepted text
 
 ^^^^^^^^^ DONE
 
@@ -16,5 +17,7 @@
 
 05. add config option for debugging (default false)
 05. Add info string
+
+05. fix tests-integrations (compile errors) 
  
 20. option to not predict while in comments

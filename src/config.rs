@@ -72,7 +72,7 @@ impl Default for LttwConfig {
             stop_strings: Vec::new(),
             t_max_prompt_ms: 500,
             t_max_predict_ms: 1000,
-            debounce_ms: 200,
+            debounce_ms: 100,
             show_info: 2,
             auto_fim: true,
             max_line_suffix: 8,

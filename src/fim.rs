@@ -9,7 +9,6 @@ use {
         cache::Cache,
         config::LttwConfig,
         context::{get_local_context, LocalContext},
-        debug::DebugManager,
         ring_buffer::{ExtraContext, RingBuffer},
         utils::sha256,
     },
@@ -138,10 +137,8 @@ pub enum FimError {
 /// Returns the content and optionally timing info for display
 #[allow(clippy::too_many_arguments)] // FIM requires context from multiple sources
 pub async fn fim_completion(
-    debug_manager: DebugManager,
     pos_x: usize,
     pos_y: usize,
-    is_auto: bool,
     lines: &[String],
     config: &LttwConfig,
     cache: std::sync::Arc<parking_lot::RwLock<Cache>>,
@@ -151,26 +148,12 @@ pub async fn fim_completion(
     // Lock the cache and ring buffer for setup
     let request_data = {
         // Get local context
-        debug_manager.log("fim_completion 0", &[]);
         let ctx = get_local_context(lines, pos_x, pos_y, prev, config);
-        debug_manager.log(
-            "fim_completion 1",
-            &[&format!(
-                //"lines: {lines:#?}, pos_x: {pos_x}, pos_y: {pos_y}, prev: {prev:?}, config: {config:#?}"
-                "pos_x: {pos_x}, pos_y: {pos_y}, prev: {prev:?}, config: {config:#?}"
-            )],
-        );
-
-        debug_manager.log(
-            "fim_completion 2",
-            &[&format!("is_auto {is_auto}, ctx \n{ctx:#?}",)],
-        );
 
         // Skip auto FIM if too much suffix
-        if is_auto && ctx.line_cur_suffix.len() > config.max_line_suffix as usize {
+        if ctx.line_cur_suffix.len() > config.max_line_suffix as usize {
             return Ok(None);
         }
-        debug_manager.log("fim_completion 3", &[]);
 
         // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
         // This prevents redundant context from cluttering the ring buffer
@@ -181,14 +164,11 @@ pub async fn fim_completion(
                 .write()
                 .evict_similar(&current_prefix_lines, 0.5);
         }
-        debug_manager.log("fim_completion 4", &[]);
 
         // Build request
         let extra = ring_buffer.read().get_extra();
-        debug_manager.log("fim_completion 5", &[]);
 
         let hashes = compute_hashes(&ctx);
-        debug_manager.log("fim_completion 6", &[]);
 
         // Check cache
         if config.auto_fim {
@@ -199,7 +179,6 @@ pub async fn fim_completion(
                 }
             }
         }
-        debug_manager.log("fim_completion 7", &[]);
 
         // Build request
         let request = FimRequest {
@@ -221,11 +200,7 @@ pub async fn fim_completion(
             stream: false,
             cache_prompt: true,
             t_max_prompt_ms: config.t_max_prompt_ms,
-            t_max_predict_ms: if is_auto {
-                250
-            } else {
-                config.t_max_predict_ms
-            },
+            t_max_predict_ms: config.t_max_predict_ms,
             response_fields: vec![
                 "content".to_string(),
                 "timings/prompt_n".to_string(),
@@ -242,7 +217,6 @@ pub async fn fim_completion(
             model: config.model_fim.clone(),
             prev: prev.map(|p| p.to_vec()).unwrap_or_default(),
         };
-        debug_manager.log("fim_completion 8", &[]);
 
         // Return the request data and hashes, releasing locks before we exit the block
         (request, hashes, ctx.clone())
@@ -252,11 +226,9 @@ pub async fn fim_completion(
 
     // Send request without holding locks
     let response_text = send_request(&request, config).await?;
-    debug_manager.log("fim_completion 9", &[]);
 
     // Parse response
     let response: FimResponse = serde_json::from_str(&response_text)?;
-    debug_manager.log("fim_completion 10", &[]);
 
     // Cache the response with timing info (new block for re-acquired locks)
     {
@@ -266,7 +238,6 @@ pub async fn fim_completion(
         for hash in &hashes {
             cache_lock.insert(hash.clone(), response_text.clone());
         }
-        debug_manager.log("fim_completion 11", &[]);
     }
 
     // Return content - timing info is stored in cache alongside response
@@ -395,6 +366,23 @@ pub fn render_fim_suggestion(
     }
 }
 
+#[derive(Clone)]
+pub enum FimAcceptType {
+    Full,
+    Line,
+    Word,
+}
+
+impl std::fmt::Display for FimAcceptType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FimAcceptType::Full => write!(f, "full"),
+            FimAcceptType::Line => write!(f, "line"),
+            FimAcceptType::Word => write!(f, "word"),
+        }
+    }
+}
+
 // returns if Inline fill should be used
 pub fn trim_suggestion_curr_line<'a>(
     suggestion: &'a str,
@@ -402,7 +390,11 @@ pub fn trim_suggestion_curr_line<'a>(
     line_cur: &str,
 ) -> (&'a str, bool) {
     // If only one line, just replace the current line
-    let suffix = &line_cur[pos_x..];
+    let suffix = if pos_x <= line_cur.len() {
+        &line_cur[pos_x..]
+    } else {
+        ""
+    };
 
     // trim the first_line suffix if it is the same as the suffix
     if suggestion.ends_with(suffix) {
@@ -414,12 +406,17 @@ pub fn trim_suggestion_curr_line<'a>(
 }
 
 /// Accept FIM suggestion - returns the modified line
+// returns if inline should be used
 pub fn accept_fim_suggestion(
-    accept_type: &str,
+    accept_type: FimAcceptType,
     pos_x: usize,
     line_cur: &str,
     content: &[String],
-) -> (String, Option<Vec<String>>) {
+) -> (
+    String,              // first line
+    Option<Vec<String>>, // rest lines (None if not needed)
+    Option<usize>,       // inline-end (NONE if not inline)
+) {
     let mut first_line = content[0].clone();
 
     // Handle whitespace-only lines
@@ -437,48 +434,47 @@ pub fn accept_fim_suggestion(
     }
     .to_string();
 
-    let new_line = if content.len() == 1 {
+    let (new_line, inline) = if content.len() == 1 {
         // If only one line, just replace the current line
         let suffix = if pos_x <= line_cur.len() {
             &line_cur[pos_x..]
         } else {
             ""
         };
-
-        // trim the first_line suffix if it is the same as the suffix
-        if first_line.ends_with(suffix) {
-            first_line = first_line.trim_end_matches(suffix).to_string();
-        }
-
-        prefix + &first_line + suffix
+        let (first_line, is_inline) = trim_suggestion_curr_line(&first_line, pos_x, line_cur);
+        let inline = if is_inline {
+            Some(prefix.len() + first_line.len())
+        } else {
+            None
+        };
+        (prefix + &first_line + suffix, inline)
     } else {
-        prefix + &first_line
+        (prefix + &first_line, None)
     };
 
     // Handle accept type
     match accept_type {
-        "full" => {
+        FimAcceptType::Full => {
             // Insert rest of suggestion
             if content.len() > 1 {
                 let rest: Vec<String> = content[1..].to_vec();
-                return (new_line, Some(rest));
+                (new_line, Some(rest), inline)
+            } else {
+                (new_line, None, inline)
             }
         }
-        "line" => {
-            return (new_line, None);
-        }
-        "word" => {
+        FimAcceptType::Line => (new_line, None, inline),
+        FimAcceptType::Word => {
             // Accept only the first word
             let suffix = &line_cur[pos_x..];
             if let Some(word_match) = first_line.split_whitespace().next() {
                 let _new_word = word_match.to_string() + suffix;
-                return (new_line + word_match, None);
+                (new_line + word_match, None, inline)
+            } else {
+                (new_line, None, inline)
             }
         }
-        _ => {}
     }
-
-    (new_line, None)
 }
 
 /// Result of rendering a FIM suggestion
@@ -531,7 +527,6 @@ mod tests {
             prev: vec![],
         };
 
-        let json = serde_json::to_string(&request).expect("Request should serialize to JSON");
         let json = serde_json::to_string(&request).expect("Request should serialize to JSON");
         let parsed: serde_json::Value =
             serde_json::from_str(&json).expect("JSON should be parseable");

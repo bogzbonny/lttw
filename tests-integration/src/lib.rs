@@ -93,11 +93,7 @@ fn test_fim_context_gathering() -> Result<()> {
 #[nvim_oxi::test]
 fn test_fim_accept_simulation() -> Result<()> {
     // Create initial code
-    let code = vec![
-        "fn hello() {",
-        "    println!(\"hello\");",
-        "}",
-    ];
+    let code = vec!["fn hello() {", "    println!(\"hello\");", "}"];
 
     let mut buf = api::Buffer::current();
     buf.set_lines(.., true, code.clone().into_iter())?;
@@ -127,7 +123,7 @@ fn test_fim_accept_simulation() -> Result<()> {
 fn test_fim_cache_lookup() -> Result<()> {
     // This test verifies the cache mechanism works in a real Neovim instance
     use lttw::cache::Cache;
-    
+
     let mut cache: Cache = Cache::new(10);
 
     // Simulate caching a completion
@@ -149,7 +145,7 @@ fn test_fim_cache_lookup() -> Result<()> {
 #[nvim_oxi::test]
 fn test_ring_buffer_basic() -> Result<()> {
     use lttw::ring_buffer::RingBuffer;
-    
+
     let mut ring_buffer = RingBuffer::new(3, 64);
 
     // Add first chunk
@@ -193,7 +189,7 @@ fn test_ring_buffer_basic() -> Result<()> {
 #[nvim_oxi::test]
 fn test_ring_buffer_eviction() -> Result<()> {
     use lttw::ring_buffer::RingBuffer;
-    
+
     let mut ring_buffer = RingBuffer::new(5, 64);
 
     let chunk1 = vec![
@@ -228,10 +224,10 @@ fn test_ring_buffer_eviction() -> Result<()> {
 #[nvim_oxi::test]
 fn test_cache_with_ring_buffer() -> Result<()> {
     use lttw::cache::Cache;
-    use lttw::ring_buffer::RingBuffer;
-    use lttw::fim::compute_hashes;
     use lttw::context::LocalContext;
-    
+    use lttw::fim::compute_hashes;
+    use lttw::ring_buffer::RingBuffer;
+
     let mut cache = Cache::new(10);
     let mut ring_buffer = RingBuffer::new(3, 64);
 
@@ -259,7 +255,10 @@ fn test_cache_with_ring_buffer() -> Result<()> {
     let hashes = compute_hashes(&ctx);
 
     // Verify we generated multiple hashes
-    assert!(hashes.len() > 1, "Should generate multiple hashes from truncated prefixes");
+    assert!(
+        hashes.len() > 1,
+        "Should generate multiple hashes from truncated prefixes"
+    );
 
     // Cache a response for these hashes
     let response = r#"{"content":" world","timings":{},"tokens_cached":0,"truncated":false}"#;
@@ -278,21 +277,21 @@ fn test_cache_with_ring_buffer() -> Result<()> {
 /// Test FIM suggestion rendering
 #[nvim_oxi::test]
 fn test_fim_render_suggestion() -> Result<()> {
-    use lttw::fim::render_fim_suggestion;
     use lttw::config::LttwConfig;
-    
+    use lttw::fim::render_fim_suggestion;
+
     let config = LttwConfig::new();
-    
+
     // Test rendering a simple suggestion
     let content = "42;";
     let line_cur = "    let x = ";
     let pos_x = 11; // After "= "
-    
+
     let rendered = render_fim_suggestion(pos_x, 0, content, line_cur, &config);
-    
+
     assert!(!rendered.content.is_empty());
     assert!(rendered.can_accept);
-    
+
     Ok(())
 }
 
@@ -300,15 +299,15 @@ fn test_fim_render_suggestion() -> Result<()> {
 #[nvim_oxi::test]
 fn test_fim_accept_word() -> Result<()> {
     use lttw::fim::accept_fim_suggestion;
-    
+
     let content = vec!["world".to_string()];
     let line_cur = "Hello ";
     let pos_x = 6;
-    
+
     let (new_line, _rest) = accept_fim_suggestion("word", pos_x, line_cur, &content);
-    
+
     assert!(new_line.contains("world"));
-    
+
     Ok(())
 }
 
@@ -316,7 +315,7 @@ fn test_fim_accept_word() -> Result<()> {
 #[nvim_oxi::test]
 fn test_fim_accept_full() -> Result<()> {
     use lttw::fim::accept_fim_suggestion;
-    
+
     let content = vec![
         "fn greet() {".to_string(),
         "    println!(\"Hello\");".to_string(),
@@ -324,13 +323,13 @@ fn test_fim_accept_full() -> Result<()> {
     ];
     let line_cur = "";
     let pos_x = 0;
-    
+
     let (new_line, rest) = accept_fim_suggestion("full", pos_x, line_cur, &content);
-    
+
     assert_eq!(new_line, "fn greet() {");
     assert!(rest.is_some());
     assert_eq!(rest.unwrap().len(), 2); // Two remaining lines
-    
+
     Ok(())
 }
 
@@ -338,19 +337,19 @@ fn test_fim_accept_full() -> Result<()> {
 #[nvim_oxi::test]
 fn test_cache_lru_eviction() -> Result<()> {
     use lttw::cache::Cache;
-    
+
     let mut cache = Cache::new(5); // Small cache for testing
-    
+
     // Insert more items than max_keys
     for i in 0..10 {
         let key = format!("key_{}", i);
         let value = format!("value_{}", i);
         cache.insert(key, value);
     }
-    
+
     // Cache should not exceed max_keys (5)
     assert!(cache.len() <= 6); // May temporarily be one over during insertion
-    
+
     Ok(())
 }
 
@@ -358,7 +357,7 @@ fn test_cache_lru_eviction() -> Result<()> {
 #[nvim_oxi::test]
 fn test_ring_buffer_no_duplicates() -> Result<()> {
     use lttw::ring_buffer::RingBuffer;
-    
+
     let mut ring_buffer = RingBuffer::new(5, 64);
 
     let chunk = vec![
@@ -388,7 +387,7 @@ fn test_ring_buffer_no_duplicates() -> Result<()> {
 fn test_fim_request_with_extra_context() -> Result<()> {
     use lttw::fim::FimRequest;
     use lttw::ring_buffer::RingBuffer;
-    
+
     let mut ring_buffer = RingBuffer::new(2, 64);
 
     // Add some chunks to the ring buffer
@@ -427,8 +426,7 @@ fn test_fim_request_with_extra_context() -> Result<()> {
     };
 
     let json = serde_json::to_string(&request).expect("Request should serialize to JSON");
-    let parsed: serde_json::Value =
-        serde_json::from_str(&json).expect("JSON should be parseable");
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("JSON should be parseable");
 
     // Verify input_extra contains the chunk data
     let extra_array = parsed["input_extra"].as_array().unwrap();
@@ -447,61 +445,74 @@ fn test_fim_request_with_extra_context() -> Result<()> {
 #[nvim_oxi::test]
 #[ignore = "requires llama.cpp server running at http://127.0.0.1:8012"]
 fn test_fim_server_completion() -> Result<()> {
-    use lttw::config::LttwConfig;
     use lttw::cache::Cache;
+    use lttw::config::LttwConfig;
     use lttw::ring_buffer::RingBuffer;
     use tokio::runtime::Runtime;
-    
+
     // Create a buffer with incomplete code
     let code = vec![
         "fn fibonacci(n: u32) -> u32 {",
         "    if n <= 1 { return n; }",
-        "    ",  // Cursor here - expect completion
+        "    ", // Cursor here - expect completion
         "}",
     ];
 
     let mut buf = api::Buffer::current();
     buf.set_lines(.., true, code.into_iter())?;
-    
+
     // Set cursor position
     let mut win = api::Window::current();
     win.set_cursor(2, 4)?;
 
     // Get lines for FIM request
-    let lines: Vec<String> = buf.get_lines(.., false)?.collect::<Vec<_>>().into_iter().map(|s| s.to_string()).collect();
-    
+    let lines: Vec<String> = buf
+        .get_lines(.., false)?
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+
     // Setup config and state
     let config = LttwConfig::new();
     let mut cache = Cache::new(10);
     let mut ring_buffer = RingBuffer::new(3, 64);
-    
+
     // Add some context to ring buffer
-    ring_buffer.pick_chunk(vec![
-        "fn helper() {".to_string(),
-        "    println!(\"helper\");".to_string(),
-        "}".to_string(),
-    ], false, true);
+    ring_buffer.pick_chunk(
+        vec![
+            "fn helper() {".to_string(),
+            "    println!(\"helper\");".to_string(),
+            "}".to_string(),
+        ],
+        false,
+        true,
+    );
     ring_buffer.update();
-    
+
     // Run async FIM completion
     let rt = Runtime::new().unwrap();
     let result = rt.block_on(async {
         lttw::fim::fim_completion(
-            4,  // pos_x
-            2,  // pos_y
-            false,  // is_auto
+            4,     // pos_x
+            2,     // pos_y
+            false, // is_auto
             &lines,
             &config,
             &mut cache,
             &mut ring_buffer,
-            None,  // prev
-        ).await
+            None, // prev
+        )
+        .await
     });
-    
+
     // Check if we got a response (may fail if server not running)
     match result {
         Ok(Some(content)) => {
-            assert!(!content.is_empty(), "Server should return non-empty completion");
+            assert!(
+                !content.is_empty(),
+                "Server should return non-empty completion"
+            );
         }
         Ok(None) => {
             // No completion is also valid (e.g., cache hit or skipped)
@@ -519,55 +530,56 @@ fn test_fim_server_completion() -> Result<()> {
 #[nvim_oxi::test]
 #[ignore = "requires llama.cpp server running at http://127.0.0.1:8012"]
 fn test_fim_cache_with_server() -> Result<()> {
-    use lttw::config::LttwConfig;
     use lttw::cache::Cache;
+    use lttw::config::LttwConfig;
     use lttw::ring_buffer::RingBuffer;
     use tokio::runtime::Runtime;
-    
+
     let config = LttwConfig::new();
     let mut cache = Cache::new(10);
     let mut ring_buffer = RingBuffer::new(3, 64);
-    
+
     // Setup code for FIM
-    let code = vec![
-        "fn add(a: i32, b: i32) -> i32 {",
-        "    a + b",
-        "}",
-    ];
+    let code = vec!["fn add(a: i32, b: i32) -> i32 {", "    a + b", "}"];
 
     let mut buf = api::Buffer::current();
     buf.set_lines(.., true, code.into_iter())?;
 
     // Get buffer lines
-    let lines: Vec<String> = buf.get_lines(.., false)?.collect::<Vec<_>>().into_iter().map(|s| s.to_string()).collect();
-    
+    let lines: Vec<String> = buf
+        .get_lines(.., false)?
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+
     // First FIM request - should go to server
     let rt = Runtime::new().unwrap();
     let result1 = rt.block_on(async {
         lttw::fim::fim_completion(
-            8,  // pos_x
-            0,  // pos_y
-            false,
+            8, // pos_x
+            0, // pos_y
             &lines,
             &config,
             &mut cache,
             &mut ring_buffer,
             None,
-        ).await
+        )
+        .await
     });
 
     // Second identical request - should potentially hit cache (depending on implementation)
     let result2 = rt.block_on(async {
         lttw::fim::fim_completion(
-            8,  // pos_x
-            0,  // pos_y
-            false,
+            8, // pos_x
+            0, // pos_y
             &lines,
             &config,
             &mut cache,
             &mut ring_buffer,
             None,
-        ).await
+        )
+        .await
     });
 
     // Verify server returned something (or cached result)
@@ -588,56 +600,65 @@ fn test_fim_cache_with_server() -> Result<()> {
 #[nvim_oxi::test]
 #[ignore = "requires llama.cpp server running at http://127.0.0.1:8012"]
 fn test_ring_buffer_server_integration() -> Result<()> {
-    use lttw::config::LttwConfig;
     use lttw::cache::Cache;
+    use lttw::config::LttwConfig;
     use lttw::ring_buffer::RingBuffer;
     use tokio::runtime::Runtime;
-    
+
     let config = LttwConfig::new();
     let mut cache = Cache::new(10);
     let mut ring_buffer = RingBuffer::new(5, 64);
-    
+
     // Add multiple chunks to ring buffer
     for i in 0..3 {
-        ring_buffer.pick_chunk(vec![
-            format!("fn function_{}() {{", i),
-            format!("    println!(\"function {}\");", i),
-            "}".to_string(),
-        ], false, true);
+        ring_buffer.pick_chunk(
+            vec![
+                format!("fn function_{}() {{", i),
+                format!("    println!(\"function {}\");", i),
+                "}".to_string(),
+            ],
+            false,
+            true,
+        );
     }
-    
+
     // Update ring buffer to move chunks from queued to active
     ring_buffer.update();
     ring_buffer.update();
     ring_buffer.update();
-    
+
     assert_eq!(ring_buffer.len(), 3);
-    
+
     // Setup code for FIM with extra context
     let code = vec![
         "fn main() {",
-        "    function_0();",  // Expect server to suggest more functions
+        "    function_0();", // Expect server to suggest more functions
         "}",
     ];
 
     let mut buf = api::Buffer::current();
     buf.set_lines(.., true, code.into_iter())?;
 
-    let lines: Vec<String> = buf.get_lines(.., false)?.collect::<Vec<_>>().into_iter().map(|s| s.to_string()).collect();
-    
+    let lines: Vec<String> = buf
+        .get_lines(.., false)?
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+
     // FIM request should include ring buffer extra context
     let rt = Runtime::new().unwrap();
     let result = rt.block_on(async {
         lttw::fim::fim_completion(
-            16,  // pos_x - after function_0()
-            1,   // pos_y
-            false,
+            16, // pos_x - after function_0()
+            1,  // pos_y
             &lines,
             &config,
             &mut cache,
             &mut ring_buffer,
             None,
-        ).await
+        )
+        .await
     });
 
     // Check result
@@ -653,4 +674,3 @@ fn test_ring_buffer_server_integration() -> Result<()> {
 
     Ok(())
 }
-
