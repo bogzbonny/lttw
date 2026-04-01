@@ -77,7 +77,6 @@ pub struct FimTimings {
 }
 
 /// Build info string from timing information
-
 #[allow(clippy::too_many_arguments)] // Info display requires many parameters
 pub fn build_info_string(
     timings: &FimTimings,

@@ -189,6 +189,8 @@ struct FimState {
     line_cur: String,
     can_accept: bool,
     content: Vec<String>,
+    /// Last cursor Y position where ring buffer chunks were picked
+    last_pick_pos_y: Option<usize>,
 }
 
 /// State for FIM worker debouncing
@@ -224,6 +226,7 @@ impl FimState {
         self.pos_y = pos_y;
         self.line_cur = line_cur;
         self.can_accept = can_accept;
+        self.content.clear();
         self.content = content;
     }
 
@@ -234,6 +237,17 @@ impl FimState {
         self.line_cur.clear();
         self.can_accept = false;
         self.content.clear();
+        self.last_pick_pos_y = None;
+    }
+
+    /// Update the last pick position
+    fn set_last_pick_pos_y(&mut self, pos_y: usize) {
+        self.last_pick_pos_y = Some(pos_y);
+    }
+
+    /// Get the last pick position
+    fn get_last_pick_pos_y(&self) -> Option<usize> {
+        self.last_pick_pos_y
     }
 }
 
@@ -1208,32 +1222,106 @@ fn trigger_fim() -> NvimResult<()> {
     }
     state.debug_manager.read().log("trigger_fim 4", &[]);
 
-    let _ = fim_hide();
+    //let _ = fim_hide();
 
-    // If no cached hint found and we're not already showing a hint, spawn async worker
-    let hint_shown = state.fim_state.read().hint_shown;
-    if !hint_shown {
-        // Only trigger FIM if we're in a reasonable position
-        //if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
-        state.debug_manager.read().log("trigger_fim 4.21", &[]);
+    // Only trigger FIM if we're in a reasonable position
+    //if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
+    state.debug_manager.read().log("trigger_fim 4.21", &[]);
 
-        // Get the current sequence number to track this request
-        let seq = increment_debounce_sequence(&state);
-        let tokio_runtime_lock = state.tokio_runtime.lock();
-        let state_ = state.clone();
-        if let Some(runtime) = tokio_runtime_lock.as_ref() {
-            runtime.spawn(async move {
-                // TODO log error
-                let _ = spawn_fim_worker(state_, buffer_handle, lines, pos_x, pos_y, seq).await;
-            });
-        } else {
-            state.debug_manager.read().log(
-                "trigger_fim",
-                &["Tokio runtime not initialized, falling back to blocking"],
-            );
-        }
-        //}
+    // Get the current sequence number to track this request
+    let seq = increment_debounce_sequence(&state);
+    let tokio_runtime_lock = state.tokio_runtime.lock();
+    let state_ = state.clone();
+    // Clone lines for the async worker since we need lines for ring buffer logic above
+    let lines_clone = lines.clone();
+    if let Some(runtime) = tokio_runtime_lock.as_ref() {
+        runtime.spawn(async move {
+            // TODO log error
+            let _ = spawn_fim_worker(state_, buffer_handle, lines_clone, pos_x, pos_y, seq).await;
+        });
+    } else {
+        state.debug_manager.read().log(
+            "trigger_fim",
+            &["Tokio runtime not initialized, falling back to blocking"],
+        );
     }
+    //}
+
+    //// Ring buffer pick logic - gather extra context when cursor moves significantly
+    //// This mirrors the logic in llama#fim (llama.vim lines 930-946)
+    //let last_pick_pos_y = state.fim_state.read().get_last_pick_pos_y();
+    //let delta_y = last_pick_pos_y
+    //    .map(|last_pos| {
+    //        pos_y
+    //            .saturating_sub(last_pos)
+    //            .max(last_pos.saturating_sub(pos_y))
+    //    })
+    //    .unwrap_or(33); // If no last position, treat as large delta to gather initial chunks
+
+    //// Only gather chunks if cursor has moved more than 32 lines
+    //let ring_buffer_pick_needed = delta_y > 32;
+
+    //if ring_buffer_pick_needed {
+    //    let max_y = lines.len().saturating_sub(1); // line('$') - 1 (0-indexed)
+
+    //    // Get ring configuration
+    //    let config_lock = state.config.read();
+    //    let ring_scope = config_lock.ring_scope as usize;
+    //    let n_prefix = config_lock.n_prefix as usize;
+    //    let n_suffix = config_lock.n_suffix as usize;
+    //    let ring_chunk_size = config_lock.ring_chunk_size as usize;
+
+    //    // Expand the prefix even further
+    //    // Vim: getline(max([1, l:pos_y - g:llama_config.ring_scope]), max([1, l:pos_y - g:llama_config.n_prefix]))
+    //    // In Rust with 0-indexed lines:
+    //    let prefix_start = (pos_y.saturating_sub(ring_scope)).max(0);
+    //    let prefix_end = (pos_y.saturating_sub(n_prefix)).max(0);
+
+    //    let prefix_lines =
+    //        if prefix_start <= max_y && prefix_end <= max_y && prefix_start <= prefix_end {
+    //            lines
+    //                .get(prefix_start..=prefix_end)
+    //                .map(|slice| slice.to_vec())
+    //                .unwrap_or_default()
+    //        } else {
+    //            Vec::new()
+    //        };
+
+    //    // Log prefix chunk info before moving
+    //    if !prefix_lines.is_empty() {
+    //        let mut ring_buffer_lock = state.ring_buffer.write();
+    //        ring_buffer_lock.pick_chunk(prefix_lines, false, false);
+    //    }
+
+    //    // Pick a suffix chunk
+    //    // Vim: getline(min([l:max_y, l:pos_y + g:llama_config.n_suffix]), min([l:max_y, l:pos_y + g:llama_config.n_suffix + g:llama_config.ring_chunk_size]))
+    //    // In Rust with 0-indexed lines:
+    //    let suffix_start = pos_y.saturating_add(n_suffix).min(max_y);
+    //    let suffix_end = (pos_y
+    //        .saturating_add(n_suffix)
+    //        .saturating_add(ring_chunk_size))
+    //    .min(max_y);
+
+    //    let suffix_lines =
+    //        if suffix_start <= max_y && suffix_end <= max_y && suffix_start <= suffix_end {
+    //            lines
+    //                .get(suffix_start..=suffix_end)
+    //                .map(|slice| slice.to_vec())
+    //                .unwrap_or_default()
+    //        } else {
+    //            Vec::new()
+    //        };
+
+    //    // Log suffix chunk info before moving
+    //    if !suffix_lines.is_empty() {
+    //        let mut ring_buffer_lock = state.ring_buffer.write();
+    //        ring_buffer_lock.pick_chunk(suffix_lines, false, false);
+    //    }
+
+    //    // Update the last pick position
+    //    state.fim_state.write().set_last_pick_pos_y(pos_y);
+    //}
+
     Ok(())
 }
 
