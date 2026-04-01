@@ -342,7 +342,7 @@ fn init_tokio_runtime() {
     // NOTE I tested this with a tokio thread and it didn't work
     let _ = nvim_oxi::libuv::TimerHandle::start(
         Duration::from_millis(500),
-        Duration::from_millis(100), // repeat
+        Duration::from_millis(50), // repeat
         |_| {
             // Need this so that it executes on the main thread (or else extmarks won't display)
             nvim_oxi::schedule(|_| process_pending_display());
@@ -1099,20 +1099,6 @@ fn increment_debounce_sequence(state: &PluginState) -> u64 {
     seq
 }
 
-///// Check if we should spawn based on debounce timing
-///// Returns true if we should spawn, false if we should skip this request
-//fn debounce_active(state: &PluginState) -> bool {
-//    let config = state.config.read();
-//    let debounce_ms = config.debounce_ms;
-//    drop(config);
-
-//    let now = Instant::now();
-//    let last_spawn = state.fim_worker_debounce.read().last_spawn_ms;
-
-//    // If enough time has passed, we should spawn
-//    now.duration_since(last_spawn) <= Duration::from_millis(debounce_ms as u64)
-//}
-
 /// Record that a worker was spawned (update last_spawn timestamp)
 fn record_worker_spawn(state: &PluginState) {
     let mut debounce_lock = state.fim_worker_debounce.write();
@@ -1121,7 +1107,6 @@ fn record_worker_spawn(state: &PluginState) {
 
 /// Trigger speculative FIM completion using async worker
 fn trigger_fim() -> NvimResult<()> {
-    let _ = fim_hide();
     let state = get_state();
     state.debug_manager.read().log(
         "trigger_fim",
@@ -1161,7 +1146,6 @@ fn trigger_fim() -> NvimResult<()> {
     state.debug_manager.read().log("trigger_fim 2", &[]);
 
     // Check cache for primary hash
-    let mut found_cached = false;
     for hash in &hashes {
         state
             .debug_manager
@@ -1171,7 +1155,6 @@ fn trigger_fim() -> NvimResult<()> {
             let cache_lock = state.cache.read();
             cache_lock.get_fim(hash)
         } {
-            found_cached = true;
             state.debug_manager.read().log(
                 "trigger_fim",
                 &[&format!("Found cached completion for hash {}", &hash[..16])],
@@ -1217,53 +1200,39 @@ fn trigger_fim() -> NvimResult<()> {
                             )],
                         );
                     }
-
                     break;
                 }
             }
+            return Ok(()); // cache found return without spawning a FIM task
         }
     }
     state.debug_manager.read().log("trigger_fim 4", &[]);
 
+    let _ = fim_hide();
+
     // If no cached hint found and we're not already showing a hint, spawn async worker
-    {
-        let hint_shown = state.fim_state.read().hint_shown;
-        if !found_cached && !hint_shown {
-            // Only trigger FIM if we're in a reasonable position
+    let hint_shown = state.fim_state.read().hint_shown;
+    if !hint_shown {
+        // Only trigger FIM if we're in a reasonable position
+        //if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
+        state.debug_manager.read().log("trigger_fim 4.21", &[]);
+
+        // Get the current sequence number to track this request
+        let seq = increment_debounce_sequence(&state);
+        let tokio_runtime_lock = state.tokio_runtime.lock();
+        let state_ = state.clone();
+        if let Some(runtime) = tokio_runtime_lock.as_ref() {
+            runtime.spawn(async move {
+                // TODO log error
+                let _ = spawn_fim_worker(state_, buffer_handle, lines, pos_x, pos_y, seq).await;
+            });
+        } else {
             state.debug_manager.read().log(
-                "trigger_fim 4.1",
-                &[&format!(
-                    "pos_y {pos_y}, pos_x {pos_x}, lines_len: {}",
-                    lines.len()
-                )],
+                "trigger_fim",
+                &["Tokio runtime not initialized, falling back to blocking"],
             );
-            if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
-                state.debug_manager.read().log("trigger_fim 4.21", &[]);
-
-                // Get the current sequence number to track this request
-                let seq = increment_debounce_sequence(&state);
-
-                state
-                    .debug_manager
-                    .read()
-                    .log("trigger_fim debounce", &[&format!("seq: {seq}",)]);
-
-                let tokio_runtime_lock = state.tokio_runtime.lock();
-                let state_ = state.clone();
-                if let Some(runtime) = tokio_runtime_lock.as_ref() {
-                    runtime.spawn(async move {
-                        // TODO log error
-                        let _ =
-                            spawn_fim_worker(state_, buffer_handle, lines, pos_x, pos_y, seq).await;
-                    });
-                } else {
-                    state.debug_manager.read().log(
-                        "trigger_fim",
-                        &["Tokio runtime not initialized, falling back to blocking"],
-                    );
-                }
-            }
         }
+        //}
     }
     Ok(())
 }

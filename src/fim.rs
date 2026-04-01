@@ -77,6 +77,7 @@ pub struct FimTimings {
 }
 
 /// Build info string from timing information
+
 #[allow(clippy::too_many_arguments)] // Info display requires many parameters
 pub fn build_info_string(
     timings: &FimTimings,
@@ -256,7 +257,7 @@ pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
     // Truncated prefix hashes (up to 3 levels)
     let mut prefix_trim = ctx.prefix.clone();
     let re = regex::Regex::new(r"^[^\n]*\n").unwrap();
-    for _ in 0..3 {
+    for _ in 0..5 {
         prefix_trim = re.replace(&prefix_trim, "").to_string();
         if prefix_trim.is_empty() {
             break;
@@ -334,18 +335,6 @@ pub fn render_fim_suggestion(
         }
     }
 
-    // Handle whitespace-only lines
-    let line_cur_stripped = line_cur.trim();
-    if line_cur_stripped.is_empty() {
-        let content_stripped = lines[0].trim_start();
-        let _lead = std::cmp::min(lines[0].len() - content_stripped.len(), line_cur.len());
-
-        let mut new_lines = lines.clone();
-        new_lines[0] = content_stripped.to_string();
-
-        lines = new_lines;
-    }
-
     // Append suffix to last line
     let suffix_end = std::cmp::min(pos_x, line_cur.len());
     let suffix = &line_cur[suffix_end..];
@@ -417,13 +406,7 @@ pub fn accept_fim_suggestion(
     Option<Vec<String>>, // rest lines (None if not needed)
     Option<usize>,       // inline-end (NONE if not inline)
 ) {
-    let mut first_line = content[0].clone();
-
-    // Handle whitespace-only lines
-    let line_cur_stripped = line_cur.trim();
-    if line_cur_stripped.is_empty() {
-        first_line = first_line.trim_start().to_string();
-    }
+    let first_line = content[0].clone();
 
     let pos_x = pos_x + 1; // Adjust for 0-based indexing
 
@@ -447,7 +430,7 @@ pub fn accept_fim_suggestion(
         } else {
             None
         };
-        (prefix + &first_line + suffix, inline)
+        (prefix + first_line + suffix, inline)
     } else {
         (prefix + &first_line, None)
     };
