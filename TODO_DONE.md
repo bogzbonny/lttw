@@ -1,3 +1,4 @@
+
 You are in the middle of the task of translating the codebase provided under
 `llama.vim/` into a new neovim plugin written in ENTIRELY rust using neovim
 bindings through the use of the nvim-oxi crate. NOTE there is not, nor should
@@ -106,3 +107,5 @@ keystroke or two will they render from the cache, explore and understand this
 issue then attempt to fix. Maybe if we just check for updates every X ms from a
 nvim schedule it would render
 
+01. fix filetype prediction logic
+01. add debounce

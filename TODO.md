@@ -1,5 +1,3 @@
-01. fix filetype prediction logic
-01. added debounce
 
 ^^^^^^^^^ DONE
 
@@ -9,6 +7,3 @@
     both a cursor move and entering insert mode
  
 20. option to not predict while in comments
-
-----------------------------
-
