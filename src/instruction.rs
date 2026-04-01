@@ -491,6 +491,7 @@ pub fn build_instruction_virt_text(
 }
 
 /// Instruction start function - creates a new instruction request with visual markers
+#[allow(dead_code)]
 fn inst_start(l0: i64, l1: i64, inst: &str) -> NvimResult<i64> {
     let state = get_state();
     let bufnr = get_current_buffer();
@@ -562,6 +563,7 @@ fn inst_start(l0: i64, l1: i64, inst: &str) -> NvimResult<i64> {
 }
 
 /// Instruction build function - builds payload without starting request
+#[allow(dead_code)]
 fn inst_build(lines: Vec<String>, l0: i64, l1: i64, inst: &str) -> NvimResult<Dictionary> {
     let state = get_state();
     let messages =
@@ -584,6 +586,7 @@ fn inst_build(lines: Vec<String>, l0: i64, l1: i64, inst: &str) -> NvimResult<Di
 
 /// Instruction send function - sends request and streams response
 #[allow(clippy::await_holding_lock)] // Uses state access within block_on for async call
+#[allow(dead_code)]
 fn inst_send(req_id: i64) -> NvimResult<Option<String>> {
     let state = get_state();
 
@@ -678,6 +681,7 @@ fn inst_send(req_id: i64) -> NvimResult<Option<String>> {
 }
 
 /// Update virtual text for instruction request
+#[allow(dead_code)]
 fn inst_update_virt_text(req_id: i64) -> NvimResult<()> {
     let state = get_state();
 
@@ -732,6 +736,7 @@ fn inst_update_virt_text(req_id: i64) -> NvimResult<()> {
 }
 
 /// Instruction update function - processes streaming response chunk and updates state
+#[allow(dead_code)]
 fn inst_update(req_id: i64, response_chunk: &str) -> NvimResult<String> {
     let state = get_state();
 
@@ -767,6 +772,7 @@ fn inst_update(req_id: i64, response_chunk: &str) -> NvimResult<String> {
 }
 
 /// Instruction finalize function - marks request as ready after streaming completes
+#[allow(dead_code)]
 fn inst_finalize(req_id: i64) -> NvimResult<()> {
     let state = get_state();
 
@@ -804,6 +810,7 @@ fn inst_finalize(req_id: i64) -> NvimResult<()> {
 }
 
 /// Instruction accept function - applies the generated result to the buffer
+#[allow(dead_code)]
 fn inst_accept() -> NvimResult<()> {
     let state = get_state();
     let bufnr = get_current_buffer();
@@ -905,6 +912,7 @@ fn inst_accept() -> NvimResult<()> {
 }
 
 /// Instruction cancel function - cancels an instruction request and removes markers
+#[allow(dead_code)]
 fn inst_cancel() -> NvimResult<()> {
     let state = get_state();
     let bufnr = get_current_buffer();

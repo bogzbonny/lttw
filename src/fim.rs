@@ -273,111 +273,6 @@ pub async fn fim_completion(
     Ok(Some(response.content))
 }
 
-/// Try to generate a suggestion using the data in the cache
-/// Looks at the previous 10 characters to see if a completion is cached.
-/// If one is found at (x,y) then it checks that the characters typed after (x,y)
-/// match up with the cached completion result.
-///
-/// # Arguments
-/// * `pos_x` - X position (column) in the current line
-/// * `pos_y` - Y position (line number)
-/// * `lines` - All lines in the buffer
-/// * `cache` - Cache to lookup completions
-/// * `config` - Plugin configuration
-///
-/// # Returns
-/// * `Some(RenderedSuggestion)` - If a cached completion is found
-/// * `None` - If no cached completion is found
-pub fn fim_try_hint(
-    pos_x: usize,
-    pos_y: usize,
-    lines: &[String],
-    cache: &mut Cache,
-    config: &LttwConfig,
-) -> Option<RenderedSuggestion> {
-    // Get local context
-    let ctx = get_local_context(lines, pos_x, pos_y, None, config);
-
-    // Compute primary hash
-    let primary_hash = format!("{}{}{}{}", ctx.prefix, ctx.middle, "Î", ctx.suffix);
-    let hash = sha256(&primary_hash);
-
-    // Check if the completion is cached (and update LRU order)
-    if let Some(raw) = cache.get_fim_mut(&hash) {
-        if let Ok(response) = serde_json::from_str::<FimResponse>(&raw) {
-            let content = response.content;
-            if !content.is_empty() {
-                return Some(render_fim_suggestion(
-                    pos_x,
-                    pos_y,
-                    &content,
-                    &ctx.line_cur_suffix,
-                    config,
-                ));
-            }
-        }
-    }
-
-    // ... or if there is a cached completion nearby (10 characters behind)
-    // Looks at the previous 10 characters to see if a completion is cached.
-    let pm = format!("{}{}", ctx.prefix, ctx.middle);
-    let mut best_len = 0;
-    let mut best_response: Option<FimResponse> = None;
-
-    // Only search if pm has enough characters
-    if pm.len() < 2 {
-        return None;
-    }
-
-    for i in 0..128.min(pm.len() - 2) {
-        let removed = &pm[pm.len() - (1 + i)..];
-        let ctx_new = format!("{}Î{}", &pm[..pm.len() - (2 + i)], ctx.suffix);
-        let hash_new = sha256(&ctx_new);
-
-        if let Some(response_cached) = cache.get_fim_mut(&hash_new) {
-            if response_cached.is_empty() {
-                continue;
-            }
-
-            if let Ok(response) = serde_json::from_str::<FimResponse>(&response_cached) {
-                let content = &response.content;
-
-                // Check that the removed text matches the beginning of the cached response
-                if content.len() > i && &content[..=i] == removed {
-                    // Found a match - use the rest of the content
-                    let remaining = if i + 1 < content.len() {
-                        &content[i + 1..]
-                    } else {
-                        ""
-                    };
-
-                    if !remaining.is_empty() && remaining.len() > best_len {
-                        best_len = remaining.len();
-                        best_response = Some(FimResponse {
-                            content: remaining.to_string(),
-                            timings: response.timings,
-                            tokens_cached: response.tokens_cached,
-                            truncated: response.truncated,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    if let Some(response) = best_response {
-        Some(render_fim_suggestion(
-            pos_x,
-            pos_y,
-            &response.content,
-            &ctx.line_cur_suffix,
-            config,
-        ))
-    } else {
-        None
-    }
-}
-
 /// Compute hashes for caching
 pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
     let mut hashes = Vec::new();
@@ -500,15 +395,21 @@ pub fn render_fim_suggestion(
     }
 }
 
-pub fn trim_suggestion_curr_line<'a>(suggestion: &'a str, pos_x: usize, line_cur: &str) -> &'a str {
+// returns if Inline fill should be used
+pub fn trim_suggestion_curr_line<'a>(
+    suggestion: &'a str,
+    pos_x: usize,
+    line_cur: &str,
+) -> (&'a str, bool) {
     // If only one line, just replace the current line
     let suffix = &line_cur[pos_x..];
 
     // trim the first_line suffix if it is the same as the suffix
     if suggestion.ends_with(suffix) {
-        suggestion.trim_end_matches(suffix)
+        (suggestion.trim_end_matches(suffix), true)
     } else {
-        suggestion
+        // If suggestion.len() less than suffix then assume infill display as okay
+        (suggestion, suggestion.len() < suffix.len())
     }
 }
 
@@ -529,18 +430,29 @@ pub fn accept_fim_suggestion(
 
     let pos_x = pos_x + 1; // Adjust for 0-based indexing
 
+    let prefix = if pos_x <= line_cur.len() {
+        &line_cur[..pos_x]
+    } else {
+        ""
+    }
+    .to_string();
+
     let new_line = if content.len() == 1 {
         // If only one line, just replace the current line
-        let suffix = &line_cur[pos_x..];
+        let suffix = if pos_x <= line_cur.len() {
+            &line_cur[pos_x..]
+        } else {
+            ""
+        };
 
         // trim the first_line suffix if it is the same as the suffix
         if first_line.ends_with(suffix) {
             first_line = first_line.trim_end_matches(suffix).to_string();
         }
 
-        line_cur[..pos_x].to_string() + &first_line + suffix
+        prefix + &first_line + suffix
     } else {
-        line_cur[..pos_x].to_string() + &first_line
+        prefix + &first_line
     };
 
     // Handle accept type
@@ -619,6 +531,7 @@ mod tests {
             prev: vec![],
         };
 
+        let json = serde_json::to_string(&request).expect("Request should serialize to JSON");
         let json = serde_json::to_string(&request).expect("Request should serialize to JSON");
         let parsed: serde_json::Value =
             serde_json::from_str(&json).expect("JSON should be parseable");
@@ -952,94 +865,5 @@ mod tests {
 
         // Should still have same queued count
         assert_eq!(ring_buffer.queued_len(), 0);
-    }
-
-    #[test]
-    fn test_fim_try_hint_basic() {
-        // Test that fim_try_hint finds cached completions
-        let mut cache = Cache::new(10);
-        let config = LttwConfig::new();
-        let lines = vec![
-            "fn main() {".to_string(),
-            "    println!(\"hello\");".to_string(),
-            "}".to_string(),
-        ];
-
-        // Get the actual context that fim_try_hint will compute
-        let actual_ctx = get_local_context(&lines, 4, 1, None, &config);
-
-        // Cache a completion for this context
-        let response = r#"{"content":"world","timings":{},"tokens_cached":0,"truncated":false}"#;
-        let hash = sha256(&format!(
-            "{}{}{}{}",
-            actual_ctx.prefix, actual_ctx.middle, "Î", actual_ctx.suffix
-        ));
-        println!("Test hash: {}", hash);
-        println!(
-            "Actual context - prefix: {:?}, middle: {:?}, suffix: {:?}",
-            actual_ctx.prefix, actual_ctx.middle, actual_ctx.suffix
-        );
-        cache.insert(hash, response.to_string());
-
-        // Try to get hint
-        let result = fim_try_hint(4, 1, &lines, &mut cache, &config);
-
-        // Should find the cached completion
-        assert!(result.is_some(), "Should find cached completion");
-        let suggestion = result.unwrap();
-        assert!(suggestion.can_accept);
-    }
-
-    #[test]
-    fn test_fim_try_hint_nearby_completion() {
-        // Test that fim_try_hint finds nearby cached completions
-        let mut cache = Cache::new(10);
-        let config = LttwConfig::new();
-        let lines = vec![
-            "fn main() {".to_string(),
-            "    println!(\"hello world\");".to_string(),
-            "}".to_string(),
-        ];
-
-        // Get context at position 4 (before "world")
-        let ctx_behind = get_local_context(&lines, 4, 1, None, &config);
-
-        // Cache a completion for this position
-        let response = r#"{"content":" world","timings":{},"tokens_cached":0,"truncated":false}"#;
-        let hash_behind = sha256(&format!(
-            "{}{}{}{}",
-            ctx_behind.prefix, ctx_behind.middle, "Î", ctx_behind.suffix
-        ));
-        cache.insert(hash_behind.clone(), response.to_string());
-
-        // Test that we can find the hash directly (basic nearby lookup)
-        let ctx_current = get_local_context(&lines, 9, 1, None, &config);
-        let hash_current = sha256(&format!(
-            "{}{}{}{}",
-            ctx_current.prefix, ctx_current.middle, "Î", ctx_current.suffix
-        ));
-
-        // The hashes should be different
-        assert_ne!(hash_behind, hash_current);
-
-        // But the cache should still contain the original hash
-        assert!(cache.contains_key(&hash_behind));
-    }
-
-    #[test]
-    fn test_fim_try_hint_no_cache() {
-        // Test that fim_try_hint returns None when no cache entry exists
-        let mut cache = Cache::new(10);
-        let config = LttwConfig::new();
-        let lines = vec![
-            "fn main() {".to_string(),
-            "    println!(\"hello\");".to_string(),
-            "}".to_string(),
-        ];
-
-        let result = fim_try_hint(4, 1, &lines, &mut cache, &config);
-
-        // Should return None when no cached completion exists
-        assert!(result.is_none());
     }
 }

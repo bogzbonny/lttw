@@ -10,7 +10,6 @@ use {
 /// Get filetype function
 pub fn get_filetype() -> NvimResult<String> {
     let ft = get_option_value::<String>("filetype", &OptionOpts::default())?;
-    ///
     Ok(ft)
 }
 

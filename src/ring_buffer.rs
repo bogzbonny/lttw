@@ -98,6 +98,8 @@ pub fn setup_ring_buffer_timer() -> NvimResult<()> {
 }
 
 /// Ring buffer pick chunk function
+// TODO verify if this is still needed
+#[allow(dead_code)]
 fn ring_pick_chunk(lines: Vec<String>, no_mod: bool, do_evict: bool) -> NvimResult<()> {
     let state = get_state();
     state
@@ -108,6 +110,8 @@ fn ring_pick_chunk(lines: Vec<String>, no_mod: bool, do_evict: bool) -> NvimResu
 }
 
 /// Ring buffer get extra function
+// TODO verify if this is still needed
+#[allow(dead_code)]
 fn ring_get_extra() -> NvimResult<Vec<Dictionary>> {
     let state = get_state();
     let ring_buffer_lock = state.ring_buffer.read();

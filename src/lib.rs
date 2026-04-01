@@ -21,6 +21,7 @@ use {
         api::{
             del_autocmd,
             opts::SetExtmarkOptsBuilder,
+            types::ExtmarkVirtTextPosition,
             {self, Buffer, Window},
         },
         Dictionary, Function, Result as NvimResult,
@@ -78,7 +79,6 @@ fn lttw_setup() -> NvimResult<()> {
     keymap::setup_keymaps()?;
 
     // Setup filetype
-    // XXX setup regular?
     autocommands::setup_filetype_autocmd()?;
 
     // Setup timer-based ring buffer updates (every ring_update_ms)
@@ -96,11 +96,13 @@ struct PluginState {
     debug_manager: Arc<RwLock<debug::DebugManager>>,
     instruction_requests: Arc<RwLock<HashMap<i64, InstructionRequestState>>>,
     enabled: Arc<AtomicBool>,
+    #[allow(dead_code)]
     next_inst_req_id: Arc<AtomicI64>,
     fim_state: Arc<RwLock<FimState>>,
     fim_worker_debounce: Arc<RwLock<FimWorkerDebounce>>,
     extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
-    inst_ns: Option<u32>,    // Namespace for instruction extmarks
+    #[allow(dead_code)]
+    inst_ns: Option<u32>, // Namespace for instruction extmarks
     autocmd_ids: Arc<RwLock<Vec<u32>>>,
     autocmd_id_filetype_check: Arc<RwLock<Option<u32>>>,
     ring_buffer_timer_handle: Arc<RwLock<RingBufferTimerHandle>>,
@@ -395,7 +397,7 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> NvimResult<()> {
     );
 
     // Display virtual text using extmarks
-    display_fim_hint(&state)?;
+    display_fim_text(&state)?;
 
     state.debug_manager.read().log(
         "handle_fim_completion_message",
@@ -417,7 +419,16 @@ async fn spawn_fim_worker(
     cursor_y: usize,
     is_auto: bool,
 ) -> Result<(), nvim_oxi::Error> {
-    spawn_fim_worker_impl(state, buffer_handle, buffer_lines, cursor_x, cursor_y, is_auto, None).await
+    spawn_fim_worker_impl(
+        state,
+        buffer_handle,
+        buffer_lines,
+        cursor_x,
+        cursor_y,
+        is_auto,
+        None,
+    )
+    .await
 }
 
 /// Async worker task with debounce sequence tracking
@@ -431,7 +442,16 @@ async fn spawn_fim_worker_with_debounce(
     sequence: u64,
     is_auto: bool,
 ) -> Result<(), nvim_oxi::Error> {
-    spawn_fim_worker_impl(state, buffer_handle, buffer_lines, cursor_x, cursor_y, is_auto, Some(sequence)).await
+    spawn_fim_worker_impl(
+        state,
+        buffer_handle,
+        buffer_lines,
+        cursor_x,
+        cursor_y,
+        is_auto,
+        Some(sequence),
+    )
+    .await
 }
 
 /// Implementation of FIM worker with optional debounce sequence tracking
@@ -477,7 +497,7 @@ async fn spawn_fim_worker_impl(
         let last_spawn = state.fim_worker_debounce.read().last_spawn_ms;
         let elapsed = now.duration_since(last_spawn);
         let debounce_expired = elapsed >= std::time::Duration::from_millis(debounce_ms as u64);
-        
+
         if debounce_expired {
             // Debounce has expired, record the spawn and proceed
             record_worker_spawn(&state);
@@ -492,16 +512,16 @@ async fn spawn_fim_worker_impl(
                     seq, seq, remaining_ms
                 )],
             );
-            
+
             // Wait for remaining debounce time
             tokio::time::sleep(std::time::Duration::from_millis(remaining_ms)).await;
-            
+
             // Re-check if we're still the most recent request
             let latest_sequence = {
                 let debounce_lock = state.fim_worker_debounce.read();
                 debounce_lock.next_sequence - 1
             };
-            
+
             if seq < latest_sequence {
                 // A newer request has come in, discard this one
                 state.debug_manager.read().log(
@@ -513,7 +533,7 @@ async fn spawn_fim_worker_impl(
                 );
                 return Ok(());
             }
-            
+
             // Still the most recent, record the spawn
             record_worker_spawn(&state);
         }
@@ -781,7 +801,7 @@ fn fim_hide() -> NvimResult<()> {
 }
 
 /// Display FIM hint as virtual text using extmarks with optional inline info
-fn display_fim_hint(state: &Arc<PluginState>) -> NvimResult<()> {
+fn display_fim_text(state: &Arc<PluginState>) -> NvimResult<()> {
     // Lock the fim_state and config to get the data we need
     let (hint_shown, content, extmark_ns, pos_y, pos_x, line_cur, _config, debug_manager) = {
         let fs = state.fim_state.read();
@@ -819,7 +839,8 @@ fn display_fim_hint(state: &Arc<PluginState>) -> NvimResult<()> {
 
         // Build virtual text string - first line of suggestion
         let suggestion_text = content[0].clone();
-        let suggestion_text = fim::trim_suggestion_curr_line(&suggestion_text, pos_x, &line_cur);
+        let (suggestion_text, use_inline) =
+            fim::trim_suggestion_curr_line(&suggestion_text, pos_x, &line_cur);
 
         // Build inline info string if show_info is enabled (mode 2 = inline)
         let virt_text_vec: Vec<(String, String)> =
@@ -828,11 +849,13 @@ fn display_fim_hint(state: &Arc<PluginState>) -> NvimResult<()> {
         // Create extmark opts with virtual text using builder pattern
         let mut opts = SetExtmarkOptsBuilder::default();
         opts.virt_text(virt_text_vec);
-        if content.len() > 1 {
-            opts.virt_text_pos(nvim_oxi::api::types::ExtmarkVirtTextPosition::Overlay);
-        } else {
-            opts.virt_text_pos(nvim_oxi::api::types::ExtmarkVirtTextPosition::Inline);
+
+        let mut text_pos = ExtmarkVirtTextPosition::Overlay;
+        if content.len() == 1 && use_inline {
+            text_pos = ExtmarkVirtTextPosition::Inline;
         }
+
+        opts.virt_text_pos(text_pos);
 
         // Add multi-line support - display rest of suggestion lines below
         if content.len() > 1 {
@@ -854,13 +877,13 @@ fn display_fim_hint(state: &Arc<PluginState>) -> NvimResult<()> {
         match buf.set_extmark(ns_id, pos_y, pos_x + 1, &opts.build()) {
             Ok(_id) => {
                 debug_manager.log(
-                    "display_fim_hint",
+                    "display_fim_text",
                     &[&format!("Set extmark at line {}, col {}", pos_y, pos_x + 1)],
                 );
             }
             Err(e) => {
                 debug_manager.log(
-                    "display_fim_hint",
+                    "display_fim_text",
                     &[&format!("Error setting extmark: {:?}", e)],
                 );
             }
@@ -1122,7 +1145,7 @@ fn check_debounce(state: &PluginState) -> bool {
 
     let now = std::time::Instant::now();
     let last_spawn = state.fim_worker_debounce.read().last_spawn_ms;
-    
+
     // If enough time has passed, we should spawn
     now.duration_since(last_spawn) >= std::time::Duration::from_millis(debounce_ms as u64)
 }
@@ -1221,7 +1244,7 @@ fn trigger_fim() -> NvimResult<()> {
 
                     // Display virtual text using extmarks
                     if rendered.can_accept {
-                        let _ = display_fim_hint(&state);
+                        let _ = display_fim_text(&state);
 
                         state.debug_manager.read().log(
                             "trigger_fim",
@@ -1256,10 +1279,10 @@ fn trigger_fim() -> NvimResult<()> {
 
                 // Get the current sequence number to track this request
                 let current_sequence = increment_debounce_sequence(&state);
-                
+
                 // Check if we should spawn based on debounce timing
                 let should_spawn = check_debounce(&state);
-                
+
                 state.debug_manager.read().log(
                     "trigger_fim debounce",
                     &[&format!(
@@ -1267,13 +1290,13 @@ fn trigger_fim() -> NvimResult<()> {
                         current_sequence, should_spawn
                     )],
                 );
-                
+
                 if should_spawn {
                     // Spawn immediately since debounce has elapsed
                     let state_clone = state.clone();
                     let buffer_handle_clone = buffer_handle;
                     let lines_clone = lines.clone();
-                    
+
                     let tokio_runtime_lock = state.tokio_runtime.lock();
                     if let Some(runtime) = tokio_runtime_lock.as_ref() {
                         record_worker_spawn(&state);
@@ -1300,7 +1323,7 @@ fn trigger_fim() -> NvimResult<()> {
                     let state_clone = state.clone();
                     let buffer_handle_clone = buffer_handle;
                     let lines_clone = lines.clone();
-                    
+
                     let tokio_runtime_lock = state.tokio_runtime.lock();
                     if let Some(runtime) = tokio_runtime_lock.as_ref() {
                         let _ = runtime.spawn(async move {
