@@ -1,4 +1,5 @@
 01. fix filetype prediction logic
+01. added debounce
 
 ^^^^^^^^^ DONE
 

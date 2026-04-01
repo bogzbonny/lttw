@@ -98,6 +98,7 @@ struct PluginState {
     enabled: Arc<AtomicBool>,
     next_inst_req_id: Arc<AtomicI64>,
     fim_state: Arc<RwLock<FimState>>,
+    fim_worker_debounce: Arc<RwLock<FimWorkerDebounce>>,
     extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
     inst_ns: Option<u32>,    // Namespace for instruction extmarks
     autocmd_ids: Arc<RwLock<Vec<u32>>>,
@@ -138,6 +139,7 @@ impl PluginState {
             inst_ns,
             next_inst_req_id: Arc::new(AtomicI64::new(0)),
             fim_state: Arc::new(RwLock::new(FimState::default())),
+            fim_worker_debounce: Arc::new(RwLock::new(FimWorkerDebounce::new())),
             extmark_ns,
             enabled: Arc::new(AtomicBool::new(enable_at_startup)),
             autocmd_ids: Arc::new(RwLock::new(Vec::new())),
@@ -183,6 +185,24 @@ struct FimState {
     line_cur: String,
     can_accept: bool,
     content: Vec<String>,
+}
+
+/// State for FIM worker debouncing
+#[derive(Debug, Clone)]
+struct FimWorkerDebounce {
+    /// Timestamp of the last worker spawn attempt
+    last_spawn_ms: std::time::Instant,
+    /// Sequence number for tracking most recent request
+    next_sequence: u64,
+}
+
+impl FimWorkerDebounce {
+    fn new() -> Self {
+        Self {
+            last_spawn_ms: std::time::Instant::now(),
+            next_sequence: 0,
+        }
+    }
 }
 
 impl FimState {
@@ -387,6 +407,8 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> NvimResult<()> {
 
 /// Async worker task that collects neovim information and sends completion results through channel
 /// This function is called from trigger_fim and spawns a non-blocking task
+/// Implements debouncing: only allows the most recent worker to be spawned if there are
+/// multiple workers that wanted to be spawned within debounce_ms time period.
 async fn spawn_fim_worker(
     state: Arc<PluginState>,
     buffer_handle: u64,
@@ -395,6 +417,108 @@ async fn spawn_fim_worker(
     cursor_y: usize,
     is_auto: bool,
 ) -> Result<(), nvim_oxi::Error> {
+    spawn_fim_worker_impl(state, buffer_handle, buffer_lines, cursor_x, cursor_y, is_auto, None).await
+}
+
+/// Async worker task with debounce sequence tracking
+/// This function is called when debounce is active and needs to check if this is the most recent request
+async fn spawn_fim_worker_with_debounce(
+    state: Arc<PluginState>,
+    buffer_handle: u64,
+    buffer_lines: Vec<String>,
+    cursor_x: usize,
+    cursor_y: usize,
+    sequence: u64,
+    is_auto: bool,
+) -> Result<(), nvim_oxi::Error> {
+    spawn_fim_worker_impl(state, buffer_handle, buffer_lines, cursor_x, cursor_y, is_auto, Some(sequence)).await
+}
+
+/// Implementation of FIM worker with optional debounce sequence tracking
+async fn spawn_fim_worker_impl(
+    state: Arc<PluginState>,
+    buffer_handle: u64,
+    buffer_lines: Vec<String>,
+    cursor_x: usize,
+    cursor_y: usize,
+    is_auto: bool,
+    sequence: Option<u64>,
+) -> Result<(), nvim_oxi::Error> {
+    // Check debounce if we have a sequence
+    if let Some(seq) = sequence {
+        let debounce_ms = {
+            let config = state.config.read();
+            config.debounce_ms
+        };
+
+        // Wait a bit to see if another request comes in
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        // Check if this is still the most recent request
+        let latest_sequence = {
+            let debounce_lock = state.fim_worker_debounce.read();
+            debounce_lock.next_sequence - 1
+        };
+
+        // If this is no longer the most recent request, don't spawn
+        if seq < latest_sequence {
+            state.debug_manager.read().log(
+                "spawn_fim_worker",
+                &[&format!(
+                    "Discarding stale worker (sequence {} < latest {})",
+                    seq, latest_sequence
+                )],
+            );
+            return Ok(());
+        }
+
+        // This is the most recent request, check if debounce has elapsed
+        let now = std::time::Instant::now();
+        let last_spawn = state.fim_worker_debounce.read().last_spawn_ms;
+        let elapsed = now.duration_since(last_spawn);
+        let debounce_expired = elapsed >= std::time::Duration::from_millis(debounce_ms as u64);
+        
+        if debounce_expired {
+            // Debounce has expired, record the spawn and proceed
+            record_worker_spawn(&state);
+        } else {
+            // Still within debounce period. Since this is the most recent request,
+            // we should wait until debounce expires and then spawn.
+            let remaining_ms = debounce_ms as u64 - elapsed.as_millis() as u64;
+            state.debug_manager.read().log(
+                "spawn_fim_worker",
+                &[&format!(
+                    "Within debounce period, waiting {}ms (seq {}, remaining {}ms)",
+                    seq, seq, remaining_ms
+                )],
+            );
+            
+            // Wait for remaining debounce time
+            tokio::time::sleep(std::time::Duration::from_millis(remaining_ms)).await;
+            
+            // Re-check if we're still the most recent request
+            let latest_sequence = {
+                let debounce_lock = state.fim_worker_debounce.read();
+                debounce_lock.next_sequence - 1
+            };
+            
+            if seq < latest_sequence {
+                // A newer request has come in, discard this one
+                state.debug_manager.read().log(
+                    "spawn_fim_worker",
+                    &[&format!(
+                        "Discarding stale worker after wait (seq {} < latest {})",
+                        seq, latest_sequence
+                    )],
+                );
+                return Ok(());
+            }
+            
+            // Still the most recent, record the spawn
+            record_worker_spawn(&state);
+        }
+    }
+
     state.debug_manager.read().log(
         "spawn_fim_worker",
         &[&format!("Spawning worker for ({}, {})", cursor_x, cursor_y)],
@@ -981,6 +1105,34 @@ fn on_buf_leave() -> NvimResult<()> {
     Ok(())
 }
 
+/// Increment the debounce sequence and return the current sequence number
+fn increment_debounce_sequence(state: &PluginState) -> u64 {
+    let mut debounce_lock = state.fim_worker_debounce.write();
+    let seq = debounce_lock.next_sequence;
+    debounce_lock.next_sequence += 1;
+    seq
+}
+
+/// Check if we should spawn based on debounce timing
+/// Returns true if we should spawn, false if we should skip this request
+fn check_debounce(state: &PluginState) -> bool {
+    let config = state.config.read();
+    let debounce_ms = config.debounce_ms;
+    drop(config);
+
+    let now = std::time::Instant::now();
+    let last_spawn = state.fim_worker_debounce.read().last_spawn_ms;
+    
+    // If enough time has passed, we should spawn
+    now.duration_since(last_spawn) >= std::time::Duration::from_millis(debounce_ms as u64)
+}
+
+/// Record that a worker was spawned (update last_spawn timestamp)
+fn record_worker_spawn(state: &PluginState) {
+    let mut debounce_lock = state.fim_worker_debounce.write();
+    debounce_lock.last_spawn_ms = std::time::Instant::now();
+}
+
 /// Handle CursorMovedI event - trigger speculative FIM completion using async worker
 fn trigger_fim() -> NvimResult<()> {
     let _ = fim_hide();
@@ -1102,30 +1254,63 @@ fn trigger_fim() -> NvimResult<()> {
             if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
                 state.debug_manager.read().log("trigger_fim 4.21", &[]);
 
-                // Collect all neovim information at the start
-                // This is critical - we capture everything needed before spawning async task
-                let state_clone = state.clone();
-                let buffer_lines_clone = lines.clone();
-                let buffer_handle_clone = buffer_handle;
-                let pos_x_clone = pos_x;
-                let pos_y_clone = pos_y;
-
-                // Spawn async worker task that will:
-                // 1. Perform HTTP request (non-blocking)
-                // 2. Send completion result through channel
-                // 3. Main thread receives and renders
-                {
+                // Get the current sequence number to track this request
+                let current_sequence = increment_debounce_sequence(&state);
+                
+                // Check if we should spawn based on debounce timing
+                let should_spawn = check_debounce(&state);
+                
+                state.debug_manager.read().log(
+                    "trigger_fim debounce",
+                    &[&format!(
+                        "Sequence: {}, Should spawn: {}",
+                        current_sequence, should_spawn
+                    )],
+                );
+                
+                if should_spawn {
+                    // Spawn immediately since debounce has elapsed
+                    let state_clone = state.clone();
+                    let buffer_handle_clone = buffer_handle;
+                    let lines_clone = lines.clone();
+                    
                     let tokio_runtime_lock = state.tokio_runtime.lock();
                     if let Some(runtime) = tokio_runtime_lock.as_ref() {
-                        // Use the persistent tokio runtime to spawn the worker
-                        // The worker collects all neovim info at start and sends through channel
+                        record_worker_spawn(&state);
                         let _ = runtime.spawn(async move {
                             spawn_fim_worker(
                                 state_clone,
                                 buffer_handle_clone,
-                                buffer_lines_clone,
-                                pos_x_clone,
-                                pos_y_clone,
+                                lines_clone,
+                                pos_x,
+                                pos_y,
+                                true, // is_auto = true
+                            )
+                            .await
+                        });
+                    } else {
+                        state.debug_manager.read().log(
+                            "trigger_fim",
+                            &["Tokio runtime not initialized, falling back to blocking"],
+                        );
+                    }
+                } else {
+                    // Debounce is still active, but we might still spawn this request
+                    // if it's the most recent one. We need to check inside the worker.
+                    let state_clone = state.clone();
+                    let buffer_handle_clone = buffer_handle;
+                    let lines_clone = lines.clone();
+                    
+                    let tokio_runtime_lock = state.tokio_runtime.lock();
+                    if let Some(runtime) = tokio_runtime_lock.as_ref() {
+                        let _ = runtime.spawn(async move {
+                            spawn_fim_worker_with_debounce(
+                                state_clone,
+                                buffer_handle_clone,
+                                lines_clone,
+                                pos_x,
+                                pos_y,
+                                current_sequence,
                                 true, // is_auto = true
                             )
                             .await
