@@ -535,18 +535,21 @@ pub fn fim_try_hint_inner(
         // TODO should this just always run even when no hint is shown?
         let hint_shown = state.fim_state.read().hint_shown;
         if hint_shown {
-            tokio::spawn(async move {
-                // TODO log error
-                let _ = spawn_fim_completion_worker(
-                    state,
-                    pos_x,
-                    pos_y,
-                    buffer_handle,
-                    lines,
-                    Some(&[content]),
-                )
-                .await;
-            });
+            let rt = state.tokio_runtime.clone();
+            if let Some(runtime) = rt.read().as_ref() {
+                runtime.spawn(async move {
+                    // TODO log error
+                    let _ = spawn_fim_completion_worker(
+                        state,
+                        pos_x,
+                        pos_y,
+                        buffer_handle,
+                        lines,
+                        Some(&[content]),
+                    )
+                    .await;
+                });
+            };
         }
     }
     Ok(())
