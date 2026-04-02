@@ -200,11 +200,23 @@ pub fn fim_completion(
     let ring_chunk_size_half = (ring_chunk_size / 2) as usize;
     let start_line = pos_y.saturating_sub(ring_chunk_size_half);
     let end_line = (pos_y + ring_chunk_size_half).min(lines.len());
+    
+    // Safety: ensure we have valid range and enough lines
+    if start_line >= end_line || start_line >= lines.len() {
+        return Ok(());
+    }
+    
     let text: Vec<String> = lines[start_line..end_line].to_vec();
+    let text_len = text.len();
 
     // TODO understand why we use a random here
-    let l0 = random_range(0, text.len().saturating_sub(ring_chunk_size_half));
-    let l1 = (l0 + ring_chunk_size_half).min(text.len());
+    // Safety: ensure we don't panic with random_range when text is too small
+    let l0 = if text_len > ring_chunk_size_half {
+        random_range(0, text_len.saturating_sub(ring_chunk_size_half))
+    } else {
+        0
+    };
+    let l1 = (l0 + ring_chunk_size_half).min(text_len);
     let chunk: Vec<String> = text[l0..l1].to_vec();
 
     if !chunk.is_empty() {
@@ -521,7 +533,11 @@ pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
 
     // Truncated prefix hashes (up to 3 levels)
     let mut prefix_trim = ctx.prefix.clone();
-    let re = regex::Regex::new(r"^[^\n]*\n").unwrap();
+    // Safety: Use regex with proper error handling
+    let re = match regex::Regex::new(r"^[^\n]*\n") {
+        Ok(r) => r,
+        Err(_) => return hashes, // Return partial hashes on regex error
+    };
     let max_hashes = 3; // TODO parameterize this
     for _ in 0..max_hashes {
         prefix_trim = re.replace(&prefix_trim, "").to_string();
@@ -594,13 +610,25 @@ pub fn render_fim_suggestion(
     }
 
     // Filter out duplicate text - remove prefix that matches existing suffix
-    let line_cur_suffix = &line_cur[pos_x.min(line_cur.len())..];
-    if !line_cur_suffix.is_empty() && !lines[0].is_empty() {
+    // Safety: ensure bounds before slicing
+    let line_cur_len = line_cur.len();
+    let safe_pos_x = pos_x.min(line_cur_len);
+    let line_cur_suffix = if safe_pos_x < line_cur_len {
+        &line_cur[safe_pos_x..]
+    } else {
+        ""
+    };
+    if !line_cur_suffix.is_empty() && !lines.is_empty() && !lines[0].is_empty() {
         // Check if the beginning of the suggestion duplicates existing text
         for i in (0..line_cur_suffix.len()).rev() {
             if lines[0].starts_with(&line_cur_suffix[..=i]) {
                 // Remove the duplicate part from the first line
-                lines[0] = lines[0][line_cur_suffix[..=i].len()..].to_string();
+                let dup_len = line_cur_suffix[..=i].len();
+                if dup_len < lines[0].len() {
+                    lines[0] = lines[0][dup_len..].to_string();
+                } else {
+                    lines[0] = String::new();
+                }
                 break;
             }
         }
@@ -608,7 +636,11 @@ pub fn render_fim_suggestion(
 
     // Append suffix to last line
     let suffix_end = std::cmp::min(pos_x, line_cur.len());
-    let suffix = &line_cur[suffix_end..];
+    let suffix = if suffix_end < line_cur.len() {
+        &line_cur[suffix_end..]
+    } else {
+        ""
+    };
     if !lines.is_empty() {
         let last_idx = lines.len() - 1;
         let mut last_line = lines[last_idx].clone();
@@ -768,76 +800,88 @@ pub fn trim_suggestion_curr_line<'a>(
 }
 
 /// Accept FIM suggestion - returns the modified line
-// returns if inline should be used
-pub fn accept_fim_suggestion(
-    accept_type: FimAcceptType,
-    pos_x: usize,
-    line_cur: &str,
-    content: &[String],
-) -> (
-    String,              // first line
-    Option<Vec<String>>, // rest lines (None if not needed)
-    Option<usize>,       // inline-end (NONE if not inline)
-) {
-    let first_line = content[0].clone();
+  // returns if inline should be used
+  pub fn accept_fim_suggestion(
+      accept_type: FimAcceptType,
+      pos_x: usize,
+      line_cur: &str,
+      content: &[String],
+  ) -> (
+      String,              // first line
+      Option<Vec<String>>, // rest lines (None if not needed)
+      Option<usize>,       // inline-end (NONE if not inline)
+  ) {
+      // Safety: check content length before accessing content[0]
+      if content.is_empty() {
+          return (line_cur.to_string(), None, None);
+      }
+      
+      let first_line = content[0].clone();
 
-    let prefix = if pos_x <= line_cur.len() {
-        &line_cur[..pos_x]
-    } else {
-        ""
-    }
-    .to_string();
+      // Safety: ensure pos_x is within bounds
+      let line_cur_len = line_cur.len();
+      let safe_pos_x = pos_x.min(line_cur_len);
+      let prefix = if safe_pos_x <= line_cur_len {
+          &line_cur[..safe_pos_x]
+      } else {
+          ""
+      }
+      .to_string();
 
-    let (new_line, inline) = if content.len() == 1 {
-        // If only one line, just replace the current line
-        let suffix = if pos_x <= line_cur.len() {
-            &line_cur[pos_x..]
-        } else {
-            ""
-        };
-        let (first_line, is_inline) = trim_suggestion_curr_line(&first_line, pos_x, line_cur);
-        let inline = if is_inline {
-            Some(prefix.len() + first_line.len())
-        } else {
-            None
-        };
-        (prefix + first_line + suffix, inline)
-    } else {
-        (prefix + &first_line, None)
-    };
+      let (new_line, inline) = if content.len() == 1 {
+          // If only one line, just replace the current line
+          let suffix = if safe_pos_x <= line_cur_len {
+              &line_cur[safe_pos_x..]
+          } else {
+              ""
+          };
+          let (first_line, is_inline) = trim_suggestion_curr_line(&first_line, pos_x, line_cur);
+          let inline = if is_inline {
+              Some(prefix.len() + first_line.len())
+          } else {
+              None
+          };
+          (prefix + first_line + suffix, inline)
+      } else {
+          (prefix + &first_line, None)
+      };
 
-    // Handle accept type
-    match accept_type {
-        FimAcceptType::Full => {
-            // Insert rest of suggestion
-            if content.len() > 1 {
-                let rest: Vec<String> = content[1..].to_vec();
-                (new_line, Some(rest), inline)
-            } else {
-                (new_line, None, inline)
-            }
-        }
-        FimAcceptType::Line => {
-            if new_line == line_cur && content.len() > 1 {
-                // accept the next line
-                let rest = vec![content[1].clone()];
-                (new_line, Some(rest), inline)
-            } else {
-                (new_line, None, inline)
-            }
-        }
-        FimAcceptType::Word => {
-            // Accept only the first word
-            let suffix = &line_cur[pos_x..];
-            if let Some(word_match) = first_line.split_whitespace().next() {
-                let _new_word = word_match.to_string() + suffix;
-                (new_line + word_match, None, inline)
-            } else {
-                (new_line, None, inline)
-            }
-        }
-    }
-}
+      // Handle accept type
+      match accept_type {
+          FimAcceptType::Full => {
+              // Insert rest of suggestion
+              if content.len() > 1 {
+                  let rest: Vec<String> = content[1..].to_vec();
+                  (new_line, Some(rest), inline)
+              } else {
+                  (new_line, None, inline)
+              }
+          }
+          FimAcceptType::Line => {
+              if new_line == line_cur && content.len() > 1 {
+                  // accept the next line - safety check for content[1]
+                  let rest = vec![content[1].clone()];
+                  (new_line, Some(rest), inline)
+              } else {
+                  (new_line, None, inline)
+              }
+          }
+          FimAcceptType::Word => {
+              // Accept only the first word
+              let suffix = if safe_pos_x <= line_cur_len {
+                  &line_cur[safe_pos_x..]
+              } else {
+                  ""
+              };
+              if let Some(word_match) = first_line.split_whitespace().next() {
+                  let _new_word = word_match.to_string() + suffix;
+                  (new_line + word_match, None, inline)
+              } else {
+                  (new_line, None, inline)
+              }
+          }
+      }
+  }
 
 /// Result of rendering a FIM suggestion
 #[derive(Debug, Clone, serde::Serialize)]

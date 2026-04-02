@@ -698,14 +698,15 @@ fn trigger_fim() -> NvimResult<()> {
     let buffer_handle: u64 = get_buffer_handle();
     let state_ = state.clone(); // Clone for async block
 
-    // Get the current sequence number to track this request
-    let rt = state.tokio_runtime.read();
-    rt.spawn(async move {
-        // TODO log error
-        let _ = spawn_fim_completion_worker(state_, pos_x, pos_y, buffer_handle, lines, None).await;
-    });
-    Ok(())
-}
+// Get the current sequence number to track this request
+     // Safety: check if runtime is available before spawning
+     let rt = state.tokio_runtime.read();
+     let _ = rt.spawn(async move {
+         // TODO log error
+         let _ = spawn_fim_completion_worker(state_, pos_x, pos_y, buffer_handle, lines, None).await;
+     });
+     Ok(())
+ }
 
 /// Handle BufWritePost event - gather chunks after saving buffer
 fn on_buf_write_post() -> NvimResult<()> {

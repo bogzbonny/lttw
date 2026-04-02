@@ -182,7 +182,11 @@ pub fn chunk_similarity(c0: &[String], c1: &[String]) -> f64 {
     //    text is:         "Hello, world!\nHow are you?"
     //    \W+ matches:     ", ",  "!\n",  " ",  " ", "?"
     //    Resulting array: ["Hello", "world", "How", "are", "you", ""]
-    let re = Regex::new(r"\W+").unwrap();
+    // Safety: Use regex with proper error handling
+    let re = match Regex::new(r"\W+") {
+        Ok(r) => r,
+        Err(_) => return 0.0, // Return 0 on regex error
+    };
 
     let text0 = c0.join("\n");
     let text1 = c1.join("\n");

@@ -14,29 +14,27 @@ use {
 
 // are we in insert mode
 pub fn in_insert_mode() -> NvimResult<bool> {
-    Ok(api::get_mode()?
-        .mode
-        .as_bytes()
-        .first()
-        .copied()
-        .expect("mode is not empty")
-        == b'i')
+    let mode_result = api::get_mode()?;
+    let mode_bytes = mode_result.mode.as_bytes();
+    let mode_char = mode_bytes.first().copied().unwrap_or(b'?'); // Default to '?' if empty
+    Ok(mode_char == b'i')
 }
 
-// are we in insert mode
+// are we in normal mode
 pub fn in_normal_mode() -> NvimResult<bool> {
-    Ok(api::get_mode()?
-        .mode
-        .as_bytes()
-        .first()
-        .copied()
-        .expect("mode is not empty")
-        == b'n')
+    let mode_result = api::get_mode()?;
+    let mode_bytes = mode_result.mode.as_bytes();
+    let mode_char = mode_bytes.first().copied().unwrap_or(b'?'); // Default to '?' if empty
+    Ok(mode_char == b'n')
 }
 
 /// Get current buffer position ([0,0]-indexed)
 pub fn get_pos() -> (usize, usize) {
-    let (line, col) = Window::current().get_cursor().unwrap_or((0, 0));
+    // Safety: handle cursor error gracefully
+    let (line, col) = match Window::current().get_cursor() {
+        Ok((l, c)) => (l, c),
+        Err(_) => return (0, 0), // Return default position on error
+    };
 
     // NOTE this is (1, 0) indexing (CONFUSING!)
     // hence we must subtract 1 from the col but not the line
@@ -50,9 +48,12 @@ pub fn get_buf_lines<R>(line_range: R) -> Vec<String>
 where
     R: RangeBounds<usize>,
 {
-    let buf = Buffer::current();
-    let lines = buf.get_lines(line_range, false).unwrap();
-    lines.map(|s| s.to_string()).collect()
+    // Safety: handle get_lines error gracefully
+    // Use Buffer::current() directly in the match to avoid lifetime issues
+    match Buffer::current().get_lines(line_range, false) {
+        Ok(iter) => iter.map(|s| s.to_string()).collect(),
+        Err(_) => Vec::new(), // Return empty vec on error
+    }
 }
 
 /// Get buffer lines from Neovim
@@ -97,26 +98,29 @@ pub fn get_buf_line(pos_y: usize) -> String {
         return "".to_string();
     };
     let lines: Vec<String> = lines.map(|s| s.to_string()).collect();
-    if lines.is_empty() {
-        "".to_string()
-    } else {
-        lines.into_iter().next().expect("should be one record")
-    }
+    lines.into_iter().next().unwrap_or_default()
 }
 
 /// Get current buffer
 pub fn get_current_buffer() -> u64 {
+    // Safety: handle buffer handle conversion error
     let buf: u64 = Buffer::current().handle().try_into().unwrap_or(0);
     buf
 }
 
 pub fn get_buffer_handle() -> u64 {
-    Buffer::current().handle().try_into().unwrap_or(0)
+    // Safety: handle buffer handle conversion error
+    let handle: u64 = Buffer::current().handle().try_into().unwrap_or(0);
+    handle
 }
 
 /// Generate a random number in the range [i0, i1]
 pub fn random_range(i0: usize, i1: usize) -> usize {
     let mut rng = rand::thread_rng();
+    // Safety: ensure valid range
+    if i0 > i1 {
+        return i0; // Return lower bound if invalid range
+    }
     rng.gen_range(i0..=i1)
 }
 

@@ -163,8 +163,14 @@ impl RingBuffer {
             text
         } else {
             let chunk_size_half = self.chunk_size / 2;
-            let l0 = random_range(0, text.len().saturating_sub(chunk_size_half));
-            let l1 = (l0 + chunk_size_half).min(text.len());
+            let text_len = text.len();
+            // Safety: ensure we don't panic with random_range when text is too small
+            let l0 = if text_len > chunk_size_half {
+                random_range(0, text_len.saturating_sub(chunk_size_half))
+            } else {
+                0
+            };
+            let l1 = (l0 + chunk_size_half).min(text_len);
             text[l0..l1].to_vec()
         };
 
