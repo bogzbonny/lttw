@@ -48,9 +48,6 @@ fn get_local_context_no_prev(
     let max_y = lines.len();
     let line_cur = lines.get(pos_y).cloned().unwrap_or_default();
 
-    // manual correction
-    //let pos_x = pos_x + 1;
-
     let line_cur_prefix = if pos_x <= line_cur.len() {
         line_cur[..pos_x].to_string()
     } else {

@@ -3,7 +3,7 @@
 // This module provides debug logging functionality for the plugin.
 // Logs are written to a file named 'lttw.log' in the working directory.
 
-use {crate::utils, std::fs::OpenOptions, std::io::Write, std::path::Path};
+use {crate::utils, std::fmt::Display, std::fs::OpenOptions, std::io::Write, std::path::Path};
 
 /// Debug manager
 #[derive(Debug, Clone)]
@@ -49,20 +49,10 @@ impl DebugManager {
     }
 
     /// Log a message to the file
-    pub fn log<S: Into<String>>(&self, msg: &str, details: S) {
+    pub fn log<S: Display>(&self, msg: &str, details: S) {
         if !self.enabled {
             return;
         }
-
-        let mut header = msg.to_string();
-        let mut block = Vec::new();
-
-        header.push_str(" | ");
-        block.push(header.clone());
-        block.push(details.into());
-        block.push("}".to_string());
-
-        let log_entry = block.join("\n");
 
         // Append to log file
         if let Ok(mut file) = OpenOptions::new()
@@ -70,7 +60,7 @@ impl DebugManager {
             .append(true)
             .open(&self.log_file_path)
         {
-            let _ = writeln!(file, "{}", log_entry);
+            let _ = writeln!(file, "{msg} | {details}",);
         }
     }
 

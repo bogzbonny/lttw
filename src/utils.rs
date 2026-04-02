@@ -31,12 +31,13 @@ pub fn in_normal_mode() -> NvimResult<bool> {
         == b'n')
 }
 
-/// Get current buffer position
+/// Get current buffer position ([0,0]-indexed)
 pub fn get_pos() -> (usize, usize) {
     let (line, col) = Window::current().get_cursor().unwrap_or((0, 0));
 
-    // NOTE nvim starts at 1, must make 0 start
-    let col = col.saturating_sub(1);
+    // NOTE this is (1, 0) indexing (CONFUSING!)
+    // hence we must subtract 1 from the col but not the line
+    // to be consistent with our (0, 0) indexing
     let line = line.saturating_sub(1);
     (col, line)
 }

@@ -81,8 +81,9 @@ fn lttw_setup() -> NvimResult<()> {
     // Setup keymaps
     keymap::setup_keymaps()?;
 
-    // Setup filetype
+    // Setup autocmds
     autocommands::setup_filetype_autocmd()?;
+    autocommands::setup_non_filetype_autocmds()?;
 
     Ok(())
 }
@@ -372,10 +373,16 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> NvimResult<()> {
         None,
         &state.config.read(),
     );
+
+    //state.debug_manager.read().log(
+    //    "handle_fim_completion_message",
+    //    format!("msg.content: \n{}", msg.content),
+    //);
     let rendered = fim::render_fim_suggestion(msg.cursor_x, &msg.content, &ctx.line_cur_suffix);
 
     // Get line count before moving content
-    let content_len = rendered.content.len();
+    //let content_len = rendered.content.len();
+    let content_debug = rendered.content.join("\n"); // For debug logging
 
     // Update FIM state
     state.fim_state.write().update(
@@ -395,7 +402,7 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> NvimResult<()> {
 
     state.debug_manager.read().log(
         "handle_fim_completion_message",
-        format!("Displaying FIM hint: {} lines", content_len),
+        format!("Displaying FIM hint: \n{}", content_debug),
     );
 
     Ok(())
@@ -426,18 +433,19 @@ fn fim_accept(accept_type: FimAcceptType) -> NvimResult<Option<String>> {
         return Ok(None);
     }
 
-    // Log before releasing the lock
-    {
-        let debug_manager = state.debug_manager.read().clone();
-        debug_manager.log(
-            "fim_accept",
-            format!("Accepting {} suggestion", accept_type),
-        );
-    }
+    state.debug_manager.read().log(
+        "fim_accept",
+        format!("Accepting {} suggestion", accept_type),
+    );
 
     // Use the accept_fim_suggestion function from fim module
     let (new_line, rest, inline_loc) =
         fim::accept_fim_suggestion(accept_type, pos_x, &line_cur, &content);
+
+    state.debug_manager.read().log(
+        "fim_accept",
+        format!("new_line {new_line}\n\t rest {rest:?}"),
+    );
 
     // Set the buffer lines with the accepted content
     let buf = Buffer::current();
@@ -587,11 +595,11 @@ fn display_fim_text(state: &Arc<PluginState>) -> NvimResult<()> {
         }
 
         // Set the extmark at cursor position
-        match buf.set_extmark(ns_id, pos_y, pos_x + 1, &opts.build()) {
+        match buf.set_extmark(ns_id, pos_y, pos_x, &opts.build()) {
             Ok(_id) => {
                 debug_manager.log(
                     "display_fim_text",
-                    format!("Set extmark at line {}, col {}", pos_y, pos_x + 1),
+                    format!("Set extmark at line {}, col {}", pos_y, pos_x),
                 );
             }
             Err(e) => {
@@ -725,6 +733,7 @@ fn toggle_auto_fim() -> NvimResult<bool> {
 fn on_move() -> NvimResult<()> {
     let state = get_state();
     *state.last_move_time.write() = Instant::now();
+    state.debug_manager.read().log("on_move", "Cursor moved");
     fim_hide();
     fim_try_hint()?;
     Ok(())
@@ -840,7 +849,7 @@ fn on_buf_leave() -> NvimResult<()> {
 fn trigger_fim2() -> NvimResult<()> {
     let state = get_state();
     state.debug_manager.read().log(
-        "trigger_fim",
+        "trigger_fim2",
         format!(
             "state.enabled {}, state.config.auto_fim {}",
             state.enabled.load(Ordering::SeqCst),

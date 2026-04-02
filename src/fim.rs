@@ -255,6 +255,10 @@ pub fn fim_completion(
     let rt = state.tokio_runtime.clone();
     if let Some(runtime) = rt.read().as_ref() {
         runtime.spawn(async move {
+            state
+                .debug_manager
+                .read()
+                .log("sending msg", format!("{request:#?}"));
             // Send request without holding locks
             let Ok(response_text) = send_request(&request, endpoint_fim, model, api_key).await
             else {
@@ -452,6 +456,7 @@ pub fn fim_try_hint_inner(
 ) -> Option<RenderedSuggestion> {
     // Get local context
     let ctx = get_local_context(&lines, pos_x, pos_y, None, &state.config.read());
+    state.debug_manager.read().log("fim_try_hint_inner", "");
 
     // Compute primary hash
     let primary_hash = format!("{}{}{}{}", ctx.prefix, ctx.middle, "Î", ctx.suffix);
@@ -712,8 +717,6 @@ pub fn accept_fim_suggestion(
     Option<usize>,       // inline-end (NONE if not inline)
 ) {
     let first_line = content[0].clone();
-
-    let pos_x = pos_x + 1; // Adjust for 0-based indexing
 
     let prefix = if pos_x <= line_cur.len() {
         &line_cur[..pos_x]

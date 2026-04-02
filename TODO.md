@@ -6,12 +6,12 @@
 
 ^^^^^^^^^ DONE
 
-00. use spawn_fim_completion_worker instead of trigger_fim
-
 01. When typing on top of a suggestion, that suggestion should still be there
     IFF we're typing the same content... wonder if this has to do with the ring
     buffer
      - I think this may have to do with speculative FIM actually
+
+01. ring buffer at end of fim (see XXX) 
 
 01. Do not render the virtual text if it nolonger matches what's actually in the
     line

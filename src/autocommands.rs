@@ -41,6 +41,10 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
     ids.push(id);
 
     if state.config.read().auto_fim {
+        state
+            .debug_manager
+            .read()
+            .log("registering auto fim autocmds", "");
         let id = api::create_autocmd(
             ["CursorMoved", "CursorMovedI"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
