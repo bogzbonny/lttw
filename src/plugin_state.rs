@@ -13,7 +13,7 @@ use {
         },
         time::Instant,
     },
-    tokio::sync::mpsc,
+    tokio::{runtime::Runtime, sync::mpsc},
 };
 
 // Global state - using OnceLock for thread-safe initialization
@@ -21,7 +21,7 @@ static PLUGIN_STATE: OnceLock<Arc<PluginState>> = OnceLock::new();
 
 /// Initialize the plugin state
 pub fn init_state() {
-    PLUGIN_STATE.get_or_init(|| Arc::new(PluginState::new()));
+    PLUGIN_STATE.get_or_init(|| Arc::new(PluginState::default()));
 }
 
 /// Get the plugin state (returns a clone of the Arc, no locking)
@@ -33,37 +33,36 @@ pub fn get_state() -> Arc<PluginState> {
 // State management
 #[derive(Clone)]
 pub struct PluginState {
-    config: Arc<RwLock<config::LttwConfig>>,
-    cache: Arc<RwLock<cache::Cache>>,
-    ring_buffer: Arc<RwLock<ring_buffer::RingBuffer>>,
-    debug_manager: Arc<RwLock<debug::DebugManager>>,
-    last_move_time: Arc<RwLock<Instant>>, // (vim s:t_last_move)
-    instruction_requests: Arc<RwLock<HashMap<i64, InstructionRequestState>>>,
-    enabled: Arc<AtomicBool>,
+    pub config: Arc<RwLock<config::LttwConfig>>,
+    pub cache: Arc<RwLock<cache::Cache>>,
+    pub ring_buffer: Arc<RwLock<ring_buffer::RingBuffer>>,
+    pub debug_manager: Arc<RwLock<debug::DebugManager>>,
+    pub last_move_time: Arc<RwLock<Instant>>, // (vim s:t_last_move)
+    pub instruction_requests: Arc<RwLock<HashMap<i64, InstructionRequestState>>>,
+    pub enabled: Arc<AtomicBool>,
     #[allow(dead_code)]
-    next_inst_req_id: Arc<AtomicI64>,
-    fim_state: Arc<RwLock<FimState>>,
-    fim_worker_debounce: Arc<RwLock<FimWorkerDebounce>>,
-    extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
+    pub next_inst_req_id: Arc<AtomicI64>,
+    pub fim_state: Arc<RwLock<FimState>>,
+    pub fim_worker_debounce: Arc<RwLock<FimWorkerDebounce>>,
+    pub extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
     #[allow(dead_code)]
-    inst_ns: Option<u32>, // Namespace for instruction extmarks
-    autocmd_ids: Arc<RwLock<Vec<u32>>>,
-    autocmd_id_filetype_check: Arc<RwLock<Option<u32>>>,
-    ring_buffer_timer_handle: Arc<RwLock<RingBufferTimerHandle>>,
+    pub inst_ns: Option<u32>, // Namespace for instruction extmarks
+    pub autocmd_ids: Arc<RwLock<Vec<u32>>>,
+    pub autocmd_id_filetype_check: Arc<RwLock<Option<u32>>>,
+    pub ring_buffer_timer_handle: Arc<RwLock<RingBufferTimerHandle>>,
     // FIM completion channel for async worker communication
-    fim_completion_tx:
-        Arc<parking_lot::Mutex<Option<tokio::sync::mpsc::Sender<FimCompletionMessage>>>>,
+    pub fim_completion_tx: Arc<RwLock<Option<mpsc::Sender<FimCompletionMessage>>>>,
     // Pending display queue - holds messages waiting to be rendered on main thread
-    pending_display: Arc<RwLock<Vec<FimCompletionMessage>>>,
+    pub pending_display: Arc<RwLock<Vec<FimCompletionMessage>>>,
     // Persistent tokio runtime for async operations
-    tokio_runtime: Arc<parking_lot::Mutex<Option<tokio::runtime::Runtime>>>,
+    pub tokio_runtime: Arc<RwLock<Option<Runtime>>>,
 }
 
 /// Type alias for ring buffer timer handle to simplify type declarations
 type RingBufferTimerHandle = Option<Arc<parking_lot::Mutex<tokio::task::JoinHandle<()>>>>;
 
-impl PluginState {
-    pub fn new() -> Self {
+impl Default for PluginState {
+    fn default() -> Self {
         let config = config::LttwConfig::from_nvim_globals();
         let enable_at_startup = config.enable_at_startup;
         let max_cache_keys = config.max_cache_keys as usize;
@@ -93,16 +92,18 @@ impl PluginState {
             autocmd_id_filetype_check: Arc::new(RwLock::new(None)),
             ring_buffer_timer_handle: Arc::new(RwLock::new(None)),
             // Initialize completion channel and runtime (will be set up later)
-            fim_completion_tx: Arc::new(parking_lot::Mutex::new(None)),
+            fim_completion_tx: Arc::new(RwLock::new(None)),
             pending_display: Arc::new(RwLock::new(Vec::new())),
-            tokio_runtime: Arc::new(parking_lot::Mutex::new(None)),
+            tokio_runtime: Arc::new(RwLock::new(None)),
         }
     }
+}
 
+impl PluginState {
     pub fn get_fim_completion_tx(
         &self,
     ) -> Result<mpsc::Sender<FimCompletionMessage>, nvim_oxi::Error> {
-        let fim_completion_tx_lock = self.fim_completion_tx.lock();
+        let fim_completion_tx_lock = self.fim_completion_tx.read();
         fim_completion_tx_lock.clone().ok_or_else(|| {
             nvim_oxi::Error::Api(api::Error::Other(
                 "Completion channel not initialized".to_string(),

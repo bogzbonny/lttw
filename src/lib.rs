@@ -18,7 +18,6 @@ pub mod utils;
 
 use {
     fim::{fim_try_hint, FimAcceptType},
-    instruction::InstructionRequestState,
     nvim_oxi::{
         api::{
             del_autocmd,
@@ -28,14 +27,10 @@ use {
         },
         Dictionary, Function, Result as NvimResult,
     },
-    parking_lot::RwLock,
+    plugin_state::{get_state, init_state, PluginState},
     std::{
-        collections::HashMap,
         convert::TryInto,
-        sync::{
-            atomic::{AtomicBool, AtomicI64, Ordering},
-            Arc, OnceLock,
-        },
+        sync::{atomic::Ordering, Arc},
         time::{Duration, Instant},
     },
     utils::{get_buf_lines, get_buffer_handle, get_pos, in_insert_mode},
@@ -44,7 +39,7 @@ use {
 // FIM completion channel types for async communication between worker and main thread
 /// Message sent from async worker to main thread when completion is ready
 #[derive(Debug, Clone)]
-struct FimCompletionMessage {
+pub struct FimCompletionMessage {
     buffer_handle: u64,        // Buffer handle to ensure we're still in same buffer
     buffer_lines: Vec<String>, // All buffer lines captured at start
     cursor_x: usize,           // Cursor position X
@@ -102,7 +97,7 @@ fn fim_is_hint_shown() -> Result<bool, nvim_oxi::Error> {
 
 /// State for FIM (Fill-in-Middle) completion
 #[derive(Debug, Clone, Default)]
-struct FimState {
+pub struct FimState {
     hint_shown: bool,
     pos_x: usize,
     pos_y: usize,
@@ -115,7 +110,7 @@ struct FimState {
 
 /// State for FIM worker debouncing
 #[derive(Debug, Clone)]
-struct FimWorkerDebounce {
+pub struct FimWorkerDebounce {
     /// Timestamp of the last worker spawn attempt
     last_spawn_ms: Instant,
     /// Sequence number for tracking most recent request
@@ -160,15 +155,15 @@ impl FimState {
         self.last_pick_pos_y = None;
     }
 
-    /// Update the last pick position
-    fn set_last_pick_pos_y(&mut self, pos_y: usize) {
-        self.last_pick_pos_y = Some(pos_y);
-    }
-
-    /// Get the last pick position
-    fn get_last_pick_pos_y(&self) -> Option<usize> {
-        self.last_pick_pos_y
-    }
+    // NOTE used for ring buffer logic
+    ///// Update the last pick position
+    //fn set_last_pick_pos_y(&mut self, pos_y: usize) {
+    //    self.last_pick_pos_y = Some(pos_y);
+    //}
+    ///// Get the last pick position
+    //fn get_last_pick_pos_y(&self) -> Option<usize> {
+    //    self.last_pick_pos_y
+    //}
 }
 
 /// Initialize persistent tokio runtime and completion channel
@@ -177,7 +172,7 @@ fn init_tokio_runtime() {
 
     // Create a multi-threaded tokio runtime
     let runtime = match tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(4)
+        .worker_threads(4) // TODO parameterize this
         .enable_all()
         .build()
     {
@@ -193,12 +188,7 @@ fn init_tokio_runtime() {
 
     // Create channel for completion messages
     let (tx, rx) = tokio::sync::mpsc::channel::<FimCompletionMessage>(16);
-
-    // Store the sender in state
-    {
-        let mut fim_completion_tx_lock = state.fim_completion_tx.lock();
-        *fim_completion_tx_lock = Some(tx);
-    }
+    *state.fim_completion_tx.write() = Some(tx);
 
     // Spawn a task that receives completion messages and adds them to the pending display queue
     // This runs on its own dedicated current-thread runtime separate from the main multi-threaded one
@@ -245,11 +235,7 @@ fn init_tokio_runtime() {
         },
     );
 
-    // Store the multi-threaded runtime (used by other operations like ring buffer timer)
-    {
-        let mut tokio_runtime_lock = state.tokio_runtime.lock();
-        *tokio_runtime_lock = Some(runtime);
-    }
+    *state.tokio_runtime.write() = Some(runtime);
 }
 
 /// Handle FIM completion message received from async worker
@@ -379,12 +365,7 @@ async fn spawn_fim_worker(
         &[&format!("Spawning worker for ({}, {})", cursor_x, cursor_y)],
     );
 
-    let tx = state.get_fim_completion_tx()?;
-
     // Collect all neovim information at the start
-    let config = state.config.read().clone();
-    let cache = state.cache.clone();
-    let ring_buffer = state.ring_buffer.clone();
     let fim_state = state.fim_state.clone();
 
     // Spawn async task to perform HTTP request
@@ -404,14 +385,11 @@ async fn spawn_fim_worker(
 
     // TODO handle error
     let _ = fim::fim_completion(
-        tx,
+        state,
         cursor_x,
         cursor_y,
         buffer_handle,
         buffer_lines,
-        &config,
-        cache,
-        ring_buffer,
         prev_content,
     );
 
@@ -1041,27 +1019,28 @@ fn trigger_fim() -> NvimResult<()> {
     //let _ = fim_hide();
 
     // Only trigger FIM if we're in a reasonable position
-    //if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
-    state.debug_manager.read().log("trigger_fim 4.21", &[]);
+    if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
+        state.debug_manager.read().log("trigger_fim 4.21", &[]);
 
-    // Get the current sequence number to track this request
-    let seq = increment_debounce_sequence(&state);
-    let tokio_runtime_lock = state.tokio_runtime.lock();
-    let state_ = state.clone();
-    // Clone lines for the async worker since we need lines for ring buffer logic above
-    let lines_clone = lines.clone();
-    if let Some(runtime) = tokio_runtime_lock.as_ref() {
-        runtime.spawn(async move {
-            // TODO log error
-            let _ = spawn_fim_worker(state_, buffer_handle, lines_clone, pos_x, pos_y, seq).await;
-        });
-    } else {
-        state.debug_manager.read().log(
-            "trigger_fim",
-            &["Tokio runtime not initialized, falling back to blocking"],
-        );
+        // Get the current sequence number to track this request
+        let seq = increment_debounce_sequence(&state);
+        let tokio_runtime_lock = state.tokio_runtime.read();
+        // Clone lines for the async worker since we need lines for ring buffer logic above
+        let state_ = state.clone();
+        let lines_clone = lines.clone();
+        if let Some(runtime) = tokio_runtime_lock.as_ref() {
+            runtime.spawn(async move {
+                // TODO log error
+                let _ =
+                    spawn_fim_worker(state_, buffer_handle, lines_clone, pos_x, pos_y, seq).await;
+            });
+        } else {
+            state.debug_manager.read().log(
+                "trigger_fim",
+                &["Tokio runtime not initialized, falling back to blocking"],
+            );
+        }
     }
-    //}
 
     //// Ring buffer pick logic - gather extra context when cursor moves significantly
     //// This mirrors the logic in llama#fim (llama.vim lines 930-946)

@@ -58,8 +58,7 @@ impl DebugManager {
             return;
         }
 
-        let mut header = format!("{msg}");
-
+        let mut header = msg.to_string();
         let mut block = Vec::new();
 
         if !details.is_empty() {

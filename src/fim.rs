@@ -6,19 +6,17 @@
 
 use {
     crate::{
-        cache::Cache,
         config::LttwConfig,
         context::{get_local_context, LocalContext},
-        get_buf_lines, get_pos, get_state, in_insert_mode,
-        ring_buffer::{ExtraContext, RingBuffer},
+        get_buf_lines, get_buffer_handle, get_pos, in_insert_mode,
+        plugin_state::{get_state, PluginState},
+        ring_buffer::ExtraContext,
         utils::get_buf_line,
         utils::sha256,
-        FimCompletionMessage, NvimResult, PluginState,
+        FimCompletionMessage, NvimResult,
     },
-    parking_lot::RwLock,
     serde::{Deserialize, Serialize},
     std::sync::Arc,
-    tokio::sync::mpsc,
 };
 
 /// FIM completion request
@@ -143,23 +141,32 @@ pub enum FimError {
 /// Returns the content and optionally timing info for display
 #[allow(clippy::too_many_arguments)] // FIM requires context from multiple sources
 pub fn fim_completion(
-    tx: mpsc::Sender<FimCompletionMessage>,
+    state: Arc<PluginState>,
     pos_x: usize,
     pos_y: usize,
     buffer_handle: u64,
     lines: Vec<String>,
-    config: &LttwConfig,
-    cache: Arc<RwLock<Cache>>,
-    ring_buffer: Arc<RwLock<RingBuffer>>,
     prev: Option<&[String]>,
 ) -> Result<(), FimError> {
-    // Lock the cache and ring buffer for setup
+    let (n_predict, stop, t_max_prompt_ms, t_max_predict_ms, model, endpoint_fim, api_key) = {
+        let config = state.config.read();
+        (
+            config.n_predict,
+            config.stop_strings.clone(),
+            config.t_max_prompt_ms,
+            config.t_max_predict_ms,
+            config.model_fim.clone(),
+            config.endpoint_fim.clone(),
+            config.api_key.clone(),
+        )
+    };
+
     let request_data = {
         // Get local context
-        let ctx = get_local_context(&lines, pos_x, pos_y, prev, config);
+        let ctx = get_local_context(&lines, pos_x, pos_y, prev, &state.config.read());
 
         // Skip auto FIM if too much suffix
-        if ctx.line_cur_suffix.len() > config.max_line_suffix as usize {
+        if ctx.line_cur_suffix.len() > state.config.read().max_line_suffix as usize {
             return Ok(());
         }
 
@@ -168,20 +175,21 @@ pub fn fim_completion(
         let current_prefix_lines: Vec<String> =
             ctx.prefix.split('\n').map(|s| s.to_string()).collect();
         if !current_prefix_lines.is_empty() {
-            ring_buffer
+            state
+                .ring_buffer
                 .write()
                 .evict_similar(&current_prefix_lines, 0.5);
         }
 
         // Build request
-        let extra = ring_buffer.read().get_extra();
+        let extra = state.ring_buffer.read().get_extra();
 
         let hashes = compute_hashes(&ctx);
 
         // Check cache
-        if config.auto_fim {
+        if state.config.read().auto_fim {
             for hash in &hashes {
-                let cache_lock = cache.read();
+                let cache_lock = state.cache.read();
                 if cache_lock.contains_key(hash) {
                     return Ok(());
                 }
@@ -195,8 +203,8 @@ pub fn fim_completion(
             input_suffix: ctx.suffix.clone(),
             input_extra: extra,
             prompt: ctx.middle.clone(),
-            n_predict: config.n_predict,
-            stop: config.stop_strings.clone(),
+            n_predict,
+            stop,
             n_indent: ctx.indent,
             top_k: 40,
             top_p: 0.90,
@@ -207,8 +215,8 @@ pub fn fim_completion(
             ],
             stream: false,
             cache_prompt: true,
-            t_max_prompt_ms: config.t_max_prompt_ms,
-            t_max_predict_ms: config.t_max_predict_ms,
+            t_max_prompt_ms,
+            t_max_predict_ms,
             response_fields: vec![
                 "content".to_string(),
                 "timings/prompt_n".to_string(),
@@ -222,7 +230,7 @@ pub fn fim_completion(
                 "truncated".to_string(),
                 "tokens_cached".to_string(),
             ],
-            model: config.model_fim.clone(),
+            model: model.clone(),
             prev: prev.map(|p| p.to_vec()).unwrap_or_default(),
         };
 
@@ -232,15 +240,15 @@ pub fn fim_completion(
 
     let (request, hashes, _ctx) = request_data;
 
-    let endpoint_fim = config.endpoint_fim.clone();
-    let model_fim = config.model_fim.clone();
-    let api_key = config.model_fim.clone();
-    let state = get_state();
-    let tokio_runtime_lock = state.tokio_runtime.lock();
-    if let Some(runtime) = tokio_runtime_lock.as_ref() {
+    let Ok(tx) = state.get_fim_completion_tx() else {
+        // TODO log error
+        return Ok(());
+    };
+    let rt = state.tokio_runtime.clone();
+    if let Some(runtime) = rt.read().as_ref() {
         runtime.spawn(async move {
             // Send request without holding locks
-            let Ok(response_text) = send_request(&request, endpoint_fim, model_fim, api_key).await
+            let Ok(response_text) = send_request(&request, endpoint_fim, model, api_key).await
             else {
                 // TODO log error
                 return;
@@ -255,9 +263,9 @@ pub fn fim_completion(
 
             // Cache the response with timing info (new block for re-acquired locks)
             {
-                let mut cache_lock = cache.write();
+                let mut cache_lock = state.cache.write();
                 // Ring buffer is read but not modified here
-                let _ring_buffer_lock = ring_buffer.read();
+                let _ring_buffer_lock = state.ring_buffer.read();
                 for hash in &hashes {
                     cache_lock.insert(hash.clone(), response.clone());
                 }
@@ -338,7 +346,14 @@ pub fn fim_try_hint() -> NvimResult<Option<RenderedSuggestion>> {
     let (pos_x, pos_y) = get_pos();
     let state = get_state();
     let lines = get_buf_lines();
-    Ok(fim_try_hint_inner(state, pos_x, pos_y, lines))
+    let buffer_handle = get_buffer_handle();
+    Ok(fim_try_hint_inner(
+        state,
+        pos_x,
+        pos_y,
+        buffer_handle,
+        lines,
+    ))
 }
 
 /// Try to generate a suggestion using the data in the cache
@@ -353,6 +368,7 @@ pub fn fim_try_hint_inner(
     state: Arc<PluginState>,
     pos_x: usize,
     pos_y: usize,
+    buffer_handle: u64,
     lines: Vec<String>,
 ) -> Option<RenderedSuggestion> {
     // Get local context
@@ -443,18 +459,7 @@ pub fn fim_try_hint_inner(
         if hint_shown {
             tokio::spawn(async move {
                 // TODO log error
-                //let _ = fim_completion(pos_x, pos_y, true, &content, true);
-                let tx = state.get_fim_completion_tx()?;
-                let _ = fim_completion(
-                    tx,
-                    pos_x,
-                    pos_y,
-                    lines,
-                    &config,
-                    cache,
-                    ring_buffer,
-                    Some(&[content]),
-                );
+                let _ = fim_completion(state, pos_x, pos_y, buffer_handle, lines, Some(&[content]));
             });
         }
         Some(out)
@@ -693,7 +698,7 @@ pub struct RenderedSuggestion {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, crate::cache::Cache, crate::ring_buffer::RingBuffer};
 
     #[test]
     fn test_compute_hashes() {
