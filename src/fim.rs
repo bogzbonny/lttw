@@ -14,6 +14,7 @@ use {
         utils::{get_buf_line, random_range, sha256},
         FimCompletionMessage, NvimResult,
     },
+    nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition, Buffer},
     serde::{Deserialize, Serialize},
     std::sync::Arc,
 };
@@ -422,21 +423,15 @@ fn should_abort(cursor_y: usize, orig_line: &str, content: &str) -> bool {
     true
 }
 
-pub fn fim_try_hint() -> NvimResult<Option<RenderedSuggestion>> {
+pub fn fim_try_hint() -> NvimResult<()> {
     if !in_insert_mode()? {
-        return Ok(None);
+        return Ok(());
     }
     let (pos_x, pos_y) = get_pos();
     let state = get_state();
     let lines = get_buf_lines();
     let buffer_handle = get_buffer_handle();
-    Ok(fim_try_hint_inner(
-        state,
-        pos_x,
-        pos_y,
-        buffer_handle,
-        lines,
-    ))
+    fim_try_hint_inner(state, pos_x, pos_y, buffer_handle, lines)
 }
 
 /// Try to generate a suggestion using the data in the cache
@@ -453,7 +448,7 @@ pub fn fim_try_hint_inner(
     pos_y: usize,
     buffer_handle: u64,
     lines: Vec<String>,
-) -> Option<RenderedSuggestion> {
+) -> NvimResult<()> {
     // Get local context
     let ctx = get_local_context(&lines, pos_x, pos_y, None, &state.config.read());
     state.debug_manager.read().log("fim_try_hint_inner", "");
@@ -474,7 +469,7 @@ pub fn fim_try_hint_inner(
 
         // Only search if pm has enough characters
         if pm.len() < 2 {
-            return None;
+            return Ok(());
         }
 
         // iterate through the prefix+midde string while removing characters from the tail
@@ -531,10 +526,10 @@ pub fn fim_try_hint_inner(
         );
         let content = response.content;
         if content.is_empty() {
-            return None;
+            return Ok(());
         }
 
-        let out = render_fim_suggestion(pos_x, &content, &ctx.line_cur_suffix);
+        render_fim_suggestion(state.clone(), pos_x, pos_y, &content, ctx.line_cur)?;
 
         // run async speculative FIM in the background for this position
         // TODO should this just always run even when no hint is shown?
@@ -553,10 +548,8 @@ pub fn fim_try_hint_inner(
                 .await;
             });
         }
-        Some(out)
-    } else {
-        None
     }
+    Ok(())
 }
 
 /// Compute hashes for caching
@@ -623,7 +616,13 @@ pub async fn send_request(
 
 /// Render FIM suggestion at the current cursor location
 /// Filters out duplicate text that already exists in the buffer
-pub fn render_fim_suggestion(state: &PluginState, pos_x: usize, content: &str, line_cur: &str) {
+pub fn render_fim_suggestion(
+    state: Arc<PluginState>,
+    pos_x: usize,
+    pos_y: usize,
+    content: &str,
+    line_cur: String,
+) -> NvimResult<()> {
     // Parse content into lines
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
 
@@ -669,13 +668,105 @@ pub fn render_fim_suggestion(state: &PluginState, pos_x: usize, content: &str, l
     );
 
     // Update FIM state
-    state
-        .fim_state
-        .write()
-        .update(can_accept, pos_x, pos_y, can_accept, lines);
+    state.fim_state.write().update(
+        can_accept,
+        pos_x,
+        pos_y,
+        line_cur.to_string(),
+        can_accept,
+        lines,
+    );
 
     // Display virtual text using extmarks
-    display_fim_text(&state)?;
+    display_fim_text(&state)
+}
+
+/// Display FIM hint as virtual text using extmarks with optional inline info
+fn display_fim_text(state: &Arc<PluginState>) -> NvimResult<()> {
+    // Lock the fim_state and config to get the data we need
+    let (hint_shown, content, extmark_ns, pos_y, pos_x, line_cur, _config, debug_manager) = {
+        let fs = state.fim_state.read();
+        let config = state.config.read().clone();
+        let debug_manager = state.debug_manager.read().clone();
+        (
+            fs.hint_shown,
+            fs.content.clone(),
+            state.extmark_ns,
+            fs.pos_y,
+            fs.pos_x,
+            fs.line_cur.clone(),
+            config,
+            debug_manager,
+        )
+    };
+
+    if !hint_shown || content.is_empty() {
+        return Ok(());
+    }
+
+    // Clear any existing extmarks in the namespace before setting new ones
+    if let Some(ns_id) = extmark_ns {
+        let mut buf = Buffer::current();
+        let _ = buf.clear_namespace(ns_id, ..);
+    }
+
+    if let Some(ns_id) = extmark_ns {
+        let mut buf = Buffer::current();
+
+        // Build virtual text string - first line of suggestion
+        let suggestion_text = content[0].clone();
+        let (suggestion_text, use_inline) =
+            trim_suggestion_curr_line(&suggestion_text, pos_x, &line_cur);
+
+        // Build inline info string if show_info is enabled (mode 2 = inline)
+        let virt_text_vec: Vec<(String, String)> =
+            { vec![(suggestion_text.to_string(), "Comment".to_string())] };
+
+        // Create extmark opts with virtual text using builder pattern
+        let mut opts = SetExtmarkOptsBuilder::default();
+        opts.virt_text(virt_text_vec);
+
+        let mut text_pos = ExtmarkVirtTextPosition::Overlay;
+        if content.len() == 1 && use_inline {
+            text_pos = ExtmarkVirtTextPosition::Inline;
+        }
+
+        opts.virt_text_pos(text_pos);
+
+        // Add multi-line support - display rest of suggestion lines below
+        if content.len() > 1 {
+            let mut virt_lines: Vec<Vec<(String, String)>> = Vec::new();
+
+            // Add remaining content lines
+            for line in &content[1..] {
+                virt_lines.push(vec![(line.clone(), "Comment".to_string())]);
+            }
+
+            opts.virt_lines(virt_lines);
+        }
+
+        // last minute abort possibility
+        if !in_insert_mode()? {
+            return Ok(());
+        }
+
+        // Set the extmark at cursor position
+        match buf.set_extmark(ns_id, pos_y, pos_x, &opts.build()) {
+            Ok(_id) => {
+                debug_manager.log(
+                    "display_fim_text",
+                    format!("Set extmark at line {}, col {}", pos_y, pos_x),
+                );
+            }
+            Err(e) => {
+                debug_manager.log(
+                    "display_fim_text",
+                    format!("Error setting extmark: {:?}", e),
+                );
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -1010,6 +1101,7 @@ mod tests {
             middle: "    println!(\"hello\"".to_string(),
             suffix: ");\n}".to_string(),
             line_cur_suffix: "rintln!(\"hello\");".to_string(),
+            line_cur: "    println!(\"hello\");".to_string(),
             indent: 4,
         };
 

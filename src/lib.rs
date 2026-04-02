@@ -20,10 +20,7 @@ use {
     fim::{fim_try_hint, FimAcceptType},
     nvim_oxi::{
         api::{
-            del_autocmd,
-            opts::SetExtmarkOptsBuilder,
-            types::ExtmarkVirtTextPosition,
-            {self, Buffer, Window},
+            del_autocmd, {self, Buffer, Window},
         },
         Dictionary, Function, Result as NvimResult,
     },
@@ -103,7 +100,7 @@ pub struct FimState {
     hint_shown: bool,
     pos_x: usize,
     pos_y: usize,
-    line_cur: String, // TODO can we remove this?
+    line_cur: String,
     can_accept: bool,
     content: Vec<String>,
     /// Last cursor Y position where ring buffer chunks were picked
@@ -378,34 +375,13 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> NvimResult<()> {
     //    "handle_fim_completion_message",
     //    format!("msg.content: \n{}", msg.content),
     //);
-    let rendered = fim::render_fim_suggestion(msg.cursor_x, &msg.content, &ctx.line_cur_suffix);
-
-    // Get line count before moving content
-    //let content_len = rendered.content.len();
-    let content_debug = rendered.content.join("\n"); // For debug logging
-
-    // Update FIM state
-    state.fim_state.write().update(
-        rendered.can_accept,
+    fim::render_fim_suggestion(
+        state,
         msg.cursor_x,
         msg.cursor_y,
-        msg.buffer_lines
-            .get(msg.cursor_y)
-            .cloned()
-            .unwrap_or_default(),
-        rendered.can_accept,
-        rendered.content,
-    );
-
-    // Display virtual text using extmarks
-    display_fim_text(&state)?;
-
-    state.debug_manager.read().log(
-        "handle_fim_completion_message",
-        format!("Displaying FIM hint: \n{}", content_debug),
-    );
-
-    Ok(())
+        &msg.content,
+        ctx.line_cur,
+    )
 }
 
 /// FIM accept function - accepts the FIM suggestion
@@ -523,95 +499,6 @@ fn fim_hide() {
     }
 
     state.fim_state.write().clear();
-}
-
-/// Display FIM hint as virtual text using extmarks with optional inline info
-fn display_fim_text(state: &Arc<PluginState>) -> NvimResult<()> {
-    // Lock the fim_state and config to get the data we need
-    let (hint_shown, content, extmark_ns, pos_y, pos_x, line_cur, _config, debug_manager) = {
-        let fs = state.fim_state.read();
-        let config = state.config.read().clone();
-        let debug_manager = state.debug_manager.read().clone();
-        (
-            fs.hint_shown,
-            fs.content.clone(),
-            state.extmark_ns,
-            fs.pos_y,
-            fs.pos_x,
-            fs.line_cur.clone(),
-            config,
-            debug_manager,
-        )
-    };
-
-    if !hint_shown || content.is_empty() {
-        return Ok(());
-    }
-
-    // Clear any existing extmarks in the namespace before setting new ones
-    if let Some(ns_id) = extmark_ns {
-        let mut buf = Buffer::current();
-        let _ = buf.clear_namespace(ns_id, ..);
-    }
-
-    if let Some(ns_id) = extmark_ns {
-        let mut buf = Buffer::current();
-
-        // Build virtual text string - first line of suggestion
-        let suggestion_text = content[0].clone();
-        let (suggestion_text, use_inline) =
-            fim::trim_suggestion_curr_line(&suggestion_text, pos_x, &line_cur);
-
-        // Build inline info string if show_info is enabled (mode 2 = inline)
-        let virt_text_vec: Vec<(String, String)> =
-            { vec![(suggestion_text.to_string(), "Comment".to_string())] };
-
-        // Create extmark opts with virtual text using builder pattern
-        let mut opts = SetExtmarkOptsBuilder::default();
-        opts.virt_text(virt_text_vec);
-
-        let mut text_pos = ExtmarkVirtTextPosition::Overlay;
-        if content.len() == 1 && use_inline {
-            text_pos = ExtmarkVirtTextPosition::Inline;
-        }
-
-        opts.virt_text_pos(text_pos);
-
-        // Add multi-line support - display rest of suggestion lines below
-        if content.len() > 1 {
-            let mut virt_lines: Vec<Vec<(String, String)>> = Vec::new();
-
-            // Add remaining content lines
-            for line in &content[1..] {
-                virt_lines.push(vec![(line.clone(), "Comment".to_string())]);
-            }
-
-            opts.virt_lines(virt_lines);
-        }
-
-        // last minute abort possibility
-        if !in_insert_mode()? {
-            return Ok(());
-        }
-
-        // Set the extmark at cursor position
-        match buf.set_extmark(ns_id, pos_y, pos_x, &opts.build()) {
-            Ok(_id) => {
-                debug_manager.log(
-                    "display_fim_text",
-                    format!("Set extmark at line {}, col {}", pos_y, pos_x),
-                );
-            }
-            Err(e) => {
-                debug_manager.log(
-                    "display_fim_text",
-                    format!("Error setting extmark: {:?}", e),
-                );
-            }
-        }
-    }
-
-    Ok(())
 }
 
 /// Debug toggle function - toggles logging
@@ -846,10 +733,10 @@ fn on_buf_leave() -> NvimResult<()> {
 }
 
 /// Trigger speculative FIM completion using async worker
-fn trigger_fim2() -> NvimResult<()> {
+fn trigger_fim() -> NvimResult<()> {
     let state = get_state();
     state.debug_manager.read().log(
-        "trigger_fim2",
+        "trigger_fim",
         format!(
             "state.enabled {}, state.config.auto_fim {}",
             state.enabled.load(Ordering::SeqCst),
@@ -882,125 +769,6 @@ fn trigger_fim2() -> NvimResult<()> {
             "Tokio runtime not initialized, falling back to blocking",
         );
     }
-    Ok(())
-}
-
-/// Trigger speculative FIM completion using async worker
-#[allow(dead_code)] // XXX
-fn trigger_fim() -> NvimResult<()> {
-    let state = get_state();
-    state.debug_manager.read().log(
-        "trigger_fim",
-        format!(
-            "state.enabled {}, state.config.auto_fim {}",
-            state.enabled.load(Ordering::SeqCst),
-            state.config.read().auto_fim
-        ),
-    );
-
-    // Check if FIM is enabled and auto_fim is true
-    if !state.enabled.load(Ordering::SeqCst) || !state.config.read().auto_fim {
-        return Ok(());
-    }
-
-    // Get CURRENT cursor position
-    let (pos_x, pos_y) = get_pos();
-    let lines = get_buf_lines();
-    let buffer_handle: u64 = get_buffer_handle();
-
-    state.debug_manager.read().log(
-        "trigger_fim",
-        format!("Cursor moved in insert mode at ({}, {})", pos_x, pos_y),
-    );
-
-    state.debug_manager.read().log("trigger_fim 1", "");
-
-    // Try to show a cached hint (synchronous - fast)
-    let hashes = fim::compute_hashes(&{
-        let config_lock = state.config.read();
-        context::get_local_context(&lines, pos_x, pos_y, None, &config_lock)
-    });
-    state.debug_manager.read().log("trigger_fim 2", "");
-
-    // Check cache for primary hash
-    for hash in &hashes {
-        state.debug_manager.read().log("trigger_fim hashes 3", hash);
-        if let Some(response) = {
-            let cache_lock = state.cache.read();
-            cache_lock.get_fim(hash)
-        } {
-            state.debug_manager.read().log(
-                "trigger_fim",
-                format!("Found cached completion for hash {}", &hash[..16]),
-            );
-
-            // Parse response and render (synchronous)
-            let content = response.content;
-            let ctx = {
-                let config_lock = state.config.read();
-                context::get_local_context(&lines, pos_x, pos_y, None, &config_lock)
-            };
-            let rendered = fim::render_fim_suggestion(pos_x, &content, &ctx.line_cur_suffix);
-
-            // Update FIM state
-            state.fim_state.write().update(
-                rendered.can_accept,
-                pos_x,
-                pos_y,
-                lines.get(pos_y).cloned().unwrap_or_default(),
-                rendered.can_accept,
-                rendered.content.clone(),
-            );
-
-            // Display virtual text using extmarks
-            if rendered.can_accept {
-                let _ = display_fim_text(&state);
-
-                state.debug_manager.read().log(
-                    "trigger_fim",
-                    format!(
-                        "Showing FIM from cursor move: {} lines",
-                        rendered.content.len()
-                    ),
-                );
-            }
-            break;
-        }
-    }
-    state.debug_manager.read().log("trigger_fim 4", "");
-
-    //let _ = fim_hide();
-
-    // Only trigger FIM if we're in a reasonable position
-    if pos_y < lines.len() && pos_x <= lines.get(pos_y).map(|l| l.len()).unwrap_or(0) {
-        state.debug_manager.read().log("trigger_fim 4.21", "");
-
-        // Get the current sequence number to track this request
-        let tokio_runtime_lock = state.tokio_runtime.read();
-        // Clone lines for the async worker since we need lines for ring buffer logic above
-        let state_ = state.clone();
-        let lines_clone = lines.clone();
-        if let Some(runtime) = tokio_runtime_lock.as_ref() {
-            runtime.spawn(async move {
-                // TODO log error
-                let _ = spawn_fim_completion_worker(
-                    state_,
-                    pos_x,
-                    pos_y,
-                    buffer_handle,
-                    lines_clone,
-                    None,
-                )
-                .await;
-            });
-        } else {
-            state.debug_manager.read().log(
-                "trigger_fim",
-                "Tokio runtime not initialized, falling back to blocking",
-            );
-        }
-    }
-
     Ok(())
 }
 

@@ -14,6 +14,7 @@ pub struct LocalContext {
     pub indent: usize,
     /// The current line at cursor position - used for auto-fim check
     pub line_cur_suffix: String,
+    pub line_cur: String,
 }
 
 /// TODO review translation in greater detail
@@ -89,6 +90,7 @@ fn get_local_context_no_prev(
         suffix,
         indent,
         line_cur_suffix,
+        line_cur,
     }
 }
 
@@ -151,6 +153,7 @@ fn get_local_context_with_prev(
         suffix,
         indent,
         line_cur_suffix,
+        line_cur,
     }
 }
 

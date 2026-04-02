@@ -1,7 +1,7 @@
 use {
     crate::{
         filetype::on_buf_enter_check_filetype, fim_hide, get_state, on_buf_enter_gather_chunks,
-        on_buf_leave, on_buf_write_post, on_move, on_text_yank_post, trigger_fim2,
+        on_buf_leave, on_buf_write_post, on_move, on_text_yank_post, trigger_fim,
     },
     nvim_oxi::{
         api::{self, del_autocmd},
@@ -62,8 +62,7 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
             ["CursorMovedI", "InsertEnter"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
                 .callback(|_| {
-                    //let _ = trigger_fim();
-                    let _ = trigger_fim2();
+                    let _ = trigger_fim();
                     false // DO NOT DELETE this autocommand once used
                 })
                 .build(),
