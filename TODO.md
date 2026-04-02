@@ -18,7 +18,6 @@ like in the llama#fim
 
 01. Add (info) stats as rhs extmarks
 
-
 05. Remove trailing prediction lines if they match 
      - go through one by one
 05. add config option for debugging (default false)

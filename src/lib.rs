@@ -30,7 +30,7 @@ use {
         sync::{atomic::Ordering, Arc},
         time::{Duration, Instant},
     },
-    tokio::{runtime::Runtime, sync::mpsc},
+    tokio::sync::mpsc,
     utils::{get_buf_lines, get_buffer_handle, get_pos, in_insert_mode},
 };
 
@@ -67,7 +67,7 @@ fn lttw_setup() -> NvimResult<()> {
     init_state();
 
     // Initialize persistent tokio runtime and completion channel
-    init_tokio_runtime();
+    init_completion_processing_thread();
 
     // Setup timer-based ring buffer updates (every ring_update_ms)
     ring_buffer::setup_ring_buffer_timer()?;
@@ -147,53 +147,21 @@ impl FimState {
 }
 
 /// Initialize persistent tokio runtime and completion channel
-fn init_tokio_runtime() {
+fn init_completion_processing_thread() {
     let state = get_state();
 
-    // Create a multi-threaded tokio runtime
-    let runtime = match tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(4) // TODO parameterize this
-        .enable_all()
-        .build()
-    {
-        Ok(rt) => rt,
-        Err(e) => {
-            state.debug_manager.read().log(
-                "init_tokio_runtime",
-                format!("Failed to create tokio runtime: {}", e),
-            );
-            return;
-        }
-    };
-
     // Create channel for completion messages
-    let (tx, rx) = mpsc::channel::<FimCompletionMessage>(16);
+    let (tx, mut rx) = mpsc::channel::<FimCompletionMessage>(16);
     *state.fim_completion_tx.write() = Some(tx);
 
-    completion_processing_thread(&state, rx, &runtime);
-
-    *state.tokio_runtime.write() = Some(runtime);
-}
-
-fn completion_processing_thread(
-    state: &PluginState,
-    mut rx: mpsc::Receiver<FimCompletionMessage>,
-    rt: &Runtime,
-) {
     // Spawn a task that receives completion messages and adds them to the pending display queue
     // This runs on its own dedicated current-thread runtime separate from the main multi-threaded one
-    // TODO use a tokio thread?
-    let state = state.clone();
-    rt.spawn(async move {
+    let state_ = state.clone();
+    let rt = state.tokio_runtime.clone();
+    rt.read().spawn(async move {
         while let Some(msg) = rx.recv().await {
-            // Push to pending display queue (this is thread-safe)
-            state
-                .debug_manager
-                .read()
-                //.log("pending_queue msg", &[&format!("msg {msg:?}")]);
-                .log("pending_queue msg", "");
-            state.pending_display.write().push(msg);
-            // Release lock automatically when pending_queue goes out of scope
+            state_.debug_manager.read().log("pending_queue msg", "");
+            state_.pending_display.write().push(msg);
         }
     });
 
@@ -755,19 +723,11 @@ fn trigger_fim() -> NvimResult<()> {
     let state_ = state.clone(); // Clone for async block
 
     // Get the current sequence number to track this request
-    let tokio_runtime_lock = state.tokio_runtime.read();
-    if let Some(runtime) = tokio_runtime_lock.as_ref() {
-        runtime.spawn(async move {
-            // TODO log error
-            let _ =
-                spawn_fim_completion_worker(state_, pos_x, pos_y, buffer_handle, lines, None).await;
-        });
-    } else {
-        state.debug_manager.read().log(
-            "trigger_fim",
-            "Tokio runtime not initialized, falling back to blocking",
-        );
-    }
+    let rt = state.tokio_runtime.read();
+    rt.spawn(async move {
+        // TODO log error
+        let _ = spawn_fim_completion_worker(state_, pos_x, pos_y, buffer_handle, lines, None).await;
+    });
     Ok(())
 }
 

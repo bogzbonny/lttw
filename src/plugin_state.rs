@@ -56,7 +56,7 @@ pub struct PluginState {
     // Pending display queue - holds messages waiting to be rendered on main thread
     pub pending_display: Arc<RwLock<Vec<FimCompletionMessage>>>,
     // Persistent tokio runtime for async operations
-    pub tokio_runtime: Arc<RwLock<Option<Runtime>>>,
+    pub tokio_runtime: Arc<RwLock<Runtime>>,
 }
 
 /// Type alias for ring buffer timer handle to simplify type declarations
@@ -73,6 +73,18 @@ impl Default for PluginState {
         // Create namespaces for extmarks
         let extmark_ns = Some(api::create_namespace("lttw_fim"));
         let inst_ns = Some(api::create_namespace("lttw_inst"));
+
+        // Create a multi-threaded tokio runtime
+        let runtime = match tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4) // TODO parameterize this
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                panic!("Failed to create tokio runtime: {}", e);
+            }
+        };
 
         Self {
             config: Arc::new(RwLock::new(config)),
@@ -96,7 +108,7 @@ impl Default for PluginState {
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(RwLock::new(None)),
             pending_display: Arc::new(RwLock::new(Vec::new())),
-            tokio_runtime: Arc::new(RwLock::new(None)),
+            tokio_runtime: Arc::new(RwLock::new(runtime)),
         }
     }
 }

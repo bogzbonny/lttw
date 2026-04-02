@@ -258,58 +258,55 @@ pub fn fim_completion(
     let state_ = state.clone();
 
     let rt = state.tokio_runtime.clone();
-    if let Some(runtime) = rt.read().as_ref() {
-        runtime.spawn(async move {
-            state
-                .debug_manager
-                .read()
-                .log("sending msg", format!("{request:#?}"));
-            // Send request without holding locks
-            let Ok(response_text) = send_request(&request, endpoint_fim, model, api_key).await
-            else {
-                // TODO log error
-                return;
-            };
+    rt.read().spawn(async move {
+        state
+            .debug_manager
+            .read()
+            .log("sending msg", format!("{request:#?}"));
+        // Send request without holding locks
+        let Ok(response_text) = send_request(&request, endpoint_fim, model, api_key).await else {
+            // TODO log error
+            return;
+        };
 
-            // Parse response
-            let Ok(response) = serde_json::from_str::<FimResponse>(&response_text) else {
-                // TODO log error
-                return;
-            };
-            let content = response.content.clone(); // Clone content for return
+        // Parse response
+        let Ok(response) = serde_json::from_str::<FimResponse>(&response_text) else {
+            // TODO log error
+            return;
+        };
+        let content = response.content.clone(); // Clone content for return
 
-            // Cache the response with timing info (new block for re-acquired locks)
-            {
-                let mut cache_lock = state.cache.write();
-                for hash in &hashes {
-                    cache_lock.insert(hash.clone(), response.clone());
-                }
+        // Cache the response with timing info (new block for re-acquired locks)
+        {
+            let mut cache_lock = state.cache.write();
+            for hash in &hashes {
+                cache_lock.insert(hash.clone(), response.clone());
             }
+        }
 
-            // Send result through channel
-            let Some(orig_line) = lines.get(pos_y) else {
-                return;
-            };
-            if should_abort(pos_y, orig_line, &content) {
-                return;
-            }
-            let msg = FimCompletionMessage {
-                buffer_handle,
-                buffer_lines: lines,
-                cursor_x: pos_x,
-                cursor_y: pos_y,
-                content,
-            };
+        // Send result through channel
+        let Some(orig_line) = lines.get(pos_y) else {
+            return;
+        };
+        if should_abort(pos_y, orig_line, &content) {
+            return;
+        }
+        let msg = FimCompletionMessage {
+            buffer_handle,
+            buffer_lines: lines,
+            cursor_x: pos_x,
+            cursor_y: pos_y,
+            content,
+        };
 
-            if let Err(_e) = tx.send(msg).await {
-                // TODO log error
-                //debug_manager.log(
-                //    "spawn_fim_worker",
-                //    &[&format!("Failed to send completion message: {}", e)],
-                //);
-            }
-        });
-    }
+        if let Err(_e) = tx.send(msg).await {
+            // TODO log error
+            //debug_manager.log(
+            //    "spawn_fim_worker",
+            //    &[&format!("Failed to send completion message: {}", e)],
+            //);
+        }
+    });
 
     // Ring buffer pick logic - gather extra context when cursor moves significantly
     // and process it in the background
@@ -493,20 +490,18 @@ pub fn fim_try_hint_inner(
         let hint_shown = state.fim_state.read().hint_shown;
         if hint_shown {
             let rt = state.tokio_runtime.clone();
-            if let Some(runtime) = rt.read().as_ref() {
-                runtime.spawn(async move {
-                    // TODO log error
-                    let _ = spawn_fim_completion_worker(
-                        state,
-                        pos_x,
-                        pos_y,
-                        buffer_handle,
-                        lines,
-                        Some(&[content]),
-                    )
-                    .await;
-                });
-            };
+            rt.read().spawn(async move {
+                // TODO log error
+                let _ = spawn_fim_completion_worker(
+                    state,
+                    pos_x,
+                    pos_y,
+                    buffer_handle,
+                    lines,
+                    Some(&[content]),
+                )
+                .await;
+            });
         }
     }
     Ok(())

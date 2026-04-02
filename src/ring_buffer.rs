@@ -1,8 +1,3 @@
-// src/ring_buffer.rs - Ring buffer for extra context chunks
-//
-// This module implements a ring buffer that collects and manages chunks of
-// text from the buffer to provide additional context to the language model.
-
 use {
     crate::{context::chunk_similarity, get_state, utils::in_normal_mode},
     nvim_oxi::{Dictionary, Result as NvimResult},
@@ -10,6 +5,36 @@ use {
     std::sync::Arc,
     std::time::Duration,
 };
+
+/// Setup a repeating timer to process ring buffer updates using tokio
+pub fn setup_ring_buffer_timer() -> NvimResult<()> {
+    let state = get_state();
+    let interval = state.config.read().ring_update_ms;
+    let interval_duration = Duration::from_millis(interval as u64);
+
+    // Create a new tokio runtime and spawn the timer task
+    // This follows the same pattern used elsewhere in the codebase
+    let rt = state.tokio_runtime.clone();
+    let timer_handle = rt.read().spawn(async move {
+        // Create a recurring interval timer
+        let mut interval = tokio::time::interval(interval_duration);
+
+        loop {
+            interval.tick().await;
+            let _ = ring_update();
+        }
+    });
+
+    // Store the handle in the plugin state
+    *state.ring_buffer_timer_handle.write() = Some(Arc::new(parking_lot::Mutex::new(timer_handle)));
+
+    state.debug_manager.read().log(
+        "setup_ring_buffer_timer",
+        format!("Started ring buffer timer (interval: {}ms)", interval),
+    );
+
+    Ok(())
+}
 
 /// Process ring buffer updates - moves queued chunks to active ring and sends to server
 ///  
@@ -62,38 +87,6 @@ fn ring_update() -> NvimResult<()> {
                     .await;
             });
     }
-
-    Ok(())
-}
-
-/// Setup a repeating timer to process ring buffer updates using tokio
-pub fn setup_ring_buffer_timer() -> NvimResult<()> {
-    let state = get_state();
-    let interval = state.config.read().ring_update_ms;
-    let interval_duration = std::time::Duration::from_millis(interval as u64);
-
-    // Create a new tokio runtime and spawn the timer task
-    // This follows the same pattern used elsewhere in the codebase
-    let timer_handle = tokio::runtime::Runtime::new().unwrap().spawn(async move {
-        // Create a recurring interval timer
-        let mut interval = tokio::time::interval(interval_duration);
-
-        loop {
-            interval.tick().await;
-            let _ = ring_update();
-        }
-    });
-
-    // Store the handle in the plugin state
-    {
-        let mut ring_buffer_timer_handle_lock = state.ring_buffer_timer_handle.write();
-        *ring_buffer_timer_handle_lock = Some(Arc::new(parking_lot::Mutex::new(timer_handle)));
-    }
-
-    state.debug_manager.read().log(
-        "setup_ring_buffer_timer",
-        format!("Started ring buffer timer (interval: {}ms)", interval),
-    );
 
     Ok(())
 }
