@@ -124,3 +124,16 @@ nvim schedule it would render
 01. Do not render the virtual text if it nolonger matches what's actually in the
     line
 
+01. ring buffer at end of fim (see XXX) 
+You are in the middle of the task of translating the codebase provided under
+`llama.vim/` into a new neovim plugin written in ENTIRELY rust using neovim
+bindings through the use of the nvim-oxi crate. NOTE there is not, nor should
+there EVER be ANY lua code in this project, all plugin functionality is achieved
+PURELY by using nvim-oxi 
+
+The following issue has been identified which should be resolved: In the
+original vim code at the end of the fim function (llama#fim) there is ring
+buffer pick logic (lines 940 - 946 of llama.vim). This same logic does not yet
+exist within the lib.rs trigger_fim function, it should exist at the end much
+like in the llama#fim
+

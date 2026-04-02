@@ -817,7 +817,15 @@ pub fn accept_fim_suggestion(
                 (new_line, None, inline)
             }
         }
-        FimAcceptType::Line => (new_line, None, inline),
+        FimAcceptType::Line => {
+            if new_line == line_cur && content.len() > 1 {
+                // accept the next line
+                let rest = vec![content[1].clone()];
+                (new_line, Some(rest), inline)
+            } else {
+                (new_line, None, inline)
+            }
+        }
         FimAcceptType::Word => {
             // Accept only the first word
             let suffix = &line_cur[pos_x..];
