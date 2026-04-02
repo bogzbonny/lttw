@@ -187,7 +187,7 @@ async fn spawn_fim_completion_worker(
     cursor_y: usize,
     buffer_handle: u64,
     buffer_lines: Vec<String>,
-    prev: Option<&[String]>, // speculative FIM content
+    prev: Option<Vec<String>>, // speculative FIM content
 ) -> Result<(), nvim_oxi::Error> {
     let seq = state.increment_debounce_sequence();
 
@@ -296,10 +296,10 @@ fn process_pending_display() -> NvimResult<()> {
     // however it would lead to recursive execution loop... maybe uncomment after
     // trying?
     //
-    //// if either the hint isn't shown OR it's only whitespace then trigger another fim
-    //if !state.fim_state.read().hint_shown || !state.fim_state.read().can_accept {
-    //    fim_try_hint();
-    //}
+    // if either the hint isn't shown OR it's only whitespace then trigger another fim
+    if !state.fim_state.read().hint_shown || !state.fim_state.read().can_accept {
+        fim_try_hint()?;
+    }
 
     Ok(())
 }
@@ -454,10 +454,10 @@ fn fim_accept(accept_type: FimAcceptType) -> NvimResult<Option<String>> {
 /// FIM hide function - clears the FIM hint from display
 fn fim_hide() {
     let state = get_state();
-    state
-        .debug_manager
-        .read()
-        .log("fim_hide", "Hiding FIM hint");
+    //state
+    //    .debug_manager
+    //    .read()
+    //    .log("fim_hide", "Hiding FIM hint");
 
     // Clear virtual text using nvim_buf_clear_namespace()
     if let Some(ns_id_val) = state.extmark_ns {
@@ -674,39 +674,6 @@ fn on_buf_leave() -> NvimResult<()> {
 
     Ok(())
 }
-
-/// Trigger speculative FIM completion using async worker
-fn trigger_fim() -> NvimResult<()> {
-    let state = get_state();
-    state.debug_manager.read().log(
-        "trigger_fim",
-        format!(
-            "state.enabled {}, state.config.auto_fim {}",
-            state.enabled.load(Ordering::SeqCst),
-            state.config.read().auto_fim
-        ),
-    );
-
-    // Check if FIM is enabled and auto_fim is true
-    if !state.enabled.load(Ordering::SeqCst) || !state.config.read().auto_fim {
-        return Ok(());
-    }
-
-    // Get CURRENT cursor position
-    let (pos_x, pos_y) = get_pos();
-    let lines = get_buf_lines(..);
-    let buffer_handle: u64 = get_buffer_handle();
-    let state_ = state.clone(); // Clone for async block
-
-// Get the current sequence number to track this request
-     // Safety: check if runtime is available before spawning
-     let rt = state.tokio_runtime.read();
-     let _ = rt.spawn(async move {
-         // TODO log error
-         let _ = spawn_fim_completion_worker(state_, pos_x, pos_y, buffer_handle, lines, None).await;
-     });
-     Ok(())
- }
 
 /// Handle BufWritePost event - gather chunks after saving buffer
 fn on_buf_write_post() -> NvimResult<()> {

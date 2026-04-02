@@ -30,11 +30,11 @@ pub fn get_local_context(
     lines: &[String],
     pos_x: usize,
     pos_y: usize,
-    prev: Option<&[String]>,
+    prev: Option<Vec<String>>,
     config: &LttwConfig,
 ) -> LocalContext {
     if let Some(prev_lines) = prev {
-        get_local_context_with_prev(lines, pos_x, pos_y, prev_lines, config)
+        get_local_context_with_prev(lines, pos_x, pos_y, &prev_lines, config)
     } else {
         get_local_context_no_prev(lines, pos_x, pos_y, config)
     }

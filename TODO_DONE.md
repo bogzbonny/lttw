@@ -124,7 +124,7 @@ nvim schedule it would render
 01. Do not render the virtual text if it nolonger matches what's actually in the
     line
 
-01. ring buffer at end of fim (see XXX) 
+01. ring buffer at end of fim 
 You are in the middle of the task of translating the codebase provided under
 `llama.vim/` into a new neovim plugin written in ENTIRELY rust using neovim
 bindings through the use of the nvim-oxi crate. NOTE there is not, nor should

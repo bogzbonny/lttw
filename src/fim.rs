@@ -148,7 +148,7 @@ pub fn fim_completion(
     pos_y: usize,
     buffer_handle: u64,
     lines: Vec<String>,
-    prev: Option<&[String]>, // speculative FIM content
+    prev: Option<Vec<String>>, // speculative FIM content
 ) -> Result<(), FimError> {
     let (
         n_predict,
@@ -174,7 +174,7 @@ pub fn fim_completion(
     };
 
     // Get local context
-    let ctx = get_local_context(&lines, pos_x, pos_y, prev, &state.config.read());
+    let ctx = get_local_context(&lines, pos_x, pos_y, prev.clone(), &state.config.read());
 
     // Skip auto FIM if too much suffix
     if ctx.line_cur_suffix.len() > state.config.read().max_line_suffix as usize {
@@ -488,6 +488,7 @@ pub fn fim_try_hint_inner(
         response = best_response;
     }
 
+    let mut prev_for_next_fim: Option<Vec<String>> = None;
     if let Some(response) = response {
         state.debug_manager.read().log(
             "fim_try_hint_inner",
@@ -504,21 +505,24 @@ pub fn fim_try_hint_inner(
         // TODO should this just always run even when no hint is shown?
         let hint_shown = state.fim_state.read().hint_shown;
         if hint_shown {
-            let rt = state.tokio_runtime.clone();
-            rt.read().spawn(async move {
-                // TODO log error
-                let _ = spawn_fim_completion_worker(
-                    state,
-                    pos_x,
-                    pos_y,
-                    buffer_handle,
-                    lines,
-                    Some(&[content]),
-                )
-                .await;
-            });
+            prev_for_next_fim = Some(vec![content]);
         }
     }
+
+    // Spawn a FIM in the background
+    let rt = state.tokio_runtime.clone();
+    rt.read().spawn(async move {
+        // TODO log error
+        let _ = spawn_fim_completion_worker(
+            state,
+            pos_x,
+            pos_y,
+            buffer_handle,
+            lines,
+            prev_for_next_fim,
+        )
+        .await;
+    });
     Ok(())
 }
 
