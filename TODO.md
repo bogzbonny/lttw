@@ -3,6 +3,9 @@
     both a cursor move and entering insert mode. Solved with debounce
 01. Panic condition when tab from an empty line 
 01. fix cursor positioning on accepted text
+02. sometimes doesn't display if on empty line (tab still works)
+     - Seems like this only happens when we're on the very first character of a
+       line some edge case biz
 
 ^^^^^^^^^ DONE
 
@@ -13,12 +16,11 @@
 
 01. ring buffer at end of fim (see XXX) 
 
+01. "line" completions SHOULD accept the NEXT line on tab if the completion only
+    starts on the next line
+
 01. Do not render the virtual text if it nolonger matches what's actually in the
     line
-
-02. sometimes doesn't display if on empty line (tab still works)
-     - Seems like this only happens when we're on the very first character of a
-       line some edge case biz
 
 05. Remove trailing prediction lines if they match 
      - go through one by one

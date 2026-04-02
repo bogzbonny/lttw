@@ -103,7 +103,7 @@ pub struct FimState {
     hint_shown: bool,
     pos_x: usize,
     pos_y: usize,
-    line_cur: String,
+    line_cur: String, // TODO can we remove this?
     can_accept: bool,
     content: Vec<String>,
     /// Last cursor Y position where ring buffer chunks were picked

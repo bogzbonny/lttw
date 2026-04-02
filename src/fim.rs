@@ -525,6 +525,10 @@ pub fn fim_try_hint_inner(
     }
 
     if let Some(response) = response {
+        state.debug_manager.read().log(
+            "fim_try_hint_inner",
+            format!("found cached response: {response:#?}"),
+        );
         let content = response.content;
         if content.is_empty() {
             return None;
@@ -619,7 +623,7 @@ pub async fn send_request(
 
 /// Render FIM suggestion at the current cursor location
 /// Filters out duplicate text that already exists in the buffer
-pub fn render_fim_suggestion(pos_x: usize, content: &str, line_cur: &str) -> RenderedSuggestion {
+pub fn render_fim_suggestion(state: &PluginState, pos_x: usize, content: &str, line_cur: &str) {
     // Parse content into lines
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
 
@@ -659,10 +663,20 @@ pub fn render_fim_suggestion(pos_x: usize, content: &str, line_cur: &str) -> Ren
     let joined = lines.join("\n");
     let can_accept = !joined.trim().is_empty();
 
-    RenderedSuggestion {
-        content: lines,
-        can_accept,
-    }
+    state.debug_manager.read().log(
+        "render_fim_suggestion",
+        format!("Displaying FIM hint: \n{}", lines.join("\n")),
+    );
+
+    // Update FIM state
+    state
+        .fim_state
+        .write()
+        .update(can_accept, pos_x, pos_y, can_accept, lines);
+
+    // Display virtual text using extmarks
+    display_fim_text(&state)?;
+    Ok(())
 }
 
 #[derive(Clone)]
