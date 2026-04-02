@@ -6,13 +6,12 @@
 
 use {
     crate::{
-        config::LttwConfig,
         context::{get_local_context, LocalContext},
         get_buf_lines, get_buffer_handle, get_pos, in_insert_mode,
         plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
-        utils::get_buf_line,
-        utils::sha256,
+        spawn_fim_completion_worker,
+        utils::{get_buf_line, random_range, sha256},
         FimCompletionMessage, NvimResult,
     },
     serde::{Deserialize, Serialize},
@@ -146,9 +145,18 @@ pub fn fim_completion(
     pos_y: usize,
     buffer_handle: u64,
     lines: Vec<String>,
-    prev: Option<&[String]>,
+    prev: Option<&[String]>, // speculative FIM content
 ) -> Result<(), FimError> {
-    let (n_predict, stop, t_max_prompt_ms, t_max_predict_ms, model, endpoint_fim, api_key) = {
+    let (
+        n_predict,
+        stop,
+        t_max_prompt_ms,
+        t_max_predict_ms,
+        model,
+        endpoint_fim,
+        api_key,
+        ring_chunk_size,
+    ) = {
         let config = state.config.read();
         (
             config.n_predict,
@@ -158,87 +166,87 @@ pub fn fim_completion(
             config.model_fim.clone(),
             config.endpoint_fim.clone(),
             config.api_key.clone(),
+            config.ring_chunk_size,
         )
     };
 
-    let request_data = {
-        // Get local context
-        let ctx = get_local_context(&lines, pos_x, pos_y, prev, &state.config.read());
+    // Get local context
+    let ctx = get_local_context(&lines, pos_x, pos_y, prev, &state.config.read());
 
-        // Skip auto FIM if too much suffix
-        if ctx.line_cur_suffix.len() > state.config.read().max_line_suffix as usize {
-            return Ok(());
-        }
+    // Skip auto FIM if too much suffix
+    if ctx.line_cur_suffix.len() > state.config.read().max_line_suffix as usize {
+        return Ok(());
+    }
 
-        // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
-        // This prevents redundant context from cluttering the ring buffer
-        let current_prefix_lines: Vec<String> =
-            ctx.prefix.split('\n').map(|s| s.to_string()).collect();
-        if !current_prefix_lines.is_empty() {
-            state
-                .ring_buffer
-                .write()
-                .evict_similar(&current_prefix_lines, 0.5);
-        }
+    let hashes = compute_hashes(&ctx);
 
-        // Build request
-        let extra = state.ring_buffer.read().get_extra();
-
-        let hashes = compute_hashes(&ctx);
-
-        // Check cache
-        if state.config.read().auto_fim {
-            for hash in &hashes {
-                let cache_lock = state.cache.read();
-                if cache_lock.contains_key(hash) {
-                    return Ok(());
-                }
+    // if we already have a cached completion for one of the hashes, don't send a request
+    if state.config.read().auto_fim {
+        for hash in &hashes {
+            let cache_lock = state.cache.read();
+            if cache_lock.contains_key(hash) {
+                return Ok(());
             }
         }
+    }
 
-        // Build request
-        let request = FimRequest {
-            id_slot: 0,
-            input_prefix: ctx.prefix.clone(),
-            input_suffix: ctx.suffix.clone(),
-            input_extra: extra,
-            prompt: ctx.middle.clone(),
-            n_predict,
-            stop,
-            n_indent: ctx.indent,
-            top_k: 40,
-            top_p: 0.90,
-            samplers: vec![
-                "top_k".to_string(),
-                "top_p".to_string(),
-                "infill".to_string(),
-            ],
-            stream: false,
-            cache_prompt: true,
-            t_max_prompt_ms,
-            t_max_predict_ms,
-            response_fields: vec![
-                "content".to_string(),
-                "timings/prompt_n".to_string(),
-                "timings/prompt_ms".to_string(),
-                "timings/prompt_per_token_ms".to_string(),
-                "timings/prompt_per_second".to_string(),
-                "timings/predicted_n".to_string(),
-                "timings/predicted_ms".to_string(),
-                "timings/predicted_per_token_ms".to_string(),
-                "timings/predicted_per_second".to_string(),
-                "truncated".to_string(),
-                "tokens_cached".to_string(),
-            ],
-            model: model.clone(),
-            prev: prev.map(|p| p.to_vec()).unwrap_or_default(),
-        };
+    // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
+    // This prevents redundant context from cluttering the ring buffer
 
-        // Return the request data and hashes, releasing locks before we exit the block
-        (request, hashes, ctx.clone())
-    }; // Locks released here
+    // get the chunk of text around the current line (total length = ring_chunk_size)
+    let ring_chunk_size_half = (ring_chunk_size / 2) as usize;
+    let start_line = pos_y.saturating_sub(ring_chunk_size_half);
+    let end_line = (pos_y + ring_chunk_size_half).min(lines.len());
+    let text: Vec<String> = lines[start_line..end_line].to_vec();
 
-    let (request, hashes, _ctx) = request_data;
+    // TODO understand why we use a random here
+    let l0 = random_range(0, text.len().saturating_sub(ring_chunk_size_half));
+    let l1 = (l0 + ring_chunk_size_half).min(text.len());
+    let chunk: Vec<String> = text[l0..l1].to_vec();
+
+    if !chunk.is_empty() {
+        state.ring_buffer.write().evict_similar(&chunk, 0.5);
+    }
+
+    // Build request
+    let extra = state.ring_buffer.read().get_extra();
+
+    let request = FimRequest {
+        id_slot: 0,
+        input_prefix: ctx.prefix.clone(),
+        input_suffix: ctx.suffix.clone(),
+        input_extra: extra,
+        prompt: ctx.middle.clone(),
+        n_predict,
+        stop,
+        n_indent: ctx.indent,
+        top_k: 40,
+        top_p: 0.90,
+        samplers: vec![
+            "top_k".to_string(),
+            "top_p".to_string(),
+            "infill".to_string(),
+        ],
+        stream: false,
+        cache_prompt: true,
+        t_max_prompt_ms,
+        t_max_predict_ms,
+        response_fields: vec![
+            "content".to_string(),
+            "timings/prompt_n".to_string(),
+            "timings/prompt_ms".to_string(),
+            "timings/prompt_per_token_ms".to_string(),
+            "timings/prompt_per_second".to_string(),
+            "timings/predicted_n".to_string(),
+            "timings/predicted_ms".to_string(),
+            "timings/predicted_per_token_ms".to_string(),
+            "timings/predicted_per_second".to_string(),
+            "truncated".to_string(),
+            "tokens_cached".to_string(),
+        ],
+        model: model.clone(),
+        prev: prev.map(|p| p.to_vec()).unwrap_or_default(),
+    };
 
     let Ok(tx) = state.get_fim_completion_tx() else {
         // TODO log error
@@ -264,8 +272,6 @@ pub fn fim_completion(
             // Cache the response with timing info (new block for re-acquired locks)
             {
                 let mut cache_lock = state.cache.write();
-                // Ring buffer is read but not modified here
-                let _ring_buffer_lock = state.ring_buffer.read();
                 for hash in &hashes {
                     cache_lock.insert(hash.clone(), response.clone());
                 }
@@ -286,7 +292,6 @@ pub fn fim_completion(
                 content,
             };
 
-            // Use blocking_send since we're in an async context but want to ensure delivery
             if let Err(_e) = tx.send(msg).await {
                 // TODO log error
                 //debug_manager.log(
@@ -310,7 +315,81 @@ pub fn fim_completion(
     //    let s:pos_y_pick = l:pos_y
     //endif
 
-    // Return content - timing info is stored in cache alongside response
+    //// Ring buffer pick logic - gather extra context when cursor moves significantly
+    //// This mirrors the logic in llama#fim (llama.vim lines 930-946)
+    //let last_pick_pos_y = state.fim_state.read().get_last_pick_pos_y();
+    //let delta_y = last_pick_pos_y
+    //    .map(|last_pos| {
+    //        pos_y
+    //            .saturating_sub(last_pos)
+    //            .max(last_pos.saturating_sub(pos_y))
+    //    })
+    //    .unwrap_or(33); // If no last position, treat as large delta to gather initial chunks
+
+    //// Only gather chunks if cursor has moved more than 32 lines
+    //let ring_buffer_pick_needed = delta_y > 32;
+
+    //if ring_buffer_pick_needed {
+    //    let max_y = lines.len().saturating_sub(1); // line('$') - 1 (0-indexed)
+
+    //    // Get ring configuration
+    //    let config_lock = state.config.read();
+    //    let ring_scope = config_lock.ring_scope as usize;
+    //    let n_prefix = config_lock.n_prefix as usize;
+    //    let n_suffix = config_lock.n_suffix as usize;
+    //    let ring_chunk_size = config_lock.ring_chunk_size as usize;
+
+    //    // Expand the prefix even further
+    //    // Vim: getline(max([1, l:pos_y - g:llama_config.ring_scope]), max([1, l:pos_y - g:llama_config.n_prefix]))
+    //    // In Rust with 0-indexed lines:
+    //    let prefix_start = (pos_y.saturating_sub(ring_scope)).max(0);
+    //    let prefix_end = (pos_y.saturating_sub(n_prefix)).max(0);
+
+    //    let prefix_lines =
+    //        if prefix_start <= max_y && prefix_end <= max_y && prefix_start <= prefix_end {
+    //            lines
+    //                .get(prefix_start..=prefix_end)
+    //                .map(|slice| slice.to_vec())
+    //                .unwrap_or_default()
+    //        } else {
+    //            Vec::new()
+    //        };
+
+    //    // Log prefix chunk info before moving
+    //    if !prefix_lines.is_empty() {
+    //        let mut ring_buffer_lock = state.ring_buffer.write();
+    //        ring_buffer_lock.pick_chunk(prefix_lines, false, false);
+    //    }
+
+    //    // Pick a suffix chunk
+    //    // Vim: getline(min([l:max_y, l:pos_y + g:llama_config.n_suffix]), min([l:max_y, l:pos_y + g:llama_config.n_suffix + g:llama_config.ring_chunk_size]))
+    //    // In Rust with 0-indexed lines:
+    //    let suffix_start = pos_y.saturating_add(n_suffix).min(max_y);
+    //    let suffix_end = (pos_y
+    //        .saturating_add(n_suffix)
+    //        .saturating_add(ring_chunk_size))
+    //    .min(max_y);
+
+    //    let suffix_lines =
+    //        if suffix_start <= max_y && suffix_end <= max_y && suffix_start <= suffix_end {
+    //            lines
+    //                .get(suffix_start..=suffix_end)
+    //                .map(|slice| slice.to_vec())
+    //                .unwrap_or_default()
+    //        } else {
+    //            Vec::new()
+    //        };
+
+    //    // Log suffix chunk info before moving
+    //    if !suffix_lines.is_empty() {
+    //        let mut ring_buffer_lock = state.ring_buffer.write();
+    //        ring_buffer_lock.pick_chunk(suffix_lines, false, false);
+    //    }
+
+    //    // Update the last pick position
+    //    state.fim_state.write().set_last_pick_pos_y(pos_y);
+    //}
+
     Ok(())
 }
 
@@ -446,20 +525,23 @@ pub fn fim_try_hint_inner(
             return None;
         }
 
-        let out = render_fim_suggestion(
-            pos_x,
-            pos_y,
-            &content,
-            &ctx.line_cur_suffix,
-            &state.config.read(),
-        );
+        let out = render_fim_suggestion(pos_x, &content, &ctx.line_cur_suffix);
 
         // run async speculative FIM in the background for this position
+        // TODO should this just always run even when no hint is shown?
         let hint_shown = state.fim_state.read().hint_shown;
         if hint_shown {
             tokio::spawn(async move {
                 // TODO log error
-                let _ = fim_completion(state, pos_x, pos_y, buffer_handle, lines, Some(&[content]));
+                let _ = spawn_fim_completion_worker(
+                    state,
+                    pos_x,
+                    pos_y,
+                    buffer_handle,
+                    lines,
+                    Some(&[content]),
+                )
+                .await;
             });
         }
         Some(out)
@@ -532,13 +614,7 @@ pub async fn send_request(
 
 /// Render FIM suggestion at the current cursor location
 /// Filters out duplicate text that already exists in the buffer
-pub fn render_fim_suggestion(
-    pos_x: usize,
-    _pos_y: usize,
-    content: &str,
-    line_cur: &str,
-    _config: &LttwConfig,
-) -> RenderedSuggestion {
+pub fn render_fim_suggestion(pos_x: usize, content: &str, line_cur: &str) -> RenderedSuggestion {
     // Parse content into lines
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
 

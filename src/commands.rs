@@ -1,7 +1,7 @@
 use {
     crate::{
-        autocommands::clear_filetype_autocommand, debug_clear, debug_log, debug_toggle,
-        disable_plugin, enable_plugin, instruction, is_enabled, toggle_auto_fim,
+        autocommands::clear_filetype_autocommand, debug_clear, debug_toggle, disable_plugin,
+        enable_plugin, instruction, is_enabled, toggle_auto_fim,
     },
     nvim_oxi::{
         api::{self},
@@ -57,7 +57,7 @@ pub fn register_commands() -> NvimResult<()> {
         "LttwInst",
         |_| -> NvimResult<()> {
             // TODO: Get visual range and start instruction
-            debug_log("Starting instruction editing", vec![])?;
+            //debug_log("Starting instruction editing", vec![])?;
             Ok(())
         },
         &Default::default(),

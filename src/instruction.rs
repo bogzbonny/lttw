@@ -524,17 +524,14 @@ fn inst_start(l0: i64, l1: i64, inst: &str) -> NvimResult<i64> {
                 req.extmark_id = Some(id);
                 state.debug_manager.read().log(
                     "inst_start",
-                    &[&format!(
-                        "Created extmark {} for instruction {}",
-                        id, req_id
-                    )],
+                    format!("Created extmark {} for instruction {}", id, req_id),
                 );
             }
             Err(e) => {
-                state.debug_manager.read().log(
-                    "inst_start",
-                    &[&format!("Failed to create extmark: {:?}", e)],
-                );
+                state
+                    .debug_manager
+                    .read()
+                    .log("inst_start", format!("Failed to create extmark: {:?}", e));
             }
         }
     }
@@ -553,10 +550,7 @@ fn inst_start(l0: i64, l1: i64, inst: &str) -> NvimResult<i64> {
 
     state.debug_manager.read().log(
         "inst_start",
-        &[&format!(
-            "Started instruction {} at range ({}, {})",
-            req_id, l0, l1
-        )],
+        format!("Started instruction {} at range ({}, {})", req_id, l0, l1),
     );
 
     Ok(req_id)
@@ -597,7 +591,7 @@ fn inst_send(req_id: i64) -> NvimResult<Option<String>> {
             Some(r) => r,
             None => {
                 let debug_manager = state.debug_manager.read().clone();
-                debug_manager.log("inst_send", &[&format!("Request {} not found", req_id)]);
+                debug_manager.log("inst_send", format!("Request {} not found", req_id));
                 return Ok(None);
             }
         };
@@ -612,11 +606,10 @@ fn inst_send(req_id: i64) -> NvimResult<Option<String>> {
 
     debug_manager.log(
         "inst_send",
-        &[&format!(
-            "Sending instruction request {} with {} messages",
-            req_id,
+        format!(
+            "Sending instruction request {req_id} with {} messages",
             messages.len()
-        )],
+        ),
     );
 
     // Send request asynchronously
@@ -665,7 +658,7 @@ fn inst_send(req_id: i64) -> NvimResult<Option<String>> {
         Err(e) => {
             // Log the error
             let debug_manager = state.debug_manager.read().clone();
-            debug_manager.log("inst_send", &[&format!("Error: {:?}", e)]);
+            debug_manager.log("inst_send", format!("Error: {:?}", e));
 
             // Update request status
             {
@@ -756,10 +749,7 @@ fn inst_update(req_id: i64, response_chunk: &str) -> NvimResult<String> {
             let debug_manager = state.debug_manager.read().clone();
             debug_manager.log(
                 "inst_update",
-                &[&format!(
-                    "Request {} not found for streaming update",
-                    req_id
-                )],
+                format!("Request {} not found for streaming update", req_id),
             );
             return Ok(String::new());
         }
@@ -785,7 +775,7 @@ fn inst_finalize(req_id: i64) -> NvimResult<()> {
             let debug_manager = state.debug_manager.read().clone();
             debug_manager.log(
                 "inst_finalize",
-                &[&format!("Request {} not found for finalize", req_id)],
+                format!("Request {} not found for finalize", req_id),
             );
             return Ok(());
         }
@@ -796,10 +786,7 @@ fn inst_finalize(req_id: i64) -> NvimResult<()> {
         let state = get_state();
         state.debug_manager.read().log(
             "inst_finalize",
-            &[&format!(
-                "Request {} finalized with {} chars",
-                req_id, result_len
-            )],
+            format!("Request {} finalized with {} chars", req_id, result_len),
         );
     }
 
@@ -840,10 +827,7 @@ fn inst_accept() -> NvimResult<()> {
             if req.result.is_empty() {
                 state.debug_manager.read().log(
                     "inst_accept",
-                    &[&format!(
-                        "Request {} has empty result, skipping apply",
-                        req_id
-                    )],
+                    format!("Request {} has empty result, skipping apply", req_id),
                 );
                 // Still clean up the visual marker
                 if let Some(ns_id) = req.ns_id {
@@ -860,13 +844,13 @@ fn inst_accept() -> NvimResult<()> {
 
             state.debug_manager.read().log(
                 "inst_accept",
-                &[&format!(
+                format!(
                     "Applying {} lines to buffer {} at range ({}, {})",
                     result_lines.len(),
                     bufnr,
                     l0,
                     l1
-                )],
+                ),
             );
 
             // Apply the result to the buffer using current buffer (assuming we're on the right buffer)
@@ -879,14 +863,14 @@ fn inst_accept() -> NvimResult<()> {
                     let state = get_state();
                     state.debug_manager.read().log(
                         "inst_accept",
-                        &["Successfully applied instruction result to buffer"],
+                        "Successfully applied instruction result to buffer",
                     );
                 }
                 Err(e) => {
                     let state = get_state();
                     state.debug_manager.read().log(
                         "inst_accept",
-                        &[&format!("Failed to set buffer lines: {:?}", e)],
+                        format!("Failed to set buffer lines: {:?}", e),
                     );
                 }
             }
@@ -905,7 +889,7 @@ fn inst_accept() -> NvimResult<()> {
 
     state.debug_manager.read().log(
         "inst_accept",
-        &["No ready instruction request found for current buffer"],
+        "No ready instruction request found for current buffer",
     );
 
     Ok(())
@@ -939,7 +923,7 @@ fn inst_cancel() -> NvimResult<()> {
             state
                 .debug_manager
                 .read()
-                .log("inst_cancel", &[&format!("Cancelling request {}", req_id)]);
+                .log("inst_cancel", format!("Cancelling request {}", req_id));
 
             // Delete the visual marker
             if let Some(ns_id) = req.ns_id {
@@ -950,15 +934,15 @@ fn inst_cancel() -> NvimResult<()> {
                             let state = get_state();
                             state.debug_manager.read().log(
                                 "inst_cancel",
-                                &[&format!("Deleted extmark for request {}", req_id)],
+                                format!("Deleted extmark for request {}", req_id),
                             );
                         }
                         Err(e) => {
                             let state = get_state();
-                            state.debug_manager.read().log(
-                                "inst_cancel",
-                                &[&format!("Failed to delete extmark: {:?}", e)],
-                            );
+                            state
+                                .debug_manager
+                                .read()
+                                .log("inst_cancel", format!("Failed to delete extmark: {:?}", e));
                         }
                     }
                 }
@@ -1008,7 +992,7 @@ pub fn inst_rerun() -> NvimResult<Option<String>> {
         state
             .debug_manager
             .read()
-            .log("inst_rerun", &[&format!("Re-running request {}", req_id)]);
+            .log("inst_rerun", format!("Re-running request {}", req_id));
         return Ok(Some(format!("Re-running request {}", req_id)));
     }
 
@@ -1044,10 +1028,10 @@ pub fn inst_continue() -> NvimResult<Option<String>> {
             req.n_gen = 0;
         }
 
-        state.debug_manager.read().log(
-            "inst_continue",
-            &[&format!("Continuing request {}", req_id)],
-        );
+        state
+            .debug_manager
+            .read()
+            .log("inst_continue", format!("Continuing request {}", req_id));
         return Ok(Some(format!("Continuing request {}", req_id)));
     }
 

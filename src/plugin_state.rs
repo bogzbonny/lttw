@@ -1,7 +1,7 @@
 use {
     crate::{
         cache, config, debug, instruction::InstructionRequestState, ring_buffer,
-        FimCompletionMessage, FimState, FimWorkerDebounce,
+        FimCompletionMessage, FimState,
     },
     nvim_oxi::api,
     parking_lot::RwLock,
@@ -43,7 +43,8 @@ pub struct PluginState {
     #[allow(dead_code)]
     pub next_inst_req_id: Arc<AtomicI64>,
     pub fim_state: Arc<RwLock<FimState>>,
-    pub fim_worker_debounce: Arc<RwLock<FimWorkerDebounce>>,
+    pub fim_worker_debounce_seq: Arc<RwLock<u64>>,
+    pub fim_worker_debounce_last_spawn: Arc<RwLock<Instant>>,
     pub extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
     #[allow(dead_code)]
     pub inst_ns: Option<u32>, // Namespace for instruction extmarks
@@ -85,7 +86,8 @@ impl Default for PluginState {
             inst_ns,
             next_inst_req_id: Arc::new(AtomicI64::new(0)),
             fim_state: Arc::new(RwLock::new(FimState::default())),
-            fim_worker_debounce: Arc::new(RwLock::new(FimWorkerDebounce::new())),
+            fim_worker_debounce_seq: Arc::new(RwLock::new(0)),
+            fim_worker_debounce_last_spawn: Arc::new(RwLock::new(Instant::now())),
             extmark_ns,
             enabled: Arc::new(AtomicBool::new(enable_at_startup)),
             autocmd_ids: Arc::new(RwLock::new(Vec::new())),
@@ -109,5 +111,16 @@ impl PluginState {
                 "Completion channel not initialized".to_string(),
             ))
         })
+    }
+    /// Increment the debounce sequence and return the current sequence number
+    pub fn increment_debounce_sequence(&self) -> u64 {
+        let mut seq = self.fim_worker_debounce_seq.write();
+        *seq += 1;
+        *seq
+    }
+
+    /// Record that a worker was spawned (update last_spawn timestamp)
+    pub fn record_worker_spawn(&self) {
+        *self.fim_worker_debounce_last_spawn.write() = Instant::now();
     }
 }

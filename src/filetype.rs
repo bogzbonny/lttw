@@ -29,7 +29,7 @@ pub fn on_buf_enter_check_filetype() -> NvimResult<()> {
 
         state.debug_manager.read().log(
             "on_buf_enter_check_filetype",
-            &[&format!("filetype {filetype}, should_be_enabled {out}",)],
+            format!("filetype {filetype}, should_be_enabled {out}",),
         );
         out
     };

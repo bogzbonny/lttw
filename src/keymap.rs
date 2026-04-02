@@ -54,7 +54,7 @@ pub fn setup_keymaps() -> NvimResult<()> {
                         state
                             .debug_manager
                             .read()
-                            .log("Tab accept", &[&format!("Error accepting FIM: {:?}", e)]);
+                            .log("Tab accept", format!("Error accepting FIM: {:?}", e));
                     }
                 }
                 // TODO insert tab if not in hint mode
@@ -75,7 +75,7 @@ pub fn setup_keymaps() -> NvimResult<()> {
                         let state = get_state();
                         state.debug_manager.read().log(
                             "LttwFimAcceptFullOrTab",
-                            &[&format!("Error accepting FIM: {:?}", e)],
+                            format!("Error accepting FIM: {:?}", e),
                         );
                     }
                 }

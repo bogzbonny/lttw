@@ -3,7 +3,7 @@
 // This module handles gathering local context around the cursor position
 // and computing similarity between text chunks for the ring buffer.
 
-use crate::config::LttwConfig;
+use {crate::config::LttwConfig, regex::Regex, std::collections::HashSet};
 
 /// Local context around the cursor position
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -177,35 +177,35 @@ pub fn get_indent(line: &str) -> usize {
 /// Compute similarity between two chunks of text
 /// Returns a value between 0.0 (no similarity) and 1.0 (high similarity)
 pub fn chunk_similarity(c0: &[String], c1: &[String]) -> f64 {
-    let re = regex::Regex::new(r"\W+").unwrap();
-    use std::collections::HashSet;
+    // The regex \W+ matches one or more consecutive non-word characters (where word characters are [a-zA-Z0-9_]).
+    // This effectively splits the text into tokens which are purely word characters. Example:
+    //    text is:         "Hello, world!\nHow are you?"
+    //    \W+ matches:     ", ",  "!\n",  " ",  " ", "?"
+    //    Resulting array: ["Hello", "world", "How", "are", "you", ""]
+    let re = Regex::new(r"\W+").unwrap();
 
     let text0 = c0.join("\n");
     let text1 = c1.join("\n");
-    let tokens0: Vec<&str> = re.split(&text0).collect();
-    let tokens1: Vec<&str> = re.split(&text1).collect();
+    let tokens0: Vec<&str> = re.split(&text0).filter(|s| !s.is_empty()).collect();
+    let tokens1: Vec<&str> = re.split(&text1).filter(|s| !s.is_empty()).collect();
+
+    if tokens0.is_empty() && tokens1.is_empty() {
+        return 1.0;
+    }
+
+    if tokens0.is_empty() || tokens1.is_empty() {
+        // common would = 0
+        return 0.0;
+    }
 
     let mut set0: HashSet<&str> = HashSet::new();
     for tok in &tokens0 {
-        if !tok.is_empty() {
-            set0.insert(tok);
-        }
+        set0.insert(tok);
     }
 
-    let mut common = 0;
-    for tok in &tokens1 {
-        if set0.contains(tok) {
-            common += 1;
-        }
-    }
+    let common = tokens1.iter().filter(|tok| set0.contains(*tok)).count();
 
-    if tokens0.is_empty() && tokens1.is_empty() {
-        1.0
-    } else if tokens0.is_empty() || tokens1.is_empty() {
-        0.0
-    } else {
-        2.0 * common as f64 / (tokens0.len() + tokens1.len()) as f64
-    }
+    2.0 * common as f64 / (tokens0.len() + tokens1.len()) as f64
 }
 
 #[cfg(test)]

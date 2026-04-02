@@ -35,10 +35,10 @@ fn ring_update() -> NvimResult<()> {
     if chunk_count > 0 {
         state.debug_manager.read().log(
             "ring_update",
-            &[&format!(
+            format!(
                 "Processing {} ring buffer chunks (interval: {}ms)",
                 chunk_count, update_interval
-            )],
+            ),
         );
 
         // Build request with ring buffer context
@@ -92,10 +92,7 @@ pub fn setup_ring_buffer_timer() -> NvimResult<()> {
 
     state.debug_manager.read().log(
         "setup_ring_buffer_timer",
-        &[&format!(
-            "Started ring buffer timer (interval: {}ms)",
-            interval
-        )],
+        format!("Started ring buffer timer (interval: {}ms)", interval),
     );
 
     Ok(())
@@ -304,7 +301,7 @@ impl RingBuffer {
 
         // Evict from queued chunks
         for i in (0..self.queued.len()).rev() {
-            let sim = crate::context::chunk_similarity(&self.queued[i].data, text);
+            let sim = chunk_similarity(&self.queued[i].data, text);
             if sim > threshold {
                 self.queued.remove(i);
                 self.n_evict += 1;
@@ -313,7 +310,7 @@ impl RingBuffer {
 
         // Evict from ring chunks
         for i in (0..self.chunks.len()).rev() {
-            let sim = crate::context::chunk_similarity(&self.chunks[i].data, text);
+            let sim = chunk_similarity(&self.chunks[i].data, text);
             if sim > threshold {
                 self.chunks.remove(i);
                 self.n_evict += 1;

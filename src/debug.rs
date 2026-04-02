@@ -3,11 +3,7 @@
 // This module provides debug logging functionality for the plugin.
 // Logs are written to a file named 'lttw.log' in the working directory.
 
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::Path;
-
-use crate::utils;
+use {crate::utils, std::fs::OpenOptions, std::io::Write, std::path::Path};
 
 /// Debug manager
 #[derive(Debug, Clone)]
@@ -53,7 +49,7 @@ impl DebugManager {
     }
 
     /// Log a message to the file
-    pub fn log(&self, msg: &str, details: &[&str]) {
+    pub fn log<S: Into<String>>(&self, msg: &str, details: S) {
         if !self.enabled {
             return;
         }
@@ -61,19 +57,10 @@ impl DebugManager {
         let mut header = msg.to_string();
         let mut block = Vec::new();
 
-        if !details.is_empty() {
-            header.push_str(" | ");
-            header.push_str(details.first().unwrap_or(&""));
-            block.push(header.clone());
-
-            for detail in details {
-                block.push(detail.to_string());
-            }
-
-            block.push("}".to_string());
-        } else {
-            block.push(header);
-        }
+        header.push_str(" | ");
+        block.push(header.clone());
+        block.push(details.into());
+        block.push("}".to_string());
 
         let log_entry = block.join("\n");
 
@@ -130,7 +117,7 @@ mod tests {
         let mut manager = DebugManager::new();
 
         // Test basic logging
-        manager.log("test1", &[]);
+        manager.log("test1", "");
         assert!(manager.is_enabled());
 
         // Test enabling/disabling

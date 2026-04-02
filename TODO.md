@@ -6,6 +6,8 @@
 
 ^^^^^^^^^ DONE
 
+00. use spawn_fim_completion_worker instead of trigger_fim
+
 01. When typing on top of a suggestion, that suggestion should still be there
     IFF we're typing the same content... wonder if this has to do with the ring
     buffer

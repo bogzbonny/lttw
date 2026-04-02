@@ -1,7 +1,7 @@
 use {
     crate::{
         filetype::on_buf_enter_check_filetype, fim_hide, get_state, on_buf_enter_gather_chunks,
-        on_buf_leave, on_buf_write_post, on_move, on_text_yank_post, trigger_fim,
+        on_buf_leave, on_buf_write_post, on_move, on_text_yank_post, trigger_fim2,
     },
     nvim_oxi::{
         api::{self, del_autocmd},
@@ -20,7 +20,7 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
         ["InsertLeavePre", "CompleteChanged"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
-                let _ = fim_hide();
+                fim_hide();
                 false // DO NOT DELETE this autocommand once used
             })
             .build(),
@@ -58,7 +58,8 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
             ["CursorMovedI", "InsertEnter"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
                 .callback(|_| {
-                    let _ = trigger_fim();
+                    //let _ = trigger_fim();
+                    let _ = trigger_fim2();
                     false // DO NOT DELETE this autocommand once used
                 })
                 .build(),
@@ -111,7 +112,7 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
         ["InsertLeave"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
-                let _ = fim_hide();
+                fim_hide();
                 false // DO NOT DELETE this autocommand once used
             })
             .build(),
