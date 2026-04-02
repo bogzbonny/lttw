@@ -9,10 +9,16 @@ use {
         cache::Cache,
         config::LttwConfig,
         context::{get_local_context, LocalContext},
+        get_buf_lines, get_pos, get_state, in_insert_mode,
         ring_buffer::{ExtraContext, RingBuffer},
+        utils::get_buf_line,
         utils::sha256,
+        FimCompletionMessage, NvimResult, PluginState,
     },
+    parking_lot::RwLock,
     serde::{Deserialize, Serialize},
+    std::sync::Arc,
+    tokio::sync::mpsc,
 };
 
 /// FIM completion request
@@ -136,23 +142,25 @@ pub enum FimError {
 /// Main FIM completion function that sends a request to the server
 /// Returns the content and optionally timing info for display
 #[allow(clippy::too_many_arguments)] // FIM requires context from multiple sources
-pub async fn fim_completion(
+pub fn fim_completion(
+    tx: mpsc::Sender<FimCompletionMessage>,
     pos_x: usize,
     pos_y: usize,
-    lines: &[String],
+    buffer_handle: u64,
+    lines: Vec<String>,
     config: &LttwConfig,
-    cache: std::sync::Arc<parking_lot::RwLock<Cache>>,
-    ring_buffer: std::sync::Arc<parking_lot::RwLock<RingBuffer>>,
+    cache: Arc<RwLock<Cache>>,
+    ring_buffer: Arc<RwLock<RingBuffer>>,
     prev: Option<&[String]>,
-) -> Result<Option<String>, FimError> {
+) -> Result<(), FimError> {
     // Lock the cache and ring buffer for setup
     let request_data = {
         // Get local context
-        let ctx = get_local_context(lines, pos_x, pos_y, prev, config);
+        let ctx = get_local_context(&lines, pos_x, pos_y, prev, config);
 
         // Skip auto FIM if too much suffix
         if ctx.line_cur_suffix.len() > config.max_line_suffix as usize {
-            return Ok(None);
+            return Ok(());
         }
 
         // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
@@ -175,7 +183,7 @@ pub async fn fim_completion(
             for hash in &hashes {
                 let cache_lock = cache.read();
                 if cache_lock.contains_key(hash) {
-                    return Ok(None);
+                    return Ok(());
                 }
             }
         }
@@ -224,24 +232,235 @@ pub async fn fim_completion(
 
     let (request, hashes, _ctx) = request_data;
 
-    // Send request without holding locks
-    let response_text = send_request(&request, config).await?;
+    let endpoint_fim = config.endpoint_fim.clone();
+    let model_fim = config.model_fim.clone();
+    let api_key = config.model_fim.clone();
+    let state = get_state();
+    let tokio_runtime_lock = state.tokio_runtime.lock();
+    if let Some(runtime) = tokio_runtime_lock.as_ref() {
+        runtime.spawn(async move {
+            // Send request without holding locks
+            let Ok(response_text) = send_request(&request, endpoint_fim, model_fim, api_key).await
+            else {
+                // TODO log error
+                return;
+            };
 
-    // Parse response
-    let response: FimResponse = serde_json::from_str(&response_text)?;
+            // Parse response
+            let Ok(response) = serde_json::from_str::<FimResponse>(&response_text) else {
+                // TODO log error
+                return;
+            };
+            let content = response.content.clone(); // Clone content for return
 
-    // Cache the response with timing info (new block for re-acquired locks)
-    {
-        let mut cache_lock = cache.write();
-        // Ring buffer is read but not modified here
-        let _ring_buffer_lock = ring_buffer.read();
-        for hash in &hashes {
-            cache_lock.insert(hash.clone(), response_text.clone());
+            // Cache the response with timing info (new block for re-acquired locks)
+            {
+                let mut cache_lock = cache.write();
+                // Ring buffer is read but not modified here
+                let _ring_buffer_lock = ring_buffer.read();
+                for hash in &hashes {
+                    cache_lock.insert(hash.clone(), response.clone());
+                }
+            }
+
+            // Send result through channel
+            let Some(orig_line) = lines.get(pos_y) else {
+                return;
+            };
+            if should_abort(pos_y, orig_line, &content) {
+                return;
+            }
+            let msg = FimCompletionMessage {
+                buffer_handle,
+                buffer_lines: lines,
+                cursor_x: pos_x,
+                cursor_y: pos_y,
+                content,
+            };
+
+            // Use blocking_send since we're in an async context but want to ensure delivery
+            if let Err(_e) = tx.send(msg).await {
+                // TODO log error
+                //debug_manager.log(
+                //    "spawn_fim_worker",
+                //    &[&format!("Failed to send completion message: {}", e)],
+                //);
+            }
+        });
+    }
+
+    // XXX TODO update ring buffer chunks
+    //    " gather some extra context nearby and process it in the background
+    //" only gather chunks if the cursor has moved a lot
+    //" TODO: something more clever? reranking?
+    //if a:is_auto && l:delta_y > 32
+    //    let l:max_y = line('$')
+    //    " expand the prefix even further
+    //    call s:pick_chunk(getline(max([1,       l:pos_y - g:llama_config.ring_scope]), max([1,       l:pos_y - g:llama_config.n_prefix])), v:false, v:false)
+    //    " pick a suffix chunk
+    //    call s:pick_chunk(getline(min([l:max_y, l:pos_y + g:llama_config.n_suffix]),   min([l:max_y, l:pos_y + g:llama_config.n_suffix + g:llama_config.ring_chunk_size])), v:false, v:false)
+    //    let s:pos_y_pick = l:pos_y
+    //endif
+
+    // Return content - timing info is stored in cache alongside response
+    Ok(())
+}
+
+// should we abort the completion because the content has changed since we started this completion
+fn should_abort(cursor_y: usize, orig_line: &str, content: &str) -> bool {
+    let (_new_x, new_y) = get_pos();
+    if cursor_y != new_y {
+        return true;
+    };
+    let curr_line = get_buf_line(cursor_y);
+    if curr_line == orig_line {
+        return false; // lines the same must not abort
+    }
+
+    // if the content predicted is the same as what
+    // the user has been typing then can continue
+    if curr_line.starts_with(orig_line) {
+        let Some(new_text) = curr_line.strip_prefix(orig_line) else {
+            return true;
+        };
+        if content.starts_with(new_text) {
+            return false;
         }
     }
 
-    // Return content - timing info is stored in cache alongside response
-    Ok(Some(response.content))
+    true
+}
+
+pub fn fim_try_hint() -> NvimResult<Option<RenderedSuggestion>> {
+    if !in_insert_mode()? {
+        return Ok(None);
+    }
+    let (pos_x, pos_y) = get_pos();
+    let state = get_state();
+    let lines = get_buf_lines();
+    Ok(fim_try_hint_inner(state, pos_x, pos_y, lines))
+}
+
+/// Try to generate a suggestion using the data in the cache
+/// Looks at the previous 10 characters to see if a completion is cached.
+/// If one is found at (x,y) then it checks that the characters typed after (x,y)
+/// match up with the cached completion result.
+///
+/// # Returns
+/// * `Some(RenderedSuggestion)` - If a cached completion is found
+/// * `None` - If no cached completion is found
+pub fn fim_try_hint_inner(
+    state: Arc<PluginState>,
+    pos_x: usize,
+    pos_y: usize,
+    lines: Vec<String>,
+) -> Option<RenderedSuggestion> {
+    // Get local context
+    let ctx = get_local_context(&lines, pos_x, pos_y, None, &state.config.read());
+
+    // Compute primary hash
+    let primary_hash = format!("{}{}{}{}", ctx.prefix, ctx.middle, "Î", ctx.suffix);
+    let hash = sha256(&primary_hash);
+
+    // Check if the completion is cached (and update LRU order)
+    let mut response = state.cache.write().get(&hash);
+
+    if response.is_none() {
+        // ... or if there is a cached completion nearby (128 characters behind)
+        // Looks at the previous 128 characters to see if a completion is cached.
+        let pm = format!("{}{}", ctx.prefix, ctx.middle);
+        let mut best_len = 0;
+        let mut best_response: Option<FimResponse> = None;
+
+        // Only search if pm has enough characters
+        if pm.len() < 2 {
+            return None;
+        }
+
+        // iterate through the prefix+midde string while removing characters from the tail
+        //
+        let mut char_indices = pm.char_indices().collect::<Vec<_>>();
+        char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
+                                             // its never used
+        let char_len = char_indices.len() - 1;
+
+        let max_iters = 128; // TODO parameterize this
+        for i in 1..=(max_iters.min(char_len.saturating_sub(1))) {
+            let split_byte_idx = char_indices[char_len - i].0;
+            let (pm_with_less_tail, removed) = pm.split_at(split_byte_idx);
+
+            let ctx_new = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
+            let hash_new = sha256(&ctx_new);
+
+            if let Some(response_) = state.cache.write().get(&hash_new) {
+                let content = &response_.content;
+                if content.is_empty() {
+                    continue;
+                }
+
+                // Check that the removed text matches the beginning of the cached response
+                // NOTE 'i' always is == removed.len()
+                // don't bother if i == content.len() because then there isn't any additional
+                // predicted text
+                if content.starts_with(removed) {
+                    // Found a match - use the rest of the content
+                    let Some(remaining) = content.strip_prefix(removed) else {
+                        continue;
+                    };
+
+                    // could use chars().count() but it's not to important
+                    if !remaining.is_empty() && remaining.len() > best_len {
+                        best_len = remaining.len();
+                        best_response = Some(FimResponse {
+                            content: remaining.to_string(),
+                            timings: response_.timings,
+                            tokens_cached: response_.tokens_cached,
+                            truncated: response_.truncated,
+                        });
+                    }
+                }
+            }
+        }
+        response = best_response;
+    }
+
+    if let Some(response) = response {
+        let content = response.content;
+        if content.is_empty() {
+            return None;
+        }
+
+        let out = render_fim_suggestion(
+            pos_x,
+            pos_y,
+            &content,
+            &ctx.line_cur_suffix,
+            &state.config.read(),
+        );
+
+        // run async speculative FIM in the background for this position
+        let hint_shown = state.fim_state.read().hint_shown;
+        if hint_shown {
+            tokio::spawn(async move {
+                // TODO log error
+                //let _ = fim_completion(pos_x, pos_y, true, &content, true);
+                let tx = state.get_fim_completion_tx()?;
+                let _ = fim_completion(
+                    tx,
+                    pos_x,
+                    pos_y,
+                    lines,
+                    &config,
+                    cache,
+                    ring_buffer,
+                    Some(&[content]),
+                );
+            });
+        }
+        Some(out)
+    } else {
+        None
+    }
 }
 
 /// Compute hashes for caching
@@ -256,7 +475,8 @@ pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
     // Truncated prefix hashes (up to 3 levels)
     let mut prefix_trim = ctx.prefix.clone();
     let re = regex::Regex::new(r"^[^\n]*\n").unwrap();
-    for _ in 0..5 {
+    let max_hashes = 3; // TODO parameterize this
+    for _ in 0..max_hashes {
         prefix_trim = re.replace(&prefix_trim, "").to_string();
         if prefix_trim.is_empty() {
             break;
@@ -271,21 +491,26 @@ pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
 }
 
 /// Send FIM request to the server
-pub async fn send_request(request: &FimRequest, config: &LttwConfig) -> Result<String, FimError> {
+pub async fn send_request(
+    request: &FimRequest,
+    endpoint_fim: String,
+    model_fim: String,
+    api_key: String,
+) -> Result<String, FimError> {
     let client = reqwest::Client::new();
 
     let mut request_body = serde_json::to_value(request)?;
 
     // Add model if specified
-    if !config.model_fim.is_empty() {
-        request_body["model"] = serde_json::Value::String(config.model_fim.clone());
+    if !model_fim.is_empty() {
+        request_body["model"] = serde_json::Value::String(model_fim.clone());
     }
 
-    let mut builder = client.post(&config.endpoint_fim).json(&request_body);
+    let mut builder = client.post(&endpoint_fim).json(&request_body);
 
     // Add API key if specified
-    if !config.api_key.is_empty() {
-        builder = builder.bearer_auth(&config.api_key);
+    if !api_key.is_empty() {
+        builder = builder.bearer_auth(&api_key);
     }
 
     let response = builder.send().await?;
@@ -700,8 +925,9 @@ mod tests {
 
         // Cache a response for these hashes
         let response = r#"{"content":" world","timings":{},"tokens_cached":0,"truncated":false}"#;
+        let response = serde_json::from_str::<FimResponse>(response).unwrap();
         for hash in &hashes {
-            cache.insert(hash.clone(), response.to_string());
+            cache.insert(hash.clone(), response.clone());
         }
 
         // Verify cache contains the entries

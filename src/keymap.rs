@@ -40,10 +40,10 @@ pub fn setup_keymaps() -> NvimResult<()> {
     // FIM keymaps - use command-based callbacks for proper TAB handling
     // These commands check if FIM hint is shown and act accordingly
 
-    // FIM accept full (TAB) - check if FIM shown, accept if yes, insert tab if no
+    // FIM accept full (Shift TAB) - check if FIM shown, accept if yes, insert tab if no
     let _ = api::set_keymap(
         Mode::Insert,
-        "<Tab>",
+        "<S-Tab>",
         "",
         &SetKeymapOptsBuilder::default()
             .callback(|_| {
@@ -62,10 +62,10 @@ pub fn setup_keymaps() -> NvimResult<()> {
             .build(),
     );
 
-    // FIM accept line (S-Tab) - check if FIM shown, accept line if yes, re-inject S-Tab if no
+    // FIM accept line (TAB) - check if FIM shown, accept line if yes, re-inject S-Tab if no
     let _ = api::set_keymap(
         Mode::Insert,
-        "<S-Tab>",
+        "<Tab>",
         "",
         &SetKeymapOptsBuilder::default()
             .callback(|_| {

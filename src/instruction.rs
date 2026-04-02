@@ -4,7 +4,7 @@
 // an instruction and the model modifies the selected text accordingly.
 
 use {
-    crate::{buf_get_lines, config::LttwConfig, get_current_buffer, get_pos, get_state},
+    crate::{config::LttwConfig, get_buf_lines, get_pos, get_state, utils::get_current_buffer},
     nvim_oxi::{api::Buffer, Dictionary, Result as NvimResult},
     serde::{Deserialize, Serialize},
     std::sync::atomic::Ordering,
@@ -495,7 +495,7 @@ pub fn build_instruction_virt_text(
 fn inst_start(l0: i64, l1: i64, inst: &str) -> NvimResult<i64> {
     let state = get_state();
     let bufnr = get_current_buffer();
-    let lines = buf_get_lines();
+    let lines = get_buf_lines();
 
     // Create new instruction request
     let req_id = state.next_inst_req_id.fetch_add(1, Ordering::SeqCst);

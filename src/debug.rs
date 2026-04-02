@@ -58,10 +58,7 @@ impl DebugManager {
             return;
         }
 
-        //let timestamp = time::UtcDateTime::now().format("%H:%M:%S");
-        let now = time::OffsetDateTime::now_utc();
-        let timestamp = format!("{:02}:{:02}:{:02}", now.hour(), now.minute(), now.second());
-        let mut header = format!("{} | {}", timestamp, msg);
+        let mut header = format!("{msg}");
 
         let mut block = Vec::new();
 

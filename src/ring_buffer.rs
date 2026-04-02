@@ -4,15 +4,22 @@
 // text from the buffer to provide additional context to the language model.
 
 use {
-    crate::{context::chunk_similarity, get_state},
+    crate::{context::chunk_similarity, get_state, utils::in_normal_mode},
     nvim_oxi::{Dictionary, Result as NvimResult},
     serde::Serialize,
     std::sync::Arc,
+    std::time::Duration,
 };
 
 /// Process ring buffer updates - moves queued chunks to active ring and sends to server
-fn process_ring_buffer() -> NvimResult<()> {
+///  
+fn ring_update() -> NvimResult<()> {
     let state = get_state();
+
+    // update only if in normal mode or if the cursor hasn't moved for a while
+    if in_normal_mode()? || (*state.last_move_time.read()).elapsed() > Duration::from_secs(3) {
+        return Ok(());
+    }
 
     // Get configuration
     let update_interval = state.config.read().ring_update_ms;
@@ -27,7 +34,7 @@ fn process_ring_buffer() -> NvimResult<()> {
 
     if chunk_count > 0 {
         state.debug_manager.read().log(
-            "process_ring_buffer",
+            "ring_update",
             &[&format!(
                 "Processing {} ring buffer chunks (interval: {}ms)",
                 chunk_count, update_interval
@@ -72,11 +79,8 @@ pub fn setup_ring_buffer_timer() -> NvimResult<()> {
         let mut interval = tokio::time::interval(interval_duration);
 
         loop {
-            // Wait for the next tick
             interval.tick().await;
-
-            // Process the ring buffer
-            let _ = process_ring_buffer();
+            let _ = ring_update();
         }
     });
 

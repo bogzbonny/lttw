@@ -2,7 +2,76 @@
 //
 // This module provides various utility functions used throughout the plugin.
 
-use rand::Rng;
+use {
+    crate::NvimResult,
+    nvim_oxi::api::{self, Buffer, Window},
+    rand::Rng,
+    sha2::{Digest, Sha256},
+};
+
+// are we in insert mode
+pub fn in_insert_mode() -> NvimResult<bool> {
+    Ok(api::get_mode()?
+        .mode
+        .as_bytes()
+        .first()
+        .copied()
+        .expect("mode is not empty")
+        == b'i')
+}
+
+// are we in insert mode
+pub fn in_normal_mode() -> NvimResult<bool> {
+    Ok(api::get_mode()?
+        .mode
+        .as_bytes()
+        .first()
+        .copied()
+        .expect("mode is not empty")
+        == b'n')
+}
+
+/// Get current buffer position
+pub fn get_pos() -> (usize, usize) {
+    let (line, col) = Window::current().get_cursor().unwrap_or((0, 0));
+
+    // NOTE nvim starts at 1, must make 0 start
+    let col = col.saturating_sub(1);
+    let line = line.saturating_sub(1);
+    (col, line)
+}
+
+/// Get buffer lines from Neovim
+pub fn get_buf_lines() -> Vec<String> {
+    let buf = Buffer::current();
+    let lines = buf.get_lines(.., false).unwrap();
+    lines.map(|s| s.to_string()).collect()
+}
+
+/// Get buffer lines from Neovim
+/// pos_y is zero indexed
+pub fn get_buf_line(pos_y: usize) -> String {
+    let buf = Buffer::current();
+    let Ok(lines) = buf.get_lines(pos_y..=pos_y, false) else {
+        return "".to_string();
+    };
+    let lines: Vec<String> = lines.map(|s| s.to_string()).collect();
+    if lines.is_empty() {
+        "".to_string()
+    } else {
+        lines.into_iter().next().expect("should be one record")
+    }
+}
+
+/// Get current buffer
+pub fn get_current_buffer() -> u64 {
+    let buf: u64 = Buffer::current().handle().try_into().unwrap_or(0);
+    buf
+}
+
+pub fn get_buffer_handle() -> u64 {
+    Buffer::current().handle().try_into().unwrap_or(0)
+}
 
 /// Generate a random number in the range [i0, i1]
 pub fn random_range(i0: usize, i1: usize) -> usize {
@@ -12,19 +81,8 @@ pub fn random_range(i0: usize, i1: usize) -> usize {
 
 /// Compute SHA256 hash of a string
 pub fn sha256(input: &str) -> String {
-    use sha2::{Digest, Sha256};
     let hash = Sha256::digest(input.as_bytes());
     format!("{:x}", hash)
-}
-
-/// Split a string into lines, preserving empty lines
-pub fn split_lines(s: &str) -> Vec<String> {
-    s.split('\n').map(|s| s.to_string()).collect()
-}
-
-/// Join lines with newlines
-pub fn join_lines(lines: &[String]) -> String {
-    lines.join("\n")
 }
 
 /// Get current working directory
@@ -39,12 +97,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_random_range() {
-        let value = random_range(1, 10);
-        assert!((1..=10).contains(&value));
-    }
-
-    #[test]
     fn test_sha256() {
         let hash = sha256("hello");
         assert_eq!(hash.len(), 64); // SHA256 produces 64 hex characters
@@ -52,21 +104,5 @@ mod tests {
             hash,
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
         );
-    }
-
-    #[test]
-    fn test_split_lines() {
-        let lines = split_lines("line1\nline2\nline3");
-        assert_eq!(lines, vec!["line1", "line2", "line3"]);
-    }
-
-    #[test]
-    fn test_join_lines() {
-        let lines = vec![
-            "line1".to_string(),
-            "line2".to_string(),
-            "line3".to_string(),
-        ];
-        assert_eq!(join_lines(&lines), "line1\nline2\nline3");
     }
 }

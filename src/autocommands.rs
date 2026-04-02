@@ -1,7 +1,7 @@
 use {
     crate::{
         filetype::on_buf_enter_check_filetype, fim_hide, get_state, on_buf_enter_gather_chunks,
-        on_buf_leave, on_buf_write_post, on_text_yank_post, trigger_fim,
+        on_buf_leave, on_buf_write_post, on_move, on_text_yank_post, trigger_fim,
     },
     nvim_oxi::{
         api::{self, del_autocmd},
@@ -16,10 +16,46 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
     let state = get_state();
     let mut ids = Vec::new();
 
-    // Cursor movement for auto-FIM (CursorMovedI in insert mode)
+    let id = api::create_autocmd(
+        ["InsertLeavePre", "CompleteChanged"],
+        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+            .callback(|_| {
+                let _ = fim_hide();
+                false // DO NOT DELETE this autocommand once used
+            })
+            .build(),
+    )
+    .unwrap_or(0);
+    ids.push(id);
+
+    let id = api::create_autocmd(
+        ["CompleteDone"],
+        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+            .callback(|_| {
+                let _ = on_move();
+                false // DO NOT DELETE this autocommand once used
+            })
+            .build(),
+    )
+    .unwrap_or(0);
+    ids.push(id);
+
     if state.config.read().auto_fim {
         let id = api::create_autocmd(
-            ["CursorMovedI", "InsertEnter", "InsertChange"],
+            ["CursorMoved", "CursorMovedI"],
+            &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+                .callback(|_| {
+                    let _ = on_move();
+                    false // DO NOT DELETE this autocommand once used
+                })
+                .build(),
+        )
+        .unwrap_or(0);
+        ids.push(id);
+
+        let id = api::create_autocmd(
+            //["CursorMovedI", "InsertEnter", "InsertChange"],
+            ["CursorMovedI", "InsertEnter"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
                 .callback(|_| {
                     let _ = trigger_fim();

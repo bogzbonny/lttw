@@ -12,11 +12,12 @@ pub mod filetype;
 pub mod fim;
 pub mod instruction;
 pub mod keymap;
+pub mod plugin_state;
 pub mod ring_buffer;
 pub mod utils;
 
 use {
-    fim::FimAcceptType,
+    fim::{fim_try_hint, FimAcceptType},
     instruction::InstructionRequestState,
     nvim_oxi::{
         api::{
@@ -37,6 +38,7 @@ use {
         },
         time::{Duration, Instant},
     },
+    utils::{get_buf_lines, get_buffer_handle, get_pos, in_insert_mode},
 };
 
 // FIM completion channel types for async communication between worker and main thread
@@ -87,88 +89,6 @@ fn lttw_setup() -> NvimResult<()> {
     ring_buffer::setup_ring_buffer_timer()?;
 
     Ok(())
-}
-
-// State management
-#[derive(Clone)]
-struct PluginState {
-    config: Arc<RwLock<config::LttwConfig>>,
-    cache: Arc<RwLock<cache::Cache>>,
-    ring_buffer: Arc<RwLock<ring_buffer::RingBuffer>>,
-    debug_manager: Arc<RwLock<debug::DebugManager>>,
-    instruction_requests: Arc<RwLock<HashMap<i64, InstructionRequestState>>>,
-    enabled: Arc<AtomicBool>,
-    #[allow(dead_code)]
-    next_inst_req_id: Arc<AtomicI64>,
-    fim_state: Arc<RwLock<FimState>>,
-    fim_worker_debounce: Arc<RwLock<FimWorkerDebounce>>,
-    extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
-    #[allow(dead_code)]
-    inst_ns: Option<u32>, // Namespace for instruction extmarks
-    autocmd_ids: Arc<RwLock<Vec<u32>>>,
-    autocmd_id_filetype_check: Arc<RwLock<Option<u32>>>,
-    ring_buffer_timer_handle: Arc<RwLock<RingBufferTimerHandle>>,
-    // FIM completion channel for async worker communication
-    fim_completion_tx:
-        Arc<parking_lot::Mutex<Option<tokio::sync::mpsc::Sender<FimCompletionMessage>>>>,
-    // Pending display queue - holds messages waiting to be rendered on main thread
-    pending_display: Arc<RwLock<Vec<FimCompletionMessage>>>,
-    // Persistent tokio runtime for async operations
-    tokio_runtime: Arc<parking_lot::Mutex<Option<tokio::runtime::Runtime>>>,
-}
-
-/// Type alias for ring buffer timer handle to simplify type declarations
-type RingBufferTimerHandle = Option<Arc<parking_lot::Mutex<tokio::task::JoinHandle<()>>>>;
-
-impl PluginState {
-    fn new() -> Self {
-        let config = config::LttwConfig::from_nvim_globals();
-        let enable_at_startup = config.enable_at_startup;
-        let max_cache_keys = config.max_cache_keys as usize;
-        let max_chunks = config.ring_n_chunks as usize;
-        let chunk_size = config.ring_chunk_size as usize;
-
-        // Create namespaces for extmarks
-        let extmark_ns = Some(api::create_namespace("lttw_fim"));
-        let inst_ns = Some(api::create_namespace("lttw_inst"));
-
-        Self {
-            config: Arc::new(RwLock::new(config)),
-            cache: Arc::new(RwLock::new(cache::Cache::new(max_cache_keys))),
-            ring_buffer: Arc::new(RwLock::new(ring_buffer::RingBuffer::new(
-                max_chunks, chunk_size,
-            ))),
-            debug_manager: Arc::new(RwLock::new(debug::DebugManager::new())),
-            instruction_requests: Arc::new(RwLock::new(HashMap::new())),
-            inst_ns,
-            next_inst_req_id: Arc::new(AtomicI64::new(0)),
-            fim_state: Arc::new(RwLock::new(FimState::default())),
-            fim_worker_debounce: Arc::new(RwLock::new(FimWorkerDebounce::new())),
-            extmark_ns,
-            enabled: Arc::new(AtomicBool::new(enable_at_startup)),
-            autocmd_ids: Arc::new(RwLock::new(Vec::new())),
-            autocmd_id_filetype_check: Arc::new(RwLock::new(None)),
-            ring_buffer_timer_handle: Arc::new(RwLock::new(None)),
-            // Initialize completion channel and runtime (will be set up later)
-            fim_completion_tx: Arc::new(parking_lot::Mutex::new(None)),
-            pending_display: Arc::new(RwLock::new(Vec::new())),
-            tokio_runtime: Arc::new(parking_lot::Mutex::new(None)),
-        }
-    }
-}
-
-// Global state - using OnceLock for thread-safe initialization
-static PLUGIN_STATE: OnceLock<Arc<PluginState>> = OnceLock::new();
-
-/// Initialize the plugin state
-fn init_state() {
-    PLUGIN_STATE.get_or_init(|| Arc::new(PluginState::new()));
-}
-
-/// Get the plugin state (returns a clone of the Arc, no locking)
-fn get_state() -> Arc<PluginState> {
-    init_state();
-    PLUGIN_STATE.get().unwrap().clone()
 }
 
 // ---------------------------
@@ -249,44 +169,6 @@ impl FimState {
     fn get_last_pick_pos_y(&self) -> Option<usize> {
         self.last_pick_pos_y
     }
-}
-
-/// Get current buffer position
-fn get_pos() -> (usize, usize) {
-    let (line, col) = Window::current().get_cursor().unwrap_or((0, 0));
-
-    // NOTE nvim starts at 1, must make 0 start
-    let col = col.saturating_sub(1);
-    let line = line.saturating_sub(1);
-    (col, line)
-}
-
-/// Get buffer lines from Neovim
-fn buf_get_lines() -> Vec<String> {
-    let buf = Buffer::current();
-    let lines = buf.get_lines(.., false).unwrap();
-    lines.map(|s| s.to_string()).collect()
-}
-
-/// Get buffer lines from Neovim
-/// pos_y is zero indexed
-fn buf_get_line(pos_y: usize) -> String {
-    let buf = Buffer::current();
-    let Ok(lines) = buf.get_lines(pos_y..=pos_y, false) else {
-        return "".to_string();
-    };
-    let lines: Vec<String> = lines.map(|s| s.to_string()).collect();
-    if lines.is_empty() {
-        "".to_string()
-    } else {
-        lines.into_iter().next().expect("should be one record")
-    }
-}
-
-/// Get current buffer
-fn get_current_buffer() -> u64 {
-    let buf: u64 = Buffer::current().handle().try_into().unwrap_or(0);
-    buf
 }
 
 /// Initialize persistent tokio runtime and completion channel
@@ -497,113 +379,43 @@ async fn spawn_fim_worker(
         &[&format!("Spawning worker for ({}, {})", cursor_x, cursor_y)],
     );
 
-    // Get the channel sender from state
-    let tx = {
-        let fim_completion_tx_lock = state.fim_completion_tx.lock();
-        fim_completion_tx_lock.clone().ok_or_else(|| {
-            nvim_oxi::Error::Api(api::Error::Other(
-                "Completion channel not initialized".to_string(),
-            ))
-        })?
-    };
+    let tx = state.get_fim_completion_tx()?;
 
     // Collect all neovim information at the start
     let config = state.config.read().clone();
-    let debug_manager = state.debug_manager.read().clone();
     let cache = state.cache.clone();
     let ring_buffer = state.ring_buffer.clone();
     let fim_state = state.fim_state.clone();
 
     // Spawn async task to perform HTTP request
-    tokio::spawn(async move {
-        // Check if we should trigger speculative FIM
-        let speculative_fim = {
-            let fim_state_lock = fim_state.read();
-            fim_state_lock.hint_shown && !fim_state_lock.content.is_empty()
-        };
+    // Check if we should trigger speculative FIM
+    let speculative_fim = {
+        let fim_state_lock = fim_state.read();
+        fim_state_lock.hint_shown && !fim_state_lock.content.is_empty()
+    };
 
-        let prev_content = if speculative_fim {
-            let fim_state_lock = fim_state.read();
-            // Trigger Speculative FIM
-            Some(&*fim_state_lock.content.clone())
-        } else {
-            None
-        };
+    let prev_content = if speculative_fim {
+        let fim_state_lock = fim_state.read();
+        // Trigger Speculative FIM
+        Some(&*fim_state_lock.content.clone())
+    } else {
+        None
+    };
 
-        let result = fim::fim_completion(
-            cursor_x,
-            cursor_y,
-            &buffer_lines,
-            &config,
-            cache,
-            ring_buffer,
-            prev_content,
-        )
-        .await;
-
-        // Send result through channel
-        if let Ok(Some(content)) = result {
-            let Some(orig_line) = buffer_lines.get(cursor_y) else {
-                return;
-            };
-            if should_abort(cursor_y, orig_line, &content) {
-                return;
-            }
-            let msg = FimCompletionMessage {
-                buffer_handle,
-                buffer_lines,
-                cursor_x,
-                cursor_y,
-                content,
-            };
-
-            // Use blocking_send since we're in an async context but want to ensure delivery
-            if let Err(e) = tx.send(msg).await {
-                debug_manager.log(
-                    "spawn_fim_worker",
-                    &[&format!("Failed to send completion message: {}", e)],
-                );
-            }
-        }
-    });
+    // TODO handle error
+    let _ = fim::fim_completion(
+        tx,
+        cursor_x,
+        cursor_y,
+        buffer_handle,
+        buffer_lines,
+        &config,
+        cache,
+        ring_buffer,
+        prev_content,
+    );
 
     Ok(())
-}
-
-// should we abort the completion because the content has changed since we started this completion
-fn should_abort(cursor_y: usize, orig_line: &str, content: &str) -> bool {
-    let (_new_x, new_y) = get_pos();
-    if cursor_y != new_y {
-        return true;
-    };
-    let curr_line = buf_get_line(cursor_y);
-    if curr_line == orig_line {
-        return false; // lines the same must not abort
-    }
-
-    // if the content predicted is the same as what
-    // the user has been typing then can continue
-    if curr_line.starts_with(orig_line) {
-        let Some(new_text) = curr_line.strip_prefix(orig_line) else {
-            return true;
-        };
-        if content.starts_with(new_text) {
-            return false;
-        }
-    }
-
-    true
-}
-
-// are we in insert mode
-fn in_insert_mode() -> NvimResult<bool> {
-    Ok(api::get_mode()?
-        .mode
-        .as_bytes()
-        .first()
-        .copied()
-        .expect("mode is not empty")
-        == b'i')
 }
 
 /// Process pending FIM display queue - drains and displays messages on the main thread
@@ -993,6 +805,14 @@ fn toggle_auto_fim() -> NvimResult<bool> {
     Ok(new_value)
 }
 
+fn on_move() -> NvimResult<()> {
+    let state = get_state();
+    *state.last_move_time.write() = Instant::now();
+    fim_hide()?;
+    fim_try_hint()?;
+    Ok(())
+}
+
 /// Handle TextYankPost event - gather chunks from yanked text
 fn on_text_yank_post() -> NvimResult<()> {
     let state = get_state();
@@ -1139,8 +959,8 @@ fn trigger_fim() -> NvimResult<()> {
 
     // Get CURRENT cursor position
     let (pos_x, pos_y) = get_pos();
-    let lines = buf_get_lines();
-    let buffer_handle: u64 = Buffer::current().handle().try_into().unwrap_or(0);
+    let lines = get_buf_lines();
+    let buffer_handle: u64 = get_buffer_handle();
 
     state.debug_manager.read().log(
         "trigger_fim",
@@ -1165,7 +985,7 @@ fn trigger_fim() -> NvimResult<()> {
             .debug_manager
             .read()
             .log("trigger_fim hashes 3", &[&hash.to_string()]);
-        if let Some(response_text) = {
+        if let Some(response) = {
             let cache_lock = state.cache.read();
             cache_lock.get_fim(hash)
         } {
@@ -1175,49 +995,45 @@ fn trigger_fim() -> NvimResult<()> {
             );
 
             // Parse response and render (synchronous)
-            if let Ok(response) = serde_json::from_str::<serde_json::Value>(&response_text) {
-                if let Some(content) = response.get("content").and_then(|c| c.as_str()) {
-                    let ctx = {
-                        let config_lock = state.config.read();
-                        context::get_local_context(&lines, pos_x, pos_y, None, &config_lock)
-                    };
-                    let rendered = {
-                        let config_lock = state.config.read();
-                        fim::render_fim_suggestion(
-                            pos_x,
-                            pos_y,
-                            content,
-                            &ctx.line_cur_suffix,
-                            &config_lock,
-                        )
-                    };
+            let content = response.content;
+            let ctx = {
+                let config_lock = state.config.read();
+                context::get_local_context(&lines, pos_x, pos_y, None, &config_lock)
+            };
+            let rendered = {
+                let config_lock = state.config.read();
+                fim::render_fim_suggestion(
+                    pos_x,
+                    pos_y,
+                    &content,
+                    &ctx.line_cur_suffix,
+                    &config_lock,
+                )
+            };
 
-                    // Update FIM state
-                    state.fim_state.write().update(
-                        rendered.can_accept,
-                        pos_x,
-                        pos_y,
-                        lines.get(pos_y).cloned().unwrap_or_default(),
-                        rendered.can_accept,
-                        rendered.content.clone(),
-                    );
+            // Update FIM state
+            state.fim_state.write().update(
+                rendered.can_accept,
+                pos_x,
+                pos_y,
+                lines.get(pos_y).cloned().unwrap_or_default(),
+                rendered.can_accept,
+                rendered.content.clone(),
+            );
 
-                    // Display virtual text using extmarks
-                    if rendered.can_accept {
-                        let _ = display_fim_text(&state);
+            // Display virtual text using extmarks
+            if rendered.can_accept {
+                let _ = display_fim_text(&state);
 
-                        state.debug_manager.read().log(
-                            "trigger_fim",
-                            &[&format!(
-                                "Showing FIM from cursor move: {} lines",
-                                rendered.content.len()
-                            )],
-                        );
-                    }
-                    break;
-                }
+                state.debug_manager.read().log(
+                    "trigger_fim",
+                    &[&format!(
+                        "Showing FIM from cursor move: {} lines",
+                        rendered.content.len()
+                    )],
+                );
             }
-            return Ok(()); // cache found return without spawning a FIM task
+            break;
         }
     }
     state.debug_manager.read().log("trigger_fim 4", &[]);

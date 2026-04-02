@@ -237,7 +237,7 @@ Configuration uses \x60vim.g.lttw_config\x60 table with defaults in \x60M.defaul
 
 ## Neovim API Usage
 
-- Use `vim.api.nvim_buf_get_lines()` for buffer access
+- Use \x60vim.api.nvim_buf_get_lines()\x60 for buffer access
 - Use `vim.api.nvim_buf_set_lines()` for modifications
 - Use `vim.notify()` for messages
 - Use `vim.fn.wordcount()` for position info

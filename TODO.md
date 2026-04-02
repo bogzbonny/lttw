@@ -23,6 +23,9 @@
 05. add config option for debugging (default false)
 05. Add info string
 05. fix tests-integrations (compile errors) 
+
+10. easier to use debugging system 
+10. our own error type
  
 20. option to not predict while in comments
 

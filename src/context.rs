@@ -16,6 +16,7 @@ pub struct LocalContext {
     pub line_cur_suffix: String,
 }
 
+/// TODO review translation in greater detail
 /// Compute local context at a specified position
 ///
 /// # Arguments
@@ -45,11 +46,7 @@ fn get_local_context_no_prev(
     config: &LttwConfig,
 ) -> LocalContext {
     let max_y = lines.len();
-    let line_cur = if pos_y < max_y {
-        lines[pos_y].clone()
-    } else {
-        String::new()
-    };
+    let line_cur = lines.get(pos_y).cloned().unwrap_or_default();
 
     // manual correction
     let pos_x = pos_x + 1;
