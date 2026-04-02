@@ -200,12 +200,12 @@ pub fn fim_completion(
     let ring_chunk_size_half = (ring_chunk_size / 2) as usize;
     let start_line = pos_y.saturating_sub(ring_chunk_size_half);
     let end_line = (pos_y + ring_chunk_size_half).min(lines.len());
-    
+
     // Safety: ensure we have valid range and enough lines
     if start_line >= end_line || start_line >= lines.len() {
         return Ok(());
     }
-    
+
     let text: Vec<String> = lines[start_line..end_line].to_vec();
     let text_len = text.len();
 
@@ -800,88 +800,88 @@ pub fn trim_suggestion_curr_line<'a>(
 }
 
 /// Accept FIM suggestion - returns the modified line
-  // returns if inline should be used
-  pub fn accept_fim_suggestion(
-      accept_type: FimAcceptType,
-      pos_x: usize,
-      line_cur: &str,
-      content: &[String],
-  ) -> (
-      String,              // first line
-      Option<Vec<String>>, // rest lines (None if not needed)
-      Option<usize>,       // inline-end (NONE if not inline)
-  ) {
-      // Safety: check content length before accessing content[0]
-      if content.is_empty() {
-          return (line_cur.to_string(), None, None);
-      }
-      
-      let first_line = content[0].clone();
+// returns if inline should be used
+pub fn accept_fim_suggestion(
+    accept_type: FimAcceptType,
+    pos_x: usize,
+    line_cur: &str,
+    content: &[String],
+) -> (
+    String,              // first line
+    Option<Vec<String>>, // rest lines (None if not needed)
+    Option<usize>,       // inline-end (NONE if not inline)
+) {
+    // Safety: check content length before accessing content[0]
+    if content.is_empty() {
+        return (line_cur.to_string(), None, None);
+    }
 
-      // Safety: ensure pos_x is within bounds
-      let line_cur_len = line_cur.len();
-      let safe_pos_x = pos_x.min(line_cur_len);
-      let prefix = if safe_pos_x <= line_cur_len {
-          &line_cur[..safe_pos_x]
-      } else {
-          ""
-      }
-      .to_string();
+    let first_line = content[0].clone();
 
-      let (new_line, inline) = if content.len() == 1 {
-          // If only one line, just replace the current line
-          let suffix = if safe_pos_x <= line_cur_len {
-              &line_cur[safe_pos_x..]
-          } else {
-              ""
-          };
-          let (first_line, is_inline) = trim_suggestion_curr_line(&first_line, pos_x, line_cur);
-          let inline = if is_inline {
-              Some(prefix.len() + first_line.len())
-          } else {
-              None
-          };
-          (prefix + first_line + suffix, inline)
-      } else {
-          (prefix + &first_line, None)
-      };
+    // Safety: ensure pos_x is within bounds
+    let line_cur_len = line_cur.len();
+    let safe_pos_x = pos_x.min(line_cur_len);
+    let prefix = if safe_pos_x <= line_cur_len {
+        &line_cur[..safe_pos_x]
+    } else {
+        ""
+    }
+    .to_string();
 
-      // Handle accept type
-      match accept_type {
-          FimAcceptType::Full => {
-              // Insert rest of suggestion
-              if content.len() > 1 {
-                  let rest: Vec<String> = content[1..].to_vec();
-                  (new_line, Some(rest), inline)
-              } else {
-                  (new_line, None, inline)
-              }
-          }
-          FimAcceptType::Line => {
-              if new_line == line_cur && content.len() > 1 {
-                  // accept the next line - safety check for content[1]
-                  let rest = vec![content[1].clone()];
-                  (new_line, Some(rest), inline)
-              } else {
-                  (new_line, None, inline)
-              }
-          }
-          FimAcceptType::Word => {
-              // Accept only the first word
-              let suffix = if safe_pos_x <= line_cur_len {
-                  &line_cur[safe_pos_x..]
-              } else {
-                  ""
-              };
-              if let Some(word_match) = first_line.split_whitespace().next() {
-                  let _new_word = word_match.to_string() + suffix;
-                  (new_line + word_match, None, inline)
-              } else {
-                  (new_line, None, inline)
-              }
-          }
-      }
-  }
+    let (new_line, inline) = if content.len() == 1 {
+        // If only one line, just replace the current line
+        let suffix = if safe_pos_x <= line_cur_len {
+            &line_cur[safe_pos_x..]
+        } else {
+            ""
+        };
+        let (first_line, is_inline) = trim_suggestion_curr_line(&first_line, pos_x, line_cur);
+        let inline = if is_inline {
+            Some(prefix.len() + first_line.len())
+        } else {
+            None
+        };
+        (prefix + first_line + suffix, inline)
+    } else {
+        (prefix + &first_line, None)
+    };
+
+    // Handle accept type
+    match accept_type {
+        FimAcceptType::Full => {
+            // Insert rest of suggestion
+            if content.len() > 1 {
+                let rest: Vec<String> = content[1..].to_vec();
+                (new_line, Some(rest), inline)
+            } else {
+                (new_line, None, inline)
+            }
+        }
+        FimAcceptType::Line => {
+            if new_line == line_cur && content.len() > 1 {
+                // accept the next line - safety check for content[1]
+                let rest = vec![content[1].clone()];
+                (new_line, Some(rest), inline)
+            } else {
+                (new_line, None, inline)
+            }
+        }
+        FimAcceptType::Word => {
+            // Accept only the first word
+            let suffix = if safe_pos_x <= line_cur_len {
+                &line_cur[safe_pos_x..]
+            } else {
+                ""
+            };
+            if let Some(word_match) = first_line.split_whitespace().next() {
+                let _new_word = word_match.to_string() + suffix;
+                (new_line + word_match, None, inline)
+            } else {
+                (new_line, None, inline)
+            }
+        }
+    }
+}
 
 /// Result of rendering a FIM suggestion
 #[derive(Debug, Clone, serde::Serialize)]
@@ -948,14 +948,13 @@ mod tests {
 
         // Add first chunk
         ring_buffer
-            .pick_chunk(
+            .pick_chunk_inner(
                 vec![
                     "fn main() {".to_string(),
                     "    println!(\"hello\");".to_string(),
                     "}".to_string(),
                 ],
                 String::new(),
-                false,
                 true,
             )
             .unwrap();
@@ -966,14 +965,13 @@ mod tests {
 
         // Add second chunk (should not evict first since they're different)
         ring_buffer
-            .pick_chunk(
+            .pick_chunk_inner(
                 vec![
                     "use std::io;".to_string(),
                     "fn read_input() {".to_string(),
                     "    let mut s = String::new();".to_string(),
                 ],
                 String::new(),
-                false,
                 true,
             )
             .unwrap();
@@ -983,14 +981,13 @@ mod tests {
 
         // Add third chunk
         ring_buffer
-            .pick_chunk(
+            .pick_chunk_inner(
                 vec![
                     "mod test;".to_string(),
                     "fn test_func() {".to_string(),
                     "    assert_eq!(1, 1);".to_string(),
                 ],
                 String::new(),
-                false,
                 true,
             )
             .unwrap();
@@ -1000,14 +997,13 @@ mod tests {
 
         // Add fourth chunk - should evict the oldest one due to max_chunks limit
         ring_buffer
-            .pick_chunk(
+            .pick_chunk_inner(
                 vec![
                     "pub fn export_func() {".to_string(),
                     "    test_func();".to_string(),
                     "}".to_string(),
                 ],
                 String::new(),
-                false,
                 true,
             )
             .unwrap();
@@ -1032,7 +1028,7 @@ mod tests {
 
         // Add first chunk
         ring_buffer
-            .pick_chunk(chunk1.clone(), String::new(), false, true)
+            .pick_chunk_inner(chunk1.clone(), String::new(), true)
             .unwrap();
         ring_buffer.update();
 
@@ -1043,7 +1039,7 @@ mod tests {
         chunk2[1] = "    let x = 100;".to_string(); // Slightly different
 
         ring_buffer
-            .pick_chunk(chunk2, String::new(), false, true)
+            .pick_chunk_inner(chunk2, String::new(), true)
             .unwrap();
         ring_buffer.update();
 
@@ -1059,14 +1055,13 @@ mod tests {
 
         // Add some chunks to the ring buffer
         ring_buffer
-            .pick_chunk(
+            .pick_chunk_inner(
                 vec![
                     "mod module1;".to_string(),
                     "mod module2;".to_string(),
                     "mod module3;".to_string(),
                 ],
                 String::new(),
-                false,
                 true,
             )
             .unwrap();
@@ -1113,14 +1108,13 @@ mod tests {
 
         // Add chunks to ring buffer
         ring_buffer
-            .pick_chunk(
+            .pick_chunk_inner(
                 vec![
                     "fn test1() {".to_string(),
                     "    println!(\"test1\");".to_string(),
                     "}".to_string(),
                 ],
                 String::new(),
-                false,
                 true,
             )
             .unwrap();
@@ -1172,14 +1166,13 @@ mod tests {
         let mut ring_buffer = RingBuffer::new(2, 64);
 
         ring_buffer
-            .pick_chunk(
+            .pick_chunk_inner(
                 vec![
                     "fn func1() {".to_string(),
                     "    let x = 1;".to_string(),
                     "}".to_string(),
                 ],
                 String::new(),
-                false,
                 true,
             )
             .unwrap();
@@ -1196,7 +1189,7 @@ mod tests {
             ];
 
             ring_buffer
-                .pick_chunk(similar_chunk, String::new(), false, true)
+                .pick_chunk_inner(similar_chunk, String::new(), true)
                 .unwrap();
             ring_buffer.update();
         }
@@ -1220,7 +1213,7 @@ mod tests {
         ];
 
         ring_buffer
-            .pick_chunk(chunk_data.clone(), String::new(), false, true)
+            .pick_chunk_inner(chunk_data.clone(), String::new(), true)
             .unwrap();
         ring_buffer.update();
 
@@ -1238,14 +1231,13 @@ mod tests {
         // Pick multiple chunks without updating
         for i in 0..5 {
             ring_buffer
-                .pick_chunk(
+                .pick_chunk_inner(
                     vec![
                         format!("fn func{}_()", i),
                         format!("    let x = {};", i),
                         "}".to_string(),
                     ],
                     String::new(),
-                    false,
                     true,
                 )
                 .unwrap();
@@ -1286,7 +1278,7 @@ mod tests {
 
         // Add chunk first time
         ring_buffer
-            .pick_chunk(chunk.clone(), String::new(), false, true)
+            .pick_chunk_inner(chunk.clone(), String::new(), true)
             .unwrap();
         ring_buffer.update();
 
@@ -1294,7 +1286,7 @@ mod tests {
 
         // Try to add exact same chunk again (should be ignored)
         ring_buffer
-            .pick_chunk(chunk.clone(), String::new(), false, true)
+            .pick_chunk_inner(chunk.clone(), String::new(), true)
             .unwrap();
 
         // Should still be 1 (no duplicate added)
@@ -1302,7 +1294,7 @@ mod tests {
 
         // Try to add same chunk via queued (should also be ignored)
         ring_buffer
-            .pick_chunk(chunk, String::new(), false, true)
+            .pick_chunk_inner(chunk, String::new(), true)
             .unwrap();
 
         // Should still have same queued count
