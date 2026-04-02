@@ -38,7 +38,7 @@ pub struct LttwConfig {
     pub ring_n_chunks: u32,
     pub ring_chunk_size: u32,
     pub ring_scope: u32,
-    pub ring_update_ms: u32,
+    pub ring_update_ms: u64,
 
     // Keymap configuration
     pub keymap_fim_trigger: String,
@@ -200,7 +200,7 @@ impl LttwConfig {
             config.ring_scope = v as u32;
         }
         if let Some(v) = get_i64("ring_update_ms") {
-            config.ring_update_ms = v as u32;
+            config.ring_update_ms = v as u64;
         }
 
         // Helper to get bool field from dictionary

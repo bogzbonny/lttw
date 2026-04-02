@@ -1,27 +1,36 @@
 use {
-    crate::{context::chunk_similarity, get_state, utils::in_normal_mode},
-    nvim_oxi::{Dictionary, Result as NvimResult},
-    serde::Serialize,
+    crate::{
+        context::chunk_similarity,
+        get_state,
+        utils::{buffer_active_and_readable, buffer_modified, in_normal_mode, random_range},
+    },
+    nvim_oxi::Result as NvimResult,
     std::sync::Arc,
-    std::time::Duration,
+    std::time::{Duration, Instant},
 };
 
 /// Setup a repeating timer to process ring buffer updates using tokio
 pub fn setup_ring_buffer_timer() -> NvimResult<()> {
     let state = get_state();
     let interval = state.config.read().ring_update_ms;
-    let interval_duration = Duration::from_millis(interval as u64);
+    let dur = Duration::from_millis(interval);
 
     // Create a new tokio runtime and spawn the timer task
     // This follows the same pattern used elsewhere in the codebase
     let rt = state.tokio_runtime.clone();
     let timer_handle = rt.read().spawn(async move {
-        // Create a recurring interval timer
-        let mut interval = tokio::time::interval(interval_duration);
+        let mut interval = tokio::time::interval(dur);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         loop {
-            interval.tick().await;
-            let _ = ring_update();
+            tokio::select! {
+                _ = interval.tick() => {
+                    // TODO handle error
+                    let _ = ring_update().await;
+                }
+                // TODO add shutdown signal
+                // _ = state.shutdown_notify.notified() => break,
+            }
         }
     });
 
@@ -38,16 +47,17 @@ pub fn setup_ring_buffer_timer() -> NvimResult<()> {
 
 /// Process ring buffer updates - moves queued chunks to active ring and sends to server
 ///  
-fn ring_update() -> NvimResult<()> {
+async fn ring_update() -> NvimResult<()> {
     let state = get_state();
 
     // update only if in normal mode or if the cursor hasn't moved for a while
-    if in_normal_mode()? || (*state.last_move_time.read()).elapsed() > Duration::from_secs(3) {
+    if in_normal_mode()? || (*state.last_move_time.read()).elapsed() < Duration::from_secs(3) {
         return Ok(());
     }
 
-    // Get configuration
-    let update_interval = state.config.read().ring_update_ms;
+    if state.ring_buffer.read().queued.is_empty() {
+        return Ok(());
+    }
 
     // Check if we have chunks before logging
     let chunk_count = {
@@ -60,10 +70,7 @@ fn ring_update() -> NvimResult<()> {
     if chunk_count > 0 {
         state.debug_manager.read().log(
             "ring_update",
-            format!(
-                "Processing {} ring buffer chunks (interval: {}ms)",
-                chunk_count, update_interval
-            ),
+            format!("Processing {chunk_count} ring buffer chunks "),
         );
 
         // Build request with ring buffer context
@@ -75,81 +82,47 @@ fn ring_update() -> NvimResult<()> {
 
         // Send to server (fire and forget - non-blocking)
         let config = state.config.read().clone();
-        tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(async move {
-                let client = reqwest::Client::new();
-                let _ = client
-                    .post(&config.endpoint_fim)
-                    .json(&request)
-                    .bearer_auth(&config.api_key)
-                    .send()
-                    .await;
-            });
+        let client = reqwest::Client::new();
+        let _ = client
+            .post(&config.endpoint_fim)
+            .json(&request)
+            .bearer_auth(&config.api_key)
+            .send()
+            .await;
     }
 
     Ok(())
-}
-
-/// Ring buffer pick chunk function
-// TODO verify if this is still needed
-#[allow(dead_code)]
-fn ring_pick_chunk(lines: Vec<String>, no_mod: bool, do_evict: bool) -> NvimResult<()> {
-    let state = get_state();
-    state
-        .ring_buffer
-        .write()
-        .pick_chunk(lines, no_mod, do_evict);
-    Ok(())
-}
-
-/// Ring buffer get extra function
-// TODO verify if this is still needed
-#[allow(dead_code)]
-fn ring_get_extra() -> NvimResult<Vec<Dictionary>> {
-    let state = get_state();
-    let ring_buffer_lock = state.ring_buffer.read();
-    let extra = ring_buffer_lock.get_extra();
-
-    let mut result = Vec::new();
-    for e in extra {
-        let mut dict = Dictionary::new();
-        dict.insert("text", e.text);
-        dict.insert("filename", e.filename);
-        result.push(dict);
-    }
-
-    Ok(result)
 }
 
 // -----------------------------
 
 /// A chunk of text from the buffer
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Chunk {
     pub data: Vec<String>,
-    pub str: String,
+    pub chunk_str: String,
+    pub time: Instant,
     pub filename: String,
 }
 
 /// Ring buffer for extra context chunks
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct RingBuffer {
     chunks: Vec<Chunk>,
     pub queued: Vec<Chunk>,
     n_evict: usize,
-    max_chunks: usize,
+    ring_n_chunks: usize,
     chunk_size: usize,
 }
 
 impl RingBuffer {
     /// Create a new ring buffer with the given parameters
-    pub fn new(max_chunks: usize, chunk_size: usize) -> Self {
+    pub fn new(ring_n_chunks: usize, chunk_size: usize) -> Self {
         Self {
             chunks: Vec::new(),
             queued: Vec::new(),
             n_evict: 0,
-            max_chunks,
+            ring_n_chunks,
             chunk_size,
         }
     }
@@ -160,29 +133,38 @@ impl RingBuffer {
     /// * `text` - Text to pick a chunk from
     /// * `no_mod` - If true, don't pick chunks from buffers with pending changes
     /// * `do_evict` - If true, evict chunks that are very similar to the new one
-    pub fn pick_chunk(&mut self, text: Vec<String>, _no_mod: bool, do_evict: bool) {
+    pub fn pick_chunk(
+        &mut self,
+        text: Vec<String>,
+        filename: String,
+        no_mod: bool,
+        do_evict: bool,
+    ) -> NvimResult<()> {
+        if !buffer_active_and_readable()? {
+            return Ok(());
+        }
+
+        if no_mod && buffer_modified() {
+            return Ok(());
+        }
+
         // Skip if extra context is disabled
-        if self.max_chunks == 0 {
-            return;
+        if self.ring_n_chunks == 0 {
+            return Ok(());
         }
 
         // Skip very small chunks
         if text.len() < 3 {
-            return;
+            return Ok(());
         }
-
-        let chunk_size_half = self.chunk_size / 2;
 
         // Pick a random chunk
         let chunk = if text.len() + 1 < self.chunk_size {
             text
         } else {
-            let l0 = std::cmp::min(
-                rand::random::<usize>()
-                    % std::cmp::max(1, text.len().saturating_sub(chunk_size_half)),
-                text.len().saturating_sub(chunk_size_half),
-            );
-            let l1 = std::cmp::min(l0 + chunk_size_half, text.len());
+            let chunk_size_half = self.chunk_size / 2;
+            let l0 = random_range(0, text.len().saturating_sub(chunk_size_half));
+            let l1 = (l0 + chunk_size_half).min(text.len());
             text[l0..l1].to_vec()
         };
 
@@ -190,10 +172,10 @@ impl RingBuffer {
 
         // Check if this chunk is already added
         if self.chunks.iter().any(|c| c.data == chunk) {
-            return;
+            return Ok(());
         }
         if self.queued.iter().any(|c| c.data == chunk) {
-            return;
+            return Ok(());
         }
 
         // Evict queued chunks that are very similar
@@ -203,7 +185,7 @@ impl RingBuffer {
                     self.queued.remove(i);
                     self.n_evict += 1;
                 } else {
-                    return;
+                    return Ok(());
                 }
             }
         }
@@ -215,21 +197,24 @@ impl RingBuffer {
                     self.chunks.remove(i);
                     self.n_evict += 1;
                 } else {
-                    return;
+                    return Ok(());
                 }
             }
         }
 
         // Keep only the last 16 queued chunks
+        // TODO parametrize this 16
         while self.queued.len() >= 16 {
             self.queued.remove(0);
         }
 
         self.queued.push(Chunk {
             data: chunk,
-            str: chunk_str,
-            filename: String::new(), // Will be set by caller
+            chunk_str,
+            time: Instant::now(),
+            filename, // Will be set by caller
         });
+        Ok(())
     }
 
     /// Move the first queued chunk to the ring buffer
@@ -239,7 +224,7 @@ impl RingBuffer {
         }
 
         // Remove oldest chunk if buffer is full
-        if self.chunks.len() >= self.max_chunks {
+        while self.chunks.len() >= self.ring_n_chunks {
             self.chunks.remove(0);
         }
 
@@ -251,7 +236,7 @@ impl RingBuffer {
         self.chunks
             .iter()
             .map(|chunk| ExtraContext {
-                text: chunk.str.clone(),
+                text: chunk.chunk_str.clone(),
                 filename: chunk.filename.clone(),
             })
             .collect()
@@ -334,18 +319,22 @@ mod tests {
                 "line2".to_string(),
                 "line3".to_string(),
             ],
+            String::new(),
             false,
             true,
-        );
+        )
+        .unwrap();
         ring.pick_chunk(
             vec![
                 "line4".to_string(),
                 "line5".to_string(),
                 "line6".to_string(),
             ],
+            String::new(),
             false,
             true,
-        );
+        )
+        .unwrap();
 
         assert_eq!(ring.queued_len(), 2);
 
@@ -366,27 +355,33 @@ mod tests {
                 "line2".to_string(),
                 "line3".to_string(),
             ],
+            String::new(),
             false,
             true,
-        );
+        )
+        .unwrap();
         ring.pick_chunk(
             vec![
                 "line4".to_string(),
                 "line5".to_string(),
                 "line6".to_string(),
             ],
+            String::new(),
             false,
             true,
-        );
+        )
+        .unwrap();
         ring.pick_chunk(
             vec![
                 "line7".to_string(),
                 "line8".to_string(),
                 "line9".to_string(),
             ],
+            String::new(),
             false,
             true,
-        );
+        )
+        .unwrap();
 
         ring.update();
         ring.update();
@@ -408,18 +403,22 @@ mod tests {
                 "line2".to_string(),
                 "line3".to_string(),
             ],
+            String::new(),
             false,
             true,
-        );
+        )
+        .unwrap();
         ring.pick_chunk(
             vec![
                 "line4".to_string(),
                 "line5".to_string(),
                 "line6".to_string(),
             ],
+            String::new(),
             false,
             true,
-        );
+        )
+        .unwrap();
 
         assert_eq!(ring.queued_len(), 2);
 
@@ -445,9 +444,11 @@ mod tests {
                     "line2".to_string(),
                     "line3".to_string(),
                 ],
+                String::new(),
                 false,
                 true,
-            );
+            )
+            .unwrap();
             ring.update();
         }
 
@@ -464,18 +465,22 @@ mod tests {
                 "line2".to_string(),
                 "line3".to_string(),
             ],
+            String::new(),
             false,
             true,
-        );
+        )
+        .unwrap();
         ring.pick_chunk(
             vec![
                 "line4".to_string(),
                 "line5".to_string(),
                 "line6".to_string(),
             ],
+            String::new(),
             false,
             true,
-        );
+        )
+        .unwrap();
 
         ring.update();
         ring.update();
@@ -494,27 +499,33 @@ mod tests {
                 "line2".to_string(),
                 "line3".to_string(),
             ],
+            String::new(),
             false,
             true,
-        );
+        )
+        .unwrap();
         ring.pick_chunk(
             vec![
                 "line4".to_string(),
                 "line5".to_string(),
                 "line6".to_string(),
             ],
+            String::new(),
             false,
             true,
-        );
+        )
+        .unwrap();
         ring.pick_chunk(
             vec![
                 "line7".to_string(),
                 "line8".to_string(),
                 "line9".to_string(),
             ],
+            String::new(),
             false,
             true,
-        );
+        )
+        .unwrap();
 
         assert_eq!(ring.queued_len(), 3);
     }

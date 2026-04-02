@@ -21,7 +21,7 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 fim_hide();
-                false // DO NOT DELETE this autocommand once used
+                false
             })
             .build(),
     )
@@ -33,7 +33,7 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 let _ = on_move();
-                false // DO NOT DELETE this autocommand once used
+                false
             })
             .build(),
     )
@@ -50,7 +50,7 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
                 .callback(|_| {
                     let _ = on_move();
-                    false // DO NOT DELETE this autocommand once used
+                    false
                 })
                 .build(),
         )
@@ -59,11 +59,12 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
 
         let id = api::create_autocmd(
             //["CursorMovedI", "InsertEnter", "InsertChange"],
-            ["CursorMovedI", "InsertEnter"],
+            //["CursorMovedI", "InsertEnter"],
+            ["CursorMovedI"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
                 .callback(|_| {
                     let _ = trigger_fim();
-                    false // DO NOT DELETE this autocommand once used
+                    false
                 })
                 .build(),
         )
@@ -77,7 +78,7 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 let _ = on_text_yank_post();
-                false // DO NOT DELETE this autocommand once used
+                false
             })
             .build(),
     )
@@ -90,7 +91,7 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 let _ = on_buf_leave();
-                false // DO NOT DELETE this autocommand once used
+                false
             })
             .build(),
     )
@@ -103,7 +104,7 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 let _ = on_buf_write_post();
-                false // DO NOT DELETE this autocommand once used
+                false
             })
             .build(),
     )
@@ -116,7 +117,7 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 fim_hide();
-                false // DO NOT DELETE this autocommand once used
+                false
             })
             .build(),
     )

@@ -67,7 +67,7 @@ impl Default for PluginState {
         let config = config::LttwConfig::from_nvim_globals();
         let enable_at_startup = config.enable_at_startup;
         let max_cache_keys = config.max_cache_keys as usize;
-        let max_chunks = config.ring_n_chunks as usize;
+        let ring_n_chunks = config.ring_n_chunks as usize;
         let chunk_size = config.ring_chunk_size as usize;
 
         // Create namespaces for extmarks
@@ -90,7 +90,8 @@ impl Default for PluginState {
             config: Arc::new(RwLock::new(config)),
             cache: Arc::new(RwLock::new(cache::Cache::new(max_cache_keys))),
             ring_buffer: Arc::new(RwLock::new(ring_buffer::RingBuffer::new(
-                max_chunks, chunk_size,
+                ring_n_chunks,
+                chunk_size,
             ))),
             debug_manager: Arc::new(RwLock::new(debug::DebugManager::new())),
             last_move_time: Arc::new(RwLock::new(Instant::now())),

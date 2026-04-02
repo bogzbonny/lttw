@@ -11,7 +11,7 @@ use {
         plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
         spawn_fim_completion_worker,
-        utils::{get_buf_line, get_buf_line_count, random_range, sha256},
+        utils::{get_buf_filename, get_buf_line, get_buf_line_count, random_range, sha256},
         FimCompletionMessage, NvimResult,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition, Buffer},
@@ -127,6 +127,8 @@ pub fn build_info_string(
 /// Error type for FIM operations
 #[derive(Debug, thiserror::Error)]
 pub enum FimError {
+    #[error("nvim_oxi error: {0}")]
+    NvimOxi(#[from] nvim_oxi::Error),
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
     #[error("JSON error: {0}")]
@@ -331,9 +333,10 @@ pub fn fim_completion(
         let prefix_start = pos_y.saturating_sub(ring_scope);
         let prefix_end = pos_y.saturating_sub(n_prefix);
         let prefix_lines = get_buf_lines(prefix_start..=prefix_end);
+        let filename = get_buf_filename()?;
         if !prefix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
-            ring_buffer_lock.pick_chunk(prefix_lines, false, false);
+            ring_buffer_lock.pick_chunk(prefix_lines, filename.clone(), false, false)?;
         }
 
         let max_y = get_buf_line_count();
@@ -342,7 +345,7 @@ pub fn fim_completion(
         let suffix_lines = get_buf_lines(suffix_start..=suffix_end);
         if !suffix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
-            ring_buffer_lock.pick_chunk(suffix_lines, false, false);
+            ring_buffer_lock.pick_chunk(suffix_lines, filename, false, false)?;
         }
 
         // Update the last pick position
@@ -892,58 +895,70 @@ mod tests {
         let mut ring_buffer = RingBuffer::new(3, 64);
 
         // Add first chunk
-        ring_buffer.pick_chunk(
-            vec![
-                "fn main() {".to_string(),
-                "    println!(\"hello\");".to_string(),
-                "}".to_string(),
-            ],
-            false,
-            true,
-        );
+        ring_buffer
+            .pick_chunk(
+                vec![
+                    "fn main() {".to_string(),
+                    "    println!(\"hello\");".to_string(),
+                    "}".to_string(),
+                ],
+                String::new(),
+                false,
+                true,
+            )
+            .unwrap();
         ring_buffer.update();
 
         assert_eq!(ring_buffer.len(), 1);
         assert_eq!(ring_buffer.queued_len(), 0);
 
         // Add second chunk (should not evict first since they're different)
-        ring_buffer.pick_chunk(
-            vec![
-                "use std::io;".to_string(),
-                "fn read_input() {".to_string(),
-                "    let mut s = String::new();".to_string(),
-            ],
-            false,
-            true,
-        );
+        ring_buffer
+            .pick_chunk(
+                vec![
+                    "use std::io;".to_string(),
+                    "fn read_input() {".to_string(),
+                    "    let mut s = String::new();".to_string(),
+                ],
+                String::new(),
+                false,
+                true,
+            )
+            .unwrap();
         ring_buffer.update();
 
         assert_eq!(ring_buffer.len(), 2);
 
         // Add third chunk
-        ring_buffer.pick_chunk(
-            vec![
-                "mod test;".to_string(),
-                "fn test_func() {".to_string(),
-                "    assert_eq!(1, 1);".to_string(),
-            ],
-            false,
-            true,
-        );
+        ring_buffer
+            .pick_chunk(
+                vec![
+                    "mod test;".to_string(),
+                    "fn test_func() {".to_string(),
+                    "    assert_eq!(1, 1);".to_string(),
+                ],
+                String::new(),
+                false,
+                true,
+            )
+            .unwrap();
         ring_buffer.update();
 
         assert_eq!(ring_buffer.len(), 3);
 
         // Add fourth chunk - should evict the oldest one due to max_chunks limit
-        ring_buffer.pick_chunk(
-            vec![
-                "pub fn export_func() {".to_string(),
-                "    test_func();".to_string(),
-                "}".to_string(),
-            ],
-            false,
-            true,
-        );
+        ring_buffer
+            .pick_chunk(
+                vec![
+                    "pub fn export_func() {".to_string(),
+                    "    test_func();".to_string(),
+                    "}".to_string(),
+                ],
+                String::new(),
+                false,
+                true,
+            )
+            .unwrap();
         ring_buffer.update();
 
         // Should still be at max_chunks (3)
@@ -964,7 +979,9 @@ mod tests {
         ];
 
         // Add first chunk
-        ring_buffer.pick_chunk(chunk1.clone(), false, true);
+        ring_buffer
+            .pick_chunk(chunk1.clone(), String::new(), false, true)
+            .unwrap();
         ring_buffer.update();
 
         assert_eq!(ring_buffer.len(), 1);
@@ -973,7 +990,9 @@ mod tests {
         let mut chunk2 = chunk1.clone();
         chunk2[1] = "    let x = 100;".to_string(); // Slightly different
 
-        ring_buffer.pick_chunk(chunk2, false, true);
+        ring_buffer
+            .pick_chunk(chunk2, String::new(), false, true)
+            .unwrap();
         ring_buffer.update();
 
         // Due to high similarity, first chunk should be evicted
@@ -987,15 +1006,18 @@ mod tests {
         let mut ring_buffer = RingBuffer::new(2, 64);
 
         // Add some chunks to the ring buffer
-        ring_buffer.pick_chunk(
-            vec![
-                "mod module1;".to_string(),
-                "mod module2;".to_string(),
-                "mod module3;".to_string(),
-            ],
-            false,
-            true,
-        );
+        ring_buffer
+            .pick_chunk(
+                vec![
+                    "mod module1;".to_string(),
+                    "mod module2;".to_string(),
+                    "mod module3;".to_string(),
+                ],
+                String::new(),
+                false,
+                true,
+            )
+            .unwrap();
         ring_buffer.update();
 
         let extra = ring_buffer.get_extra();
@@ -1038,15 +1060,18 @@ mod tests {
         let mut ring_buffer = RingBuffer::new(3, 64);
 
         // Add chunks to ring buffer
-        ring_buffer.pick_chunk(
-            vec![
-                "fn test1() {".to_string(),
-                "    println!(\"test1\");".to_string(),
-                "}".to_string(),
-            ],
-            false,
-            true,
-        );
+        ring_buffer
+            .pick_chunk(
+                vec![
+                    "fn test1() {".to_string(),
+                    "    println!(\"test1\");".to_string(),
+                    "}".to_string(),
+                ],
+                String::new(),
+                false,
+                true,
+            )
+            .unwrap();
         ring_buffer.update();
 
         // Simulate a FIM request with ring buffer context
@@ -1094,15 +1119,18 @@ mod tests {
         // Test that n_evict counter tracks evicted chunks correctly
         let mut ring_buffer = RingBuffer::new(2, 64);
 
-        ring_buffer.pick_chunk(
-            vec![
-                "fn func1() {".to_string(),
-                "    let x = 1;".to_string(),
-                "}".to_string(),
-            ],
-            false,
-            true,
-        );
+        ring_buffer
+            .pick_chunk(
+                vec![
+                    "fn func1() {".to_string(),
+                    "    let x = 1;".to_string(),
+                    "}".to_string(),
+                ],
+                String::new(),
+                false,
+                true,
+            )
+            .unwrap();
         ring_buffer.update();
 
         let n_evict_before = ring_buffer.n_evict();
@@ -1114,7 +1142,10 @@ mod tests {
                 "    let x = 100;".to_string(), // Slightly different
                 "}".to_string(),
             ];
-            ring_buffer.pick_chunk(similar_chunk, false, true);
+
+            ring_buffer
+                .pick_chunk(similar_chunk, String::new(), false, true)
+                .unwrap();
             ring_buffer.update();
         }
 
@@ -1136,7 +1167,9 @@ mod tests {
             "}".to_string(),
         ];
 
-        ring_buffer.pick_chunk(chunk_data.clone(), false, true);
+        ring_buffer
+            .pick_chunk(chunk_data.clone(), String::new(), false, true)
+            .unwrap();
         ring_buffer.update();
 
         let extra = ring_buffer.get_extra();
@@ -1152,15 +1185,18 @@ mod tests {
 
         // Pick multiple chunks without updating
         for i in 0..5 {
-            ring_buffer.pick_chunk(
-                vec![
-                    format!("fn func{}_()", i),
-                    format!("    let x = {};", i),
-                    "}".to_string(),
-                ],
-                false,
-                true,
-            );
+            ring_buffer
+                .pick_chunk(
+                    vec![
+                        format!("fn func{}_()", i),
+                        format!("    let x = {};", i),
+                        "}".to_string(),
+                    ],
+                    String::new(),
+                    false,
+                    true,
+                )
+                .unwrap();
         }
 
         // All should be in queued
@@ -1197,19 +1233,25 @@ mod tests {
         ];
 
         // Add chunk first time
-        ring_buffer.pick_chunk(chunk.clone(), false, true);
+        ring_buffer
+            .pick_chunk(chunk.clone(), String::new(), false, true)
+            .unwrap();
         ring_buffer.update();
 
         assert_eq!(ring_buffer.len(), 1);
 
         // Try to add exact same chunk again (should be ignored)
-        ring_buffer.pick_chunk(chunk.clone(), false, true);
+        ring_buffer
+            .pick_chunk(chunk.clone(), String::new(), false, true)
+            .unwrap();
 
         // Should still be 1 (no duplicate added)
         assert_eq!(ring_buffer.len(), 1);
 
         // Try to add same chunk via queued (should also be ignored)
-        ring_buffer.pick_chunk(chunk, false, true);
+        ring_buffer
+            .pick_chunk(chunk, String::new(), false, true)
+            .unwrap();
 
         // Should still have same queued count
         assert_eq!(ring_buffer.queued_len(), 0);

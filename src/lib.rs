@@ -31,7 +31,7 @@ use {
         time::{Duration, Instant},
     },
     tokio::sync::mpsc,
-    utils::{get_buf_lines, get_buffer_handle, get_pos, in_insert_mode},
+    utils::{get_buf_filename, get_buf_lines, get_buffer_handle, get_pos, in_insert_mode},
 };
 
 // FIM completion channel types for async communication between worker and main thread
@@ -606,10 +606,7 @@ fn on_text_yank_post() -> NvimResult<()> {
     let yanked: Vec<String> = reg_content.split('\n').map(|s| s.to_string()).collect();
 
     if !yanked.is_empty() {
-        let filename = Buffer::current()
-            .get_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
+        let filename = get_buf_filename().unwrap_or_default();
 
         state.debug_manager.read().log(
             "on_text_yank_post",
@@ -618,12 +615,7 @@ fn on_text_yank_post() -> NvimResult<()> {
 
         // Pick chunk from yanked text
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(yanked, false, true);
-
-        // Set filename for the last queued chunk
-        if let Some(chunk) = ring_buffer_lock.queued.last_mut() {
-            chunk.filename = filename;
-        }
+        ring_buffer_lock.pick_chunk(yanked, filename, false, true)?;
     }
 
     Ok(())
@@ -641,10 +633,7 @@ fn on_buf_enter_gather_chunks() -> NvimResult<()> {
     };
 
     if lines.len() > 3 {
-        let filename = buf
-            .get_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
+        let filename = get_buf_filename().unwrap_or_default();
 
         state.debug_manager.read().log(
             "on_buf_enter",
@@ -653,12 +642,7 @@ fn on_buf_enter_gather_chunks() -> NvimResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(lines, false, true);
-
-        // Set filename for the last queued chunk
-        if let Some(chunk) = ring_buffer_lock.queued.last_mut() {
-            chunk.filename = filename;
-        }
+        ring_buffer_lock.pick_chunk(lines, filename, false, true)?;
     }
 
     Ok(())
@@ -676,10 +660,7 @@ fn on_buf_leave() -> NvimResult<()> {
     };
 
     if lines.len() > 3 {
-        let filename = buf
-            .get_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
+        let filename = get_buf_filename().unwrap_or_default();
 
         state.debug_manager.read().log(
             "on_buf_leave",
@@ -688,12 +669,7 @@ fn on_buf_leave() -> NvimResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(lines, false, true);
-
-        // Set filename for the last queued chunk
-        if let Some(chunk) = ring_buffer_lock.queued.last_mut() {
-            chunk.filename = filename;
-        }
+        ring_buffer_lock.pick_chunk(lines, filename, false, true)?;
     }
 
     Ok(())
@@ -743,10 +719,7 @@ fn on_buf_write_post() -> NvimResult<()> {
     };
 
     if lines.len() > 3 {
-        let filename = buf
-            .get_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
+        let filename = get_buf_filename().unwrap_or_default();
 
         state.debug_manager.read().log(
             "on_buf_write_post",
@@ -755,12 +728,7 @@ fn on_buf_write_post() -> NvimResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(lines, false, true);
-
-        // Set filename for the last queued chunk
-        if let Some(chunk) = ring_buffer_lock.queued.last_mut() {
-            chunk.filename = filename;
-        }
+        ring_buffer_lock.pick_chunk(lines, filename, false, true)?;
     }
 
     Ok(())

@@ -7,7 +7,9 @@ use {
     nvim_oxi::api::{self, Buffer, Window},
     rand::Rng,
     sha2::{Digest, Sha256},
+    std::fs,
     std::ops::RangeBounds,
+    std::path::Path,
 };
 
 // are we in insert mode
@@ -57,6 +59,34 @@ where
 pub fn get_buf_line_count() -> usize {
     let buf = Buffer::current();
     buf.line_count().unwrap_or(0)
+}
+
+/// Get buffer lines from Neovim
+pub fn buffer_modified() -> bool {
+    let buf = Buffer::current();
+    // TODO test that this get_var is working
+    let is_modified: bool = buf.get_var("modified").unwrap_or(false);
+    is_modified
+}
+
+/// Get buffer lines from Neovim
+pub fn get_buf_filename() -> NvimResult<String> {
+    let buf = Buffer::current();
+    let buf_file_name = buf.get_name()?;
+    // convert to string
+    let filename = buf_file_name.to_string_lossy().to_string();
+    Ok(filename)
+}
+/// Get buffer lines from Neovim
+pub fn buffer_active_and_readable() -> NvimResult<bool> {
+    let buf = Buffer::current();
+    let loaded = buf.is_loaded(); // acts like buf_listed
+    let buf_file_name = buf.get_name()?;
+    let is_readable = is_readable(buf_file_name.as_path());
+    Ok(loaded && is_readable)
+}
+fn is_readable(path: &Path) -> bool {
+    path.exists() && fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
 }
 
 /// Get buffer lines from Neovim
