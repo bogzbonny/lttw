@@ -136,15 +136,14 @@ impl FimState {
         self.last_pick_pos_y = None;
     }
 
-    // NOTE used for ring buffer logic
-    ///// Update the last pick position
-    //fn set_last_pick_pos_y(&mut self, pos_y: usize) {
-    //    self.last_pick_pos_y = Some(pos_y);
-    //}
-    ///// Get the last pick position
-    //fn get_last_pick_pos_y(&self) -> Option<usize> {
-    //    self.last_pick_pos_y
-    //}
+    /// Update the last pick position
+    fn set_last_pick_pos_y(&mut self, pos_y: usize) {
+        self.last_pick_pos_y = Some(pos_y);
+    }
+    /// Get the last pick position
+    fn get_last_pick_pos_y(&self) -> Option<usize> {
+        self.last_pick_pos_y
+    }
 }
 
 /// Initialize persistent tokio runtime and completion channel
@@ -751,7 +750,7 @@ fn trigger_fim() -> NvimResult<()> {
 
     // Get CURRENT cursor position
     let (pos_x, pos_y) = get_pos();
-    let lines = get_buf_lines();
+    let lines = get_buf_lines(..);
     let buffer_handle: u64 = get_buffer_handle();
     let state_ = state.clone(); // Clone for async block
 

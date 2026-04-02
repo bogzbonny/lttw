@@ -109,3 +109,18 @@ nvim schedule it would render
 
 01. fix filetype prediction logic
 01. add debounce
+01. Should not be Inline extmarks when there are no ending matches
+01. sometimes sending two updates (not just one) probably on 'o' because it is
+    both a cursor move and entering insert mode. Solved with debounce
+01. Panic condition when tab from an empty line 
+01. fix cursor positioning on accepted text
+02. sometimes doesn't display if on empty line (tab still works)
+     - Seems like this only happens when we're on the very first character of a
+       line some edge case biz
+01. When typing on top of a suggestion, that suggestion should still be there
+    IFF we're typing the same content... wonder if this has to do with the ring
+    buffer
+     - I think this may have to do with speculative FIM actually
+01. Do not render the virtual text if it nolonger matches what's actually in the
+    line
+

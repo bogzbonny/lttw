@@ -11,7 +11,7 @@ use {
         plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
         spawn_fim_completion_worker,
-        utils::{get_buf_line, random_range, sha256},
+        utils::{get_buf_line, get_buf_line_count, random_range, sha256},
         FimCompletionMessage, NvimResult,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition, Buffer},
@@ -253,6 +253,10 @@ pub fn fim_completion(
         // TODO log error
         return Ok(());
     };
+
+    let last_pick_pos_y = state.fim_state.read().get_last_pick_pos_y();
+    let state_ = state.clone();
+
     let rt = state.tokio_runtime.clone();
     if let Some(runtime) = rt.read().as_ref() {
         runtime.spawn(async move {
@@ -307,93 +311,46 @@ pub fn fim_completion(
         });
     }
 
-    // XXX TODO update ring buffer chunks
-    //    " gather some extra context nearby and process it in the background
-    //" only gather chunks if the cursor has moved a lot
-    //" TODO: something more clever? reranking?
-    //if a:is_auto && l:delta_y > 32
-    //    let l:max_y = line('$')
-    //    " expand the prefix even further
-    //    call s:pick_chunk(getline(max([1,       l:pos_y - g:llama_config.ring_scope]), max([1,       l:pos_y - g:llama_config.n_prefix])), v:false, v:false)
-    //    " pick a suffix chunk
-    //    call s:pick_chunk(getline(min([l:max_y, l:pos_y + g:llama_config.n_suffix]),   min([l:max_y, l:pos_y + g:llama_config.n_suffix + g:llama_config.ring_chunk_size])), v:false, v:false)
-    //    let s:pos_y_pick = l:pos_y
-    //endif
+    // Ring buffer pick logic - gather extra context when cursor moves significantly
+    // and process it in the background
+    let do_ring_buffer_pick = if let Some(last_y) = last_pick_pos_y {
+        (pos_y as i64 - last_y as i64).abs() > 32
+    } else {
+        true
+    };
 
-    //// Ring buffer pick logic - gather extra context when cursor moves significantly
-    //// This mirrors the logic in llama#fim (llama.vim lines 930-946)
-    //let last_pick_pos_y = state.fim_state.read().get_last_pick_pos_y();
-    //let delta_y = last_pick_pos_y
-    //    .map(|last_pos| {
-    //        pos_y
-    //            .saturating_sub(last_pos)
-    //            .max(last_pos.saturating_sub(pos_y))
-    //    })
-    //    .unwrap_or(33); // If no last position, treat as large delta to gather initial chunks
+    if do_ring_buffer_pick {
+        // Get ring configuration
+        let (ring_scope, n_prefix, n_suffix, ring_chunk_size) = {
+            let config = state_.config.read();
+            (
+                config.ring_scope as usize,
+                config.n_prefix as usize,
+                config.n_suffix as usize,
+                config.ring_chunk_size as usize,
+            )
+        };
 
-    //// Only gather chunks if cursor has moved more than 32 lines
-    //let ring_buffer_pick_needed = delta_y > 32;
+        let prefix_start = pos_y.saturating_sub(ring_scope);
+        let prefix_end = pos_y.saturating_sub(n_prefix);
+        let prefix_lines = get_buf_lines(prefix_start..=prefix_end);
+        if !prefix_lines.is_empty() {
+            let mut ring_buffer_lock = state_.ring_buffer.write();
+            ring_buffer_lock.pick_chunk(prefix_lines, false, false);
+        }
 
-    //if ring_buffer_pick_needed {
-    //    let max_y = lines.len().saturating_sub(1); // line('$') - 1 (0-indexed)
+        let max_y = get_buf_line_count();
+        let suffix_start = (pos_y + n_suffix).min(max_y);
+        let suffix_end = (pos_y + n_suffix + ring_chunk_size).min(max_y);
+        let suffix_lines = get_buf_lines(suffix_start..=suffix_end);
+        if !suffix_lines.is_empty() {
+            let mut ring_buffer_lock = state_.ring_buffer.write();
+            ring_buffer_lock.pick_chunk(suffix_lines, false, false);
+        }
 
-    //    // Get ring configuration
-    //    let config_lock = state.config.read();
-    //    let ring_scope = config_lock.ring_scope as usize;
-    //    let n_prefix = config_lock.n_prefix as usize;
-    //    let n_suffix = config_lock.n_suffix as usize;
-    //    let ring_chunk_size = config_lock.ring_chunk_size as usize;
-
-    //    // Expand the prefix even further
-    //    // Vim: getline(max([1, l:pos_y - g:llama_config.ring_scope]), max([1, l:pos_y - g:llama_config.n_prefix]))
-    //    // In Rust with 0-indexed lines:
-    //    let prefix_start = (pos_y.saturating_sub(ring_scope)).max(0);
-    //    let prefix_end = (pos_y.saturating_sub(n_prefix)).max(0);
-
-    //    let prefix_lines =
-    //        if prefix_start <= max_y && prefix_end <= max_y && prefix_start <= prefix_end {
-    //            lines
-    //                .get(prefix_start..=prefix_end)
-    //                .map(|slice| slice.to_vec())
-    //                .unwrap_or_default()
-    //        } else {
-    //            Vec::new()
-    //        };
-
-    //    // Log prefix chunk info before moving
-    //    if !prefix_lines.is_empty() {
-    //        let mut ring_buffer_lock = state.ring_buffer.write();
-    //        ring_buffer_lock.pick_chunk(prefix_lines, false, false);
-    //    }
-
-    //    // Pick a suffix chunk
-    //    // Vim: getline(min([l:max_y, l:pos_y + g:llama_config.n_suffix]), min([l:max_y, l:pos_y + g:llama_config.n_suffix + g:llama_config.ring_chunk_size]))
-    //    // In Rust with 0-indexed lines:
-    //    let suffix_start = pos_y.saturating_add(n_suffix).min(max_y);
-    //    let suffix_end = (pos_y
-    //        .saturating_add(n_suffix)
-    //        .saturating_add(ring_chunk_size))
-    //    .min(max_y);
-
-    //    let suffix_lines =
-    //        if suffix_start <= max_y && suffix_end <= max_y && suffix_start <= suffix_end {
-    //            lines
-    //                .get(suffix_start..=suffix_end)
-    //                .map(|slice| slice.to_vec())
-    //                .unwrap_or_default()
-    //        } else {
-    //            Vec::new()
-    //        };
-
-    //    // Log suffix chunk info before moving
-    //    if !suffix_lines.is_empty() {
-    //        let mut ring_buffer_lock = state.ring_buffer.write();
-    //        ring_buffer_lock.pick_chunk(suffix_lines, false, false);
-    //    }
-
-    //    // Update the last pick position
-    //    state.fim_state.write().set_last_pick_pos_y(pos_y);
-    //}
+        // Update the last pick position
+        state_.fim_state.write().set_last_pick_pos_y(pos_y);
+    }
 
     Ok(())
 }
@@ -429,7 +386,7 @@ pub fn fim_try_hint() -> NvimResult<()> {
     }
     let (pos_x, pos_y) = get_pos();
     let state = get_state();
-    let lines = get_buf_lines();
+    let lines = get_buf_lines(..);
     let buffer_handle = get_buffer_handle();
     fim_try_hint_inner(state, pos_x, pos_y, buffer_handle, lines)
 }

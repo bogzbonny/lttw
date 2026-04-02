@@ -495,7 +495,7 @@ pub fn build_instruction_virt_text(
 fn inst_start(l0: i64, l1: i64, inst: &str) -> NvimResult<i64> {
     let state = get_state();
     let bufnr = get_current_buffer();
-    let lines = get_buf_lines();
+    let lines = get_buf_lines(..);
 
     // Create new instruction request
     let req_id = state.next_inst_req_id.fetch_add(1, Ordering::SeqCst);

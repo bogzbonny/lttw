@@ -7,6 +7,7 @@ use {
     nvim_oxi::api::{self, Buffer, Window},
     rand::Rng,
     sha2::{Digest, Sha256},
+    std::ops::RangeBounds,
 };
 
 // are we in insert mode
@@ -43,10 +44,19 @@ pub fn get_pos() -> (usize, usize) {
 }
 
 /// Get buffer lines from Neovim
-pub fn get_buf_lines() -> Vec<String> {
+pub fn get_buf_lines<R>(line_range: R) -> Vec<String>
+where
+    R: RangeBounds<usize>,
+{
     let buf = Buffer::current();
-    let lines = buf.get_lines(.., false).unwrap();
+    let lines = buf.get_lines(line_range, false).unwrap();
     lines.map(|s| s.to_string()).collect()
+}
+
+/// Get buffer lines from Neovim
+pub fn get_buf_line_count() -> usize {
+    let buf = Buffer::current();
+    buf.line_count().unwrap_or(0)
 }
 
 /// Get buffer lines from Neovim
