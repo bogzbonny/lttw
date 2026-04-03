@@ -1,6 +1,6 @@
 use {
     crate::{
-        autocommands::clear_filetype_autocommand, debug_clear, debug_toggle, disable_plugin,
+        autocmd::clear_filetype_autocommand, debug_clear, debug_toggle, disable_plugin,
         enable_plugin, instruction, is_enabled, toggle_auto_fim, LttwResult,
     },
     nvim_oxi::api::create_user_command,

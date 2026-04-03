@@ -2,7 +2,7 @@ use {
     crate::{
         context::chunk_similarity,
         get_state,
-        utils::{buffer_active_and_readable, buffer_modified, in_normal_mode, random_range},
+        utils::{buffer_active_and_readable, buffer_modified, random_range},
         LttwResult,
     },
     std::sync::Arc,
