@@ -1,33 +1,7 @@
-01. "line" completions SHOULD accept the NEXT line on tab if the completion only
-    starts on the next line
-01. random panics 
-00. removed the condition that hint must be shown at the end of try_fim
-     - also remove the autcommand on cursor move that triggers fim_completion on
-       its own
-    -> WORKS check to make sure this works (then remove commented code)
-    -> ALSO figure out a way of ensuring that if a cached hint is found 
-       in try_fim that the background triggered fim_completion won't just
-       overwrite it!
-10. our own error type
 
 ^^^^^^^^^ DONE
 
-01. panic condition if open fim.rs and scroll really fast down and then try
-    insert mode
-     - https://github.com/noib3/nvim-oxi/issues/260 sheds a lot of light
-       - "Essentially never call neovim's functions outside of callbacks and
-         plugin entrypoints and never call neovim's functions from another
-         thread. "
-     - ALL neovim function calls eg. getting buffer information MUST occur from
-       the neovim main thread! 
-        - Callbacks which happen through an autocommand SHOULD BE OKAY
-        - All spawned threads need to either have neovim-dependant information
-          fed to them or access it through TimerHandle which executes on the
-          main thread.
-     - TODO 
-        - make more function async so it will be easier to audit 
-        - reduce usage of retrieving the tokio runtime and use tokio::spawn
-          directly whenever already inside the runtime
+00. commented out XXXs for pick_chunk
 
 01. bizzare issue with re-rendering msgs as they come where the cursor gets
     slammed to the end of the queue message. 
@@ -40,6 +14,7 @@
 01. check on the amount of llm calls make sure we're not goin crzy
 
 01. Add (info) stats as rhs extmarks
+ - alternatively maybe send this information through LSP progress messages. 
 
 You are in the middle of the task of translating the codebase provided under
 `llama.vim/` into a new neovim plugin written in ENTIRELY rust using neovim
@@ -50,13 +25,45 @@ PURELY by using nvim-oxi
 Add in rendering of the build info string (see build_info_string) to the rust
 code. Render this extmarks which are RightHand justified. 
 
-10. better global error management
-    https://github.com/noib3/nvim-oxi/issues/231
+05. integrate git diff system into extra 
+
+05. integrate in LSP diagnostics into extra 
+     - Use autocmd and keep our own map 
+     - https://neovim.io/doc/user/diagnostic/#diagnostic-events
 
 05. add config option for debugging (default false)
 05. fix tests-integrations (compile errors) 
-10. easier to use debugging system 
+
+------------------------
+
+10. integrate definitions of all nearby objects 
+     - Iterate through all the nearby words and to go-to-definition
+     - use this vim command: https://neovim.io/doc/user/lsp/#lsp-buf
+     - Can use treesitter [](https://neovim.io/doc/user/treesitter/#_treesitter-queries)
+       - I would ONLY go to def for: 
+         function.call function.method.call type constant variable variable.member 
+         type.definition
+       - would (could?) make a query for the specific objects I want
+```
+local query_string = [[
+  (function_declaration
+    name: (identifier) @func.name)
+  (method_definition
+    name: (property_identifier) @func.name)
+  (class_declaration
+    name: (type_identifier) @class.name)
+]]
+```
+       - also see https://neovim.io/doc/user/treesitter/#TSNode%3Adescendant_for_range()
+     - IF use treesitter probably don't have to do this:
+       - probably want to have a config option for all the words which we don't
+         want to get the definition for (eg. pub,struct, unwrap, usize, i64,
+         Option,
+
+10. easier to use debugging system (like debug! macro)
 20. option to not predict while in comments
+20. better global error printing 
+    https://github.com/noib3/nvim-oxi/issues/231
 20. allow for a more regular setup by passing config params through the setup
     function
 

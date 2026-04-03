@@ -16,6 +16,7 @@ pub struct LttwConfig {
     // FIM (Fill-in-Middle) configuration
     pub endpoint_fim: String,
     pub endpoint_inst: String,
+
     pub model_fim: String,
     pub model_inst: String,
     pub api_key: String,
