@@ -1,18 +1,15 @@
 use {
-    crate::{fim::FimAcceptType, fim_accept, fim_is_hint_shown, get_state},
-    nvim_oxi::{
-        api::{
-            opts::SetKeymapOptsBuilder,
-            types::Mode,
-            {self},
-        },
-        Result as NvimResult,
+    crate::{fim::FimAcceptType, fim_accept, fim_is_hint_shown, get_state, LttwResult},
+    nvim_oxi::api::{
+        opts::SetKeymapOptsBuilder,
+        types::Mode,
+        {self},
     },
 };
 
 // Expression mapping helper functions removed - using command-based callbacks instead
 /// Setup keymaps function - maps keys to call nvim-oxi commands directly
-pub fn setup_keymaps() -> NvimResult<()> {
+pub fn setup_keymaps() -> LttwResult<()> {
     // Instruction trigger
     let _ = api::set_keymap(
         Mode::Normal,
@@ -88,7 +85,7 @@ pub fn setup_keymaps() -> NvimResult<()> {
 }
 
 /// Remove keymaps function - unmaps all plugin keymaps
-pub fn remove_keymaps() -> NvimResult<()> {
+pub fn remove_keymaps() -> LttwResult<()> {
     let state = get_state();
     let config = state.config.read();
 

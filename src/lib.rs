@@ -8,6 +8,7 @@ pub mod commands;
 pub mod config;
 pub mod context;
 pub mod debug;
+pub mod error;
 pub mod filetype;
 pub mod fim;
 pub mod instruction;
@@ -16,13 +17,15 @@ pub mod plugin_state;
 pub mod ring_buffer;
 pub mod utils;
 
+pub use error::{Error, LttwResult};
+
 use {
     fim::{fim_try_hint, FimAcceptType},
     nvim_oxi::{
         api::{
             del_autocmd, {self, Buffer, Window},
         },
-        Dictionary, Function, Result as NvimResult,
+        Dictionary, Function,
     },
     plugin_state::{get_state, init_state, PluginState},
     std::{
@@ -68,7 +71,7 @@ pub struct FimCompletionMessage {
 /// * `Ok(Dictionary)` - Dictionary of exposed functions
 /// * `Err(nvim_oxi::Error)` - Error message if initialization failed
 #[nvim_oxi::plugin]
-pub fn lttw() -> NvimResult<Dictionary> {
+pub fn lttw() -> LttwResult<Dictionary> {
     let mut functions = Dictionary::new();
 
     functions.insert::<&str, Function<(), ()>>("lttw_setup", Function::from(|_| lttw_setup()));
@@ -101,7 +104,7 @@ fn lttw_setup() {
 // ---------------------------
 
 /// Check if FIM hint is shown - internal helper for commands
-fn fim_is_hint_shown() -> Result<bool, nvim_oxi::Error> {
+fn fim_is_hint_shown() -> LttwResult<bool> {
     let state = get_state();
     let fim_state_lock = state.fim_state.read();
     Ok(fim_state_lock.hint_shown)
@@ -206,7 +209,7 @@ async fn spawn_fim_completion_worker(
     buffer_handle: u64,
     buffer_lines: Vec<String>,
     prev: Option<Vec<String>>, // speculative FIM content
-) -> Result<(), nvim_oxi::Error> {
+) -> LttwResult<()> {
     let seq = state.increment_debounce_sequence();
 
     // Check debounce if we have a sequence
@@ -273,13 +276,13 @@ async fn spawn_fim_completion_worker(
     //};
 
     // TODO handle error
-    let _ = fim::fim_completion(state, cursor_x, cursor_y, buffer_handle, buffer_lines, prev);
+    fim::fim_completion(state, cursor_x, cursor_y, buffer_handle, buffer_lines, prev).await?;
 
     Ok(())
 }
 
 /// Process pending FIM display queue - drains and displays messages on the main thread
-fn process_pending_display() -> NvimResult<()> {
+fn process_pending_display() -> LttwResult<()> {
     let state = get_state();
 
     // Only display if we are in insert mode
@@ -323,7 +326,7 @@ fn process_pending_display() -> NvimResult<()> {
 }
 
 /// Handle FIM completion message received from async worker
-fn handle_fim_completion_message(msg: FimCompletionMessage) -> NvimResult<()> {
+fn handle_fim_completion_message(msg: FimCompletionMessage) -> LttwResult<()> {
     let state = get_state();
 
     // Check if we're still in the same buffer
@@ -371,7 +374,7 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> NvimResult<()> {
 }
 
 /// FIM accept function - accepts the FIM suggestion
-fn fim_accept(accept_type: FimAcceptType) -> NvimResult<Option<String>> {
+fn fim_accept(accept_type: FimAcceptType) -> LttwResult<Option<String>> {
     // Log before releasing the lock
     let state = get_state();
     {
@@ -488,7 +491,7 @@ fn fim_hide() {
 }
 
 /// Debug toggle function - toggles logging
-fn debug_toggle() -> NvimResult<bool> {
+fn debug_toggle() -> LttwResult<bool> {
     let state = get_state();
     let enabled = state.debug_manager.read().is_enabled();
 
@@ -500,7 +503,7 @@ fn debug_toggle() -> NvimResult<bool> {
 }
 
 /// Debug clear function
-fn debug_clear() -> NvimResult<()> {
+fn debug_clear() -> LttwResult<()> {
     let state = get_state();
     state.debug_manager.write().clear();
     Ok(())
@@ -515,7 +518,7 @@ fn is_enabled() -> bool {
 }
 
 /// Enable the plugin - sets up keymaps, autocmds, and state
-fn enable_plugin() -> NvimResult<()> {
+fn enable_plugin() -> LttwResult<()> {
     let state = get_state();
 
     // Check if already enabled
@@ -554,7 +557,7 @@ fn enable_plugin() -> NvimResult<()> {
 }
 
 /// Disable the plugin - removes keymaps, clears autocmds, and hides hints
-fn disable_plugin() -> NvimResult<()> {
+fn disable_plugin() -> LttwResult<()> {
     let state = get_state();
 
     // Check if already disabled
@@ -587,7 +590,7 @@ fn disable_plugin() -> NvimResult<()> {
 }
 
 /// Toggle auto_fim configuration
-fn toggle_auto_fim() -> NvimResult<bool> {
+fn toggle_auto_fim() -> LttwResult<bool> {
     let state = get_state();
 
     // Toggle auto_fim in config
@@ -603,7 +606,7 @@ fn toggle_auto_fim() -> NvimResult<bool> {
     Ok(new_value)
 }
 
-fn on_move() -> NvimResult<()> {
+fn on_move() -> LttwResult<()> {
     let state = get_state();
     *state.last_move_time.write() = Instant::now();
     state.debug_manager.read().log("on_move", "Cursor moved");
@@ -613,7 +616,7 @@ fn on_move() -> NvimResult<()> {
 }
 
 /// Handle TextYankPost event - gather chunks from yanked text
-fn on_text_yank_post() -> NvimResult<()> {
+fn on_text_yank_post() -> LttwResult<()> {
     let state = get_state();
 
     // Get yanked text using vim.fn.getreg()
@@ -641,7 +644,7 @@ fn on_text_yank_post() -> NvimResult<()> {
 }
 
 /// Handle BufEnter event - gather chunks from entered buffer
-fn on_buf_enter_gather_chunks() -> NvimResult<()> {
+fn on_buf_enter_gather_chunks() -> LttwResult<()> {
     let state = get_state();
 
     let buf = Buffer::current();
@@ -668,7 +671,7 @@ fn on_buf_enter_gather_chunks() -> NvimResult<()> {
 }
 
 /// Handle BufLeave event - gather chunks from buffer before leaving
-fn on_buf_leave() -> NvimResult<()> {
+fn on_buf_leave() -> LttwResult<()> {
     let state = get_state();
 
     let buf = Buffer::current();
@@ -695,7 +698,7 @@ fn on_buf_leave() -> NvimResult<()> {
 }
 
 /// Handle BufWritePost event - gather chunks after saving buffer
-fn on_buf_write_post() -> NvimResult<()> {
+fn on_buf_write_post() -> LttwResult<()> {
     let state = get_state();
 
     let buf = Buffer::current();

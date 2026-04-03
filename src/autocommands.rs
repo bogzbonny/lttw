@@ -1,16 +1,13 @@
 use {
     crate::{
         filetype::on_buf_enter_check_filetype, fim_hide, get_state, on_buf_enter_gather_chunks,
-        on_buf_leave, on_buf_write_post, on_move, on_text_yank_post,
+        on_buf_leave, on_buf_write_post, on_move, on_text_yank_post, LttwResult,
     },
-    nvim_oxi::{
-        api::{self, del_autocmd},
-        Result as NvimResult,
-    },
+    nvim_oxi::api::{self, del_autocmd},
 };
 
 /// Setup autocmds function - creates autocmds for auto-triggering FIM and ring buffer
-pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
+pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
     clear_non_filetype_autocommands()?;
 
     let state = get_state();
@@ -116,7 +113,7 @@ pub fn setup_non_filetype_autocmds() -> NvimResult<()> {
     Ok(())
 }
 
-pub fn setup_filetype_autocmd() -> NvimResult<()> {
+pub fn setup_filetype_autocmd() -> LttwResult<()> {
     clear_filetype_autocommand()?;
     let state = get_state();
     let id = api::create_autocmd(
@@ -137,7 +134,7 @@ pub fn setup_filetype_autocmd() -> NvimResult<()> {
     Ok(())
 }
 
-pub fn clear_non_filetype_autocommands() -> NvimResult<()> {
+pub fn clear_non_filetype_autocommands() -> LttwResult<()> {
     let state = get_state();
     let mut autocmd_ids_lock = state.autocmd_ids.write();
     for id in autocmd_ids_lock.drain(..) {
@@ -146,7 +143,7 @@ pub fn clear_non_filetype_autocommands() -> NvimResult<()> {
     Ok(())
 }
 
-pub fn clear_filetype_autocommand() -> NvimResult<()> {
+pub fn clear_filetype_autocommand() -> LttwResult<()> {
     let state = get_state();
     let ft_ac_id = state.autocmd_id_filetype_check.write().take();
     if let Some(id) = ft_ac_id {

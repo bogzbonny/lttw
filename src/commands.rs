@@ -1,19 +1,16 @@
 use {
     crate::{
         autocommands::clear_filetype_autocommand, debug_clear, debug_toggle, disable_plugin,
-        enable_plugin, instruction, is_enabled, toggle_auto_fim,
+        enable_plugin, instruction, is_enabled, toggle_auto_fim, LttwResult,
     },
-    nvim_oxi::{
-        api::{self},
-        Result as NvimResult,
-    },
+    nvim_oxi::api::{self},
 };
 
 /// Register nvim-oxi commands for the plugin
-pub fn register_commands() -> NvimResult<()> {
+pub fn register_commands() -> LttwResult<()> {
     let _ = api::create_user_command(
         "LttwToggleAutoFim",
-        |_| -> NvimResult<()> {
+        |_| -> LttwResult<()> {
             let _ = toggle_auto_fim();
             Ok(())
         },
@@ -22,7 +19,7 @@ pub fn register_commands() -> NvimResult<()> {
 
     let _ = api::create_user_command(
         "LttwDisable",
-        |_| -> NvimResult<()> {
+        |_| -> LttwResult<()> {
             // manual disabling also removes the filetype check autocommand
             clear_filetype_autocommand()?;
             let _ = disable_plugin();
@@ -33,7 +30,7 @@ pub fn register_commands() -> NvimResult<()> {
 
     let _ = api::create_user_command(
         "LttwEnable",
-        |_| -> NvimResult<()> {
+        |_| -> LttwResult<()> {
             let _ = enable_plugin();
             Ok(())
         },
@@ -42,7 +39,7 @@ pub fn register_commands() -> NvimResult<()> {
 
     let _ = api::create_user_command(
         "LttwIsEnabled",
-        |_| -> NvimResult<()> {
+        |_| -> LttwResult<()> {
             let en = is_enabled();
             let msg = format!("LttwIsEnabled: {}", en);
             // Use nvim_command to execute an echo command
@@ -55,7 +52,7 @@ pub fn register_commands() -> NvimResult<()> {
     // Instruction commands
     let _ = api::create_user_command(
         "LttwInst",
-        |_| -> NvimResult<()> {
+        |_| -> LttwResult<()> {
             // TODO: Get visual range and start instruction
             //debug_log("Starting instruction editing", vec![])?;
             Ok(())
@@ -65,7 +62,7 @@ pub fn register_commands() -> NvimResult<()> {
 
     let _ = api::create_user_command(
         "LttwInstRerun",
-        |_| -> NvimResult<()> {
+        |_| -> LttwResult<()> {
             instruction::inst_rerun()?;
             Ok(())
         },
@@ -74,7 +71,7 @@ pub fn register_commands() -> NvimResult<()> {
 
     let _ = api::create_user_command(
         "LttwInstContinue",
-        |_| -> NvimResult<()> {
+        |_| -> LttwResult<()> {
             instruction::inst_continue()?;
             Ok(())
         },
@@ -84,7 +81,7 @@ pub fn register_commands() -> NvimResult<()> {
     // Debug commands
     let _ = api::create_user_command(
         "LttwDebugToggle",
-        |_| -> NvimResult<()> {
+        |_| -> LttwResult<()> {
             debug_toggle()?;
             Ok(())
         },
@@ -93,7 +90,7 @@ pub fn register_commands() -> NvimResult<()> {
 
     let _ = api::create_user_command(
         "LttwDebugClear",
-        |_| -> NvimResult<()> {
+        |_| -> LttwResult<()> {
             debug_clear()?;
             Ok(())
         },

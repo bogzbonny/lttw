@@ -14,7 +14,7 @@ use {
         ring_buffer::ExtraContext,
         spawn_fim_completion_worker,
         utils::{get_buf_filename, get_buf_line, get_buf_line_count, random_range, sha256},
-        FimCompletionMessage, NvimResult,
+        Error, FimCompletionMessage, LttwResult,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition, Buffer},
     serde::{Deserialize, Serialize},
@@ -134,32 +134,17 @@ pub fn build_info_string(
     info
 }
 
-/// Error type for FIM operations
-#[derive(Debug, thiserror::Error)]
-pub enum FimError {
-    #[error("nvim_oxi error: {0}")]
-    NvimOxi(#[from] nvim_oxi::Error),
-    #[error("HTTP error: {0}")]
-    Http(#[from] reqwest::Error),
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("Server error: {0}")]
-    Server(String),
-    #[error("Regex error: {0}")]
-    Regex(#[from] regex::Error),
-}
-
 /// Main FIM completion function that sends a request to the server
 /// Returns the content and optionally timing info for display
 #[allow(clippy::too_many_arguments)] // FIM requires context from multiple sources
-pub fn fim_completion(
+pub async fn fim_completion(
     state: Arc<PluginState>,
     pos_x: usize,
     pos_y: usize,
     buffer_handle: u64,
     lines: Vec<String>,
     prev: Option<Vec<String>>, // speculative FIM content
-) -> Result<(), FimError> {
+) -> LttwResult<()> {
     state.debug_manager.read().log("fim_completion", "0");
     let (
         n_predict,
@@ -289,9 +274,8 @@ pub fn fim_completion(
     let state_ = state.clone();
     state.debug_manager.read().log("fim_completion", "8");
 
-    let rt = state.tokio_runtime.clone();
     let state__ = state.clone();
-    rt.read().spawn(async move {
+    tokio::spawn(async move {
         //state
         //    .debug_manager
         //    .read()
@@ -437,7 +421,7 @@ fn should_abort(cursor_y: usize, orig_line: &str, content: &str) -> bool {
     true
 }
 
-pub fn fim_try_hint() -> NvimResult<()> {
+pub fn fim_try_hint() -> LttwResult<()> {
     if !in_insert_mode()? {
         return Ok(());
     }
@@ -462,7 +446,7 @@ pub fn fim_try_hint_inner(
     pos_y: usize,
     buffer_handle: u64,
     lines: Vec<String>,
-) -> NvimResult<()> {
+) -> LttwResult<()> {
     // Get local context
     let ctx = get_local_context(&lines, pos_x, pos_y, None, &state.config.read());
     state.debug_manager.read().log("fim_try_hint_inner", "");
@@ -608,7 +592,7 @@ pub async fn send_request(
     endpoint_fim: String,
     model_fim: String,
     api_key: String,
-) -> Result<String, FimError> {
+) -> LttwResult<String> {
     let client = reqwest::Client::new();
 
     let mut request_body = serde_json::to_value(request)?;
@@ -630,7 +614,7 @@ pub async fn send_request(
     if response.status().is_success() {
         Ok(response.text().await?)
     } else {
-        Err(FimError::Server(format!(
+        Err(Error::Server(format!(
             "Server returned status: {}",
             response.status()
         )))
@@ -646,7 +630,7 @@ pub fn render_fim_suggestion(
     content: &str,
     line_cur: String,
     timings: Option<FimTimingsData>,
-) -> NvimResult<()> {
+) -> LttwResult<()> {
     // Parse content into lines
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
 
@@ -724,7 +708,7 @@ pub fn render_fim_suggestion(
 
 /// Display FIM hint as virtual text using extmarks with optional inline info
 /// The info string is rendered with RightAlign positioning for right-justified display
-fn display_fim_text(state: &Arc<PluginState>) -> NvimResult<()> {
+fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
     // Lock the fim_state and config to get the data we need
     let (
         hint_shown,

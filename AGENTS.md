@@ -173,7 +173,7 @@ All Lua files should start with a comment block:
 
 **Rust:**
 - Use async/await for network requests
-- Return `Result<T, Error>` for fallible operations
+- Return \x60LttwResult<T, Error>\x60 for fallible operations
 - Use builder patterns for complex configurations
 - Keep public API minimal and focused
 

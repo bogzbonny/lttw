@@ -1,7 +1,7 @@
 use {
     crate::{
-        cache, config, debug, instruction::InstructionRequestState, ring_buffer,
-        FimCompletionMessage, FimState,
+        cache, config, debug, instruction::InstructionRequestState, ring_buffer, Error,
+        FimCompletionMessage, FimState, LttwResult,
     },
     nvim_oxi::api,
     parking_lot::RwLock,
@@ -115,15 +115,11 @@ impl Default for PluginState {
 }
 
 impl PluginState {
-    pub fn get_fim_completion_tx(
-        &self,
-    ) -> Result<mpsc::Sender<FimCompletionMessage>, nvim_oxi::Error> {
+    pub fn get_fim_completion_tx(&self) -> LttwResult<mpsc::Sender<FimCompletionMessage>> {
         let fim_completion_tx_lock = self.fim_completion_tx.read();
-        fim_completion_tx_lock.clone().ok_or_else(|| {
-            nvim_oxi::Error::Api(api::Error::Other(
-                "Completion channel not initialized".to_string(),
-            ))
-        })
+        fim_completion_tx_lock
+            .clone()
+            .ok_or_else(|| Error::Lttw("Completion channel not initialized".to_string()))
     }
     /// Increment the debounce sequence and return the current sequence number
     pub fn increment_debounce_sequence(&self) -> u64 {

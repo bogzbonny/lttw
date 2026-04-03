@@ -13,7 +13,7 @@ use nvim_oxi::Result;
 
 /// Test that we can access Neovim API in test context
 #[nvim_oxi::test]
-fn test_plugin_initialization() -> Result<()> {
+fn test_plugin_initialization() -> LttwResult<()> {
     // Verify we can access Neovim API
     let buf = api::Buffer::current();
     assert!(buf.is_valid());
@@ -23,7 +23,7 @@ fn test_plugin_initialization() -> Result<()> {
 
 /// Test basic buffer operations with Rust code context
 #[nvim_oxi::test]
-fn test_fim_basic_rust() -> Result<()> {
+fn test_fim_basic_rust() -> LttwResult<()> {
     // Create a buffer with some Rust code
     let code = vec![
         "fn main() {",
@@ -54,7 +54,7 @@ fn test_fim_basic_rust() -> Result<()> {
 
 /// Test FIM context gathering in Neovim buffer
 #[nvim_oxi::test]
-fn test_fim_context_gathering() -> Result<()> {
+fn test_fim_context_gathering() -> LttwResult<()> {
     // Create a multi-line buffer to test context extraction
     let code = vec![
         "fn add(a: i32, b: i32) -> i32 {",
@@ -91,7 +91,7 @@ fn test_fim_context_gathering() -> Result<()> {
 
 /// Test buffer manipulation - simulating FIM accept
 #[nvim_oxi::test]
-fn test_fim_accept_simulation() -> Result<()> {
+fn test_fim_accept_simulation() -> LttwResult<()> {
     // Create initial code
     let code = vec!["fn hello() {", "    println!(\"hello\");", "}"];
 
@@ -120,7 +120,7 @@ fn test_fim_accept_simulation() -> Result<()> {
 
 /// Test FIM with cached completion lookup in Neovim context
 #[nvim_oxi::test]
-fn test_fim_cache_lookup() -> Result<()> {
+fn test_fim_cache_lookup() -> LttwResult<()> {
     // This test verifies the cache mechanism works in a real Neovim instance
     use lttw::cache::Cache;
 
@@ -149,7 +149,7 @@ fn test_fim_cache_lookup() -> Result<()> {
 
 /// Test ring buffer system with chunk management
 #[nvim_oxi::test]
-fn test_ring_buffer_basic() -> Result<()> {
+fn test_ring_buffer_basic() -> LttwResult<()> {
     use lttw::ring_buffer::RingBuffer;
 
     let mut ring_buffer = RingBuffer::new(3, 64);
@@ -193,7 +193,7 @@ fn test_ring_buffer_basic() -> Result<()> {
 
 /// Test ring buffer eviction with similar chunks
 #[nvim_oxi::test]
-fn test_ring_buffer_eviction() -> Result<()> {
+fn test_ring_buffer_eviction() -> LttwResult<()> {
     use lttw::ring_buffer::RingBuffer;
 
     let mut ring_buffer = RingBuffer::new(5, 64);
@@ -228,7 +228,7 @@ fn test_ring_buffer_eviction() -> Result<()> {
 
 /// Test cache integration with ring buffer chunks
 #[nvim_oxi::test]
-fn test_cache_with_ring_buffer() -> Result<()> {
+fn test_cache_with_ring_buffer() -> LttwResult<()> {
     use lttw::cache::Cache;
     use lttw::context::LocalContext;
     use lttw::fim::compute_hashes;
@@ -288,7 +288,7 @@ fn test_cache_with_ring_buffer() -> Result<()> {
 
 /// Test FIM suggestion rendering
 #[nvim_oxi::test]
-fn test_fim_render_suggestion() -> Result<()> {
+fn test_fim_render_suggestion() -> LttwResult<()> {
     use lttw::config::LttwConfig;
     use lttw::fim::render_fim_suggestion;
 
@@ -309,7 +309,7 @@ fn test_fim_render_suggestion() -> Result<()> {
 
 /// Test FIM accept functionality
 #[nvim_oxi::test]
-fn test_fim_accept_word() -> Result<()> {
+fn test_fim_accept_word() -> LttwResult<()> {
     use lttw::fim::{accept_fim_suggestion, FimAcceptType};
 
     let content = vec!["world".to_string()];
@@ -328,7 +328,7 @@ fn test_fim_accept_word() -> Result<()> {
 
 /// Test FIM accept full suggestion
 #[nvim_oxi::test]
-fn test_fim_accept_full() -> Result<()> {
+fn test_fim_accept_full() -> LttwResult<()> {
     use lttw::fim::{accept_fim_suggestion, FimAcceptType};
 
     let content = vec![
@@ -351,7 +351,7 @@ fn test_fim_accept_full() -> Result<()> {
 
 /// Test LRU cache eviction with ring buffer usage
 #[nvim_oxi::test]
-fn test_cache_lru_eviction() -> Result<()> {
+fn test_cache_lru_eviction() -> LttwResult<()> {
     use lttw::cache::Cache;
     use lttw::fim::FimResponse;
 
@@ -377,7 +377,7 @@ fn test_cache_lru_eviction() -> Result<()> {
 
 /// Test ring buffer duplicate prevention
 #[nvim_oxi::test]
-fn test_ring_buffer_no_duplicates() -> Result<()> {
+fn test_ring_buffer_no_duplicates() -> LttwResult<()> {
     use lttw::ring_buffer::RingBuffer;
 
     let mut ring_buffer = RingBuffer::new(5, 64);
@@ -406,7 +406,7 @@ fn test_ring_buffer_no_duplicates() -> Result<()> {
 
 /// Test FIM request building with extra context from ring buffer
 #[nvim_oxi::test]
-fn test_fim_request_with_extra_context() -> Result<()> {
+fn test_fim_request_with_extra_context() -> LttwResult<()> {
     use lttw::fim::FimRequest;
     use lttw::ring_buffer::RingBuffer;
 
@@ -469,7 +469,7 @@ fn test_fim_request_with_extra_context() -> Result<()> {
 // and sends results through a channel instead of returning content directly
 #[nvim_oxi::test]
 #[ignore = "requires llama.cpp server running at http://127.0.0.1:8012"]
-fn test_fim_server_completion() -> Result<()> {
+fn test_fim_server_completion() -> LttwResult<()> {
     // Simplified test - just verify PluginState can be obtained
     use lttw::plugin_state::get_state;
     let _state = get_state();
@@ -484,7 +484,7 @@ fn test_fim_server_completion() -> Result<()> {
 // and sends results through a channel instead of returning content directly
 #[nvim_oxi::test]
 #[ignore = "requires llama.cpp server running at http://127.0.0.1:8012"]
-fn test_fim_cache_with_server() -> Result<()> {
+fn test_fim_cache_with_server() -> LttwResult<()> {
     // Simplified test - just verify PluginState can be obtained
     use lttw::plugin_state::get_state;
     let _state = get_state();
@@ -499,7 +499,7 @@ fn test_fim_cache_with_server() -> Result<()> {
 // and sends results through a channel instead of returning content directly
 #[nvim_oxi::test]
 #[ignore = "requires llama.cpp server running at http://127.0.0.1:8012"]
-fn test_ring_buffer_server_integration() -> Result<()> {
+fn test_ring_buffer_server_integration() -> LttwResult<()> {
     // Simplified test - just verify PluginState can be obtained
     use lttw::plugin_state::get_state;
     let _state = get_state();

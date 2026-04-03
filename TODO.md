@@ -8,6 +8,7 @@
     -> ALSO figure out a way of ensuring that if a cached hint is found 
        in try_fim that the background triggered fim_completion won't just
        overwrite it!
+10. our own error type
 
 ^^^^^^^^^ DONE
 
@@ -33,9 +34,6 @@
      - probably something to do with inline extmarks or even improper placement 
      (not checking before display if the x_pos is wrong?) 
 
-01. better global error management
-    https://github.com/noib3/nvim-oxi/issues/231
-
 01. Remove trailing prediction lines if they match 
      - go through one by one
 
@@ -52,11 +50,12 @@ PURELY by using nvim-oxi
 Add in rendering of the build info string (see build_info_string) to the rust
 code. Render this extmarks which are RightHand justified. 
 
+10. better global error management
+    https://github.com/noib3/nvim-oxi/issues/231
 
 05. add config option for debugging (default false)
 05. fix tests-integrations (compile errors) 
 10. easier to use debugging system 
-10. our own error type
 20. option to not predict while in comments
 
  

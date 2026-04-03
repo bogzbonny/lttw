@@ -3,7 +3,7 @@
 // This module provides various utility functions used throughout the plugin.
 
 use {
-    crate::NvimResult,
+    crate::LttwResult,
     nvim_oxi::api::{self, Buffer, Window},
     rand::Rng,
     sha2::{Digest, Sha256},
@@ -13,7 +13,7 @@ use {
 };
 
 // are we in insert mode
-pub fn in_insert_mode() -> NvimResult<bool> {
+pub fn in_insert_mode() -> LttwResult<bool> {
     let mode_result = api::get_mode()?;
     let mode_bytes = mode_result.mode.as_bytes();
     let mode_char = mode_bytes.first().copied().unwrap_or(b'?'); // Default to '?' if empty
@@ -21,7 +21,7 @@ pub fn in_insert_mode() -> NvimResult<bool> {
 }
 
 // are we in normal mode
-pub fn in_normal_mode() -> NvimResult<bool> {
+pub fn in_normal_mode() -> LttwResult<bool> {
     let mode_result = api::get_mode()?;
     let mode_bytes = mode_result.mode.as_bytes();
     let mode_char = mode_bytes.first().copied().unwrap_or(b'?'); // Default to '?' if empty
@@ -71,7 +71,7 @@ pub fn buffer_modified() -> bool {
 }
 
 /// Get buffer lines from Neovim
-pub fn get_buf_filename() -> NvimResult<String> {
+pub fn get_buf_filename() -> LttwResult<String> {
     let buf = Buffer::current();
     let buf_file_name = buf.get_name()?;
     // convert to string
@@ -79,7 +79,7 @@ pub fn get_buf_filename() -> NvimResult<String> {
     Ok(filename)
 }
 /// Get buffer lines from Neovim
-pub fn buffer_active_and_readable() -> NvimResult<bool> {
+pub fn buffer_active_and_readable() -> LttwResult<bool> {
     let buf = Buffer::current();
     let loaded = buf.is_loaded(); // acts like buf_listed
     let buf_file_name = buf.get_name()?;

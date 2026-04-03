@@ -3,14 +3,14 @@ use {
         context::chunk_similarity,
         get_state,
         utils::{buffer_active_and_readable, buffer_modified, in_normal_mode, random_range},
+        LttwResult,
     },
-    nvim_oxi::Result as NvimResult,
     std::sync::Arc,
     std::time::{Duration, Instant},
 };
 
 /// Setup a repeating timer to process ring buffer updates using tokio
-pub fn setup_ring_buffer_timer() -> NvimResult<()> {
+pub fn setup_ring_buffer_timer() -> LttwResult<()> {
     let state = get_state();
     let interval = state.config.read().ring_update_ms;
     let dur = Duration::from_millis(interval);
@@ -47,7 +47,7 @@ pub fn setup_ring_buffer_timer() -> NvimResult<()> {
 
 /// Process ring buffer updates - moves queued chunks to active ring and sends to server
 ///  
-async fn ring_update() -> NvimResult<()> {
+async fn ring_update() -> LttwResult<()> {
     let state = get_state();
 
     // update only if in normal mode or if the cursor hasn't moved for a while
@@ -139,7 +139,7 @@ impl RingBuffer {
         filename: String,
         no_mod: bool,
         do_evict: bool,
-    ) -> NvimResult<()> {
+    ) -> LttwResult<()> {
         if !buffer_active_and_readable()? {
             return Ok(());
         }
@@ -161,7 +161,7 @@ impl RingBuffer {
         text: Vec<String>,
         filename: String,
         do_evict: bool,
-    ) -> NvimResult<()> {
+    ) -> LttwResult<()> {
         // Skip if extra context is disabled
         if self.ring_n_chunks == 0 {
             return Ok(());

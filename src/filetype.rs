@@ -1,20 +1,17 @@
 use {
-    crate::{disable_plugin, enable_plugin, get_state},
-    nvim_oxi::{
-        api::{get_option_value, opts::OptionOpts},
-        Result as NvimResult,
-    },
+    crate::{disable_plugin, enable_plugin, get_state, LttwResult},
+    nvim_oxi::api::{get_option_value, opts::OptionOpts},
     std::sync::atomic::Ordering,
 };
 
 /// Get filetype function
-pub fn get_filetype() -> NvimResult<String> {
+pub fn get_filetype() -> LttwResult<String> {
     let ft = get_option_value::<String>("filetype", &OptionOpts::default())?;
     Ok(ft)
 }
 
 /// Filetype check autocmd handler - enables/disables plugin based on filetype
-pub fn on_buf_enter_check_filetype() -> NvimResult<()> {
+pub fn on_buf_enter_check_filetype() -> LttwResult<()> {
     let is_enabled = {
         let state = get_state();
         state.enabled.load(Ordering::SeqCst)

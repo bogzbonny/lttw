@@ -4,8 +4,11 @@
 // an instruction and the model modifies the selected text accordingly.
 
 use {
-    crate::{config::LttwConfig, get_buf_lines, get_pos, get_state, utils::get_current_buffer},
-    nvim_oxi::{api::Buffer, Dictionary, Result as NvimResult},
+    crate::{
+        config::LttwConfig, get_buf_lines, get_pos, get_state, utils::get_current_buffer, Error,
+        LttwResult,
+    },
+    nvim_oxi::{api::Buffer, Dictionary},
     serde::{Deserialize, Serialize},
     std::sync::atomic::Ordering,
 };
@@ -55,17 +58,6 @@ pub struct InstChoice {
 #[derive(Debug, Clone, Deserialize)]
 pub struct InstResponse {
     pub choices: Vec<InstChoice>,
-}
-
-/// Error type for instruction operations
-#[derive(Debug, thiserror::Error)]
-pub enum InstError {
-    #[error("HTTP error: {0}")]
-    Http(#[from] reqwest::Error),
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("Server error: {0}")]
-    Server(String),
 }
 
 /// Build instruction payload
@@ -150,7 +142,7 @@ pub fn build_instruction_payload(
 }
 
 /// Send instruction request (non-streaming, for warm-up)
-pub async fn send_instruction_warmup(config: &LttwConfig) -> Result<(), InstError> {
+pub async fn send_instruction_warmup(config: &LttwConfig) -> LttwResult<()> {
     // Send empty instruction to warm up the server (fire-and-forget)
     let messages = vec![
         InstMessage {
@@ -188,7 +180,7 @@ pub async fn send_instruction_warmup(config: &LttwConfig) -> Result<(), InstErro
     if response.status().is_success() {
         Ok(())
     } else {
-        Err(InstError::Server(format!(
+        Err(Error::Server(format!(
             "Warm-up failed: {}",
             response.status()
         )))
@@ -200,7 +192,7 @@ pub async fn send_instruction_stream(
     messages: &[InstMessage],
     config: &LttwConfig,
     req_id: i64,
-) -> Result<reqwest::Response, InstError> {
+) -> LttwResult<reqwest::Response> {
     let request = InstRequest {
         id_slot: req_id,
         messages: messages.to_vec(),
@@ -225,7 +217,7 @@ pub async fn send_instruction_stream(
     if response.status().is_success() {
         Ok(response)
     } else {
-        Err(InstError::Server(format!(
+        Err(Error::Server(format!(
             "Server returned status: {}",
             response.status()
         )))
@@ -237,7 +229,7 @@ pub async fn send_instruction(
     messages: &[InstMessage],
     config: &LttwConfig,
     req_id: i64,
-) -> Result<String, InstError> {
+) -> LttwResult<String> {
     let response = send_instruction_stream(messages, config, req_id).await?;
     Ok(response.text().await?)
 }
@@ -492,7 +484,7 @@ pub fn build_instruction_virt_text(
 
 /// Instruction start function - creates a new instruction request with visual markers
 #[allow(dead_code)]
-fn inst_start(l0: i64, l1: i64, inst: &str) -> NvimResult<i64> {
+fn inst_start(l0: i64, l1: i64, inst: &str) -> LttwResult<i64> {
     let state = get_state();
     let bufnr = get_current_buffer();
     let lines = get_buf_lines(..);
@@ -558,7 +550,7 @@ fn inst_start(l0: i64, l1: i64, inst: &str) -> NvimResult<i64> {
 
 /// Instruction build function - builds payload without starting request
 #[allow(dead_code)]
-fn inst_build(lines: Vec<String>, l0: i64, l1: i64, inst: &str) -> NvimResult<Dictionary> {
+fn inst_build(lines: Vec<String>, l0: i64, l1: i64, inst: &str) -> LttwResult<Dictionary> {
     let state = get_state();
     let messages =
         build_instruction_payload(&lines, l0 as usize, l1 as usize, inst, &state.config.read());
@@ -581,7 +573,7 @@ fn inst_build(lines: Vec<String>, l0: i64, l1: i64, inst: &str) -> NvimResult<Di
 /// Instruction send function - sends request and streams response
 #[allow(clippy::await_holding_lock)] // Uses state access within block_on for async call
 #[allow(dead_code)]
-fn inst_send(req_id: i64) -> NvimResult<Option<String>> {
+fn inst_send(req_id: i64) -> LttwResult<Option<String>> {
     let state = get_state();
 
     // Get the request
@@ -675,7 +667,7 @@ fn inst_send(req_id: i64) -> NvimResult<Option<String>> {
 
 /// Update virtual text for instruction request
 #[allow(dead_code)]
-fn inst_update_virt_text(req_id: i64) -> NvimResult<()> {
+fn inst_update_virt_text(req_id: i64) -> LttwResult<()> {
     let state = get_state();
 
     // Get request info first, then release borrow for logging
@@ -730,7 +722,7 @@ fn inst_update_virt_text(req_id: i64) -> NvimResult<()> {
 
 /// Instruction update function - processes streaming response chunk and updates state
 #[allow(dead_code)]
-fn inst_update(req_id: i64, response_chunk: &str) -> NvimResult<String> {
+fn inst_update(req_id: i64, response_chunk: &str) -> LttwResult<String> {
     let state = get_state();
 
     // Get the request and accumulate response
@@ -763,7 +755,7 @@ fn inst_update(req_id: i64, response_chunk: &str) -> NvimResult<String> {
 
 /// Instruction finalize function - marks request as ready after streaming completes
 #[allow(dead_code)]
-fn inst_finalize(req_id: i64) -> NvimResult<()> {
+fn inst_finalize(req_id: i64) -> LttwResult<()> {
     let state = get_state();
 
     let result_len = {
@@ -798,7 +790,7 @@ fn inst_finalize(req_id: i64) -> NvimResult<()> {
 
 /// Instruction accept function - applies the generated result to the buffer
 #[allow(dead_code)]
-fn inst_accept() -> NvimResult<()> {
+fn inst_accept() -> LttwResult<()> {
     let state = get_state();
     let bufnr = get_current_buffer();
 
@@ -897,7 +889,7 @@ fn inst_accept() -> NvimResult<()> {
 
 /// Instruction cancel function - cancels an instruction request and removes markers
 #[allow(dead_code)]
-fn inst_cancel() -> NvimResult<()> {
+fn inst_cancel() -> LttwResult<()> {
     let state = get_state();
     let bufnr = get_current_buffer();
     let (_, pos_y) = get_pos();
@@ -956,7 +948,7 @@ fn inst_cancel() -> NvimResult<()> {
 }
 
 /// Instruction rerun function - re-runs the last instruction
-pub fn inst_rerun() -> NvimResult<Option<String>> {
+pub fn inst_rerun() -> LttwResult<Option<String>> {
     let state = get_state();
     let bufnr = get_current_buffer();
     let (_, pos_y) = get_pos();
@@ -1000,7 +992,7 @@ pub fn inst_rerun() -> NvimResult<Option<String>> {
 }
 
 /// Instruction continue function - continues with a new instruction
-pub fn inst_continue() -> NvimResult<Option<String>> {
+pub fn inst_continue() -> LttwResult<Option<String>> {
     let state = get_state();
     let bufnr = get_current_buffer();
     let (_, pos_y) = get_pos();

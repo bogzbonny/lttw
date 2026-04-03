@@ -3,9 +3,12 @@
 // This module handles the plugin configuration, translating the Vimscript
 // configuration into a strongly-typed Rust struct.
 
-use nvim_oxi::conversion::FromObject;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use {
+    crate::LttwResult,
+    nvim_oxi::conversion::FromObject,
+    serde::{Deserialize, Serialize},
+    serde_json::Value,
+};
 
 /// Configuration options for the lttw plugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,8 +270,8 @@ impl LttwConfig {
     }
 
     /// Create configuration from serde_json::Value
-    pub fn from_value(value: &Value) -> Result<Self, String> {
-        serde_json::from_value(value.clone()).map_err(|e| format!("Failed to parse config: {}", e))
+    pub fn from_value(value: &Value) -> LttwResult<Self> {
+        Ok(serde_json::from_value(value.clone())?)
     }
 
     /// Check if a filetype is enabled
