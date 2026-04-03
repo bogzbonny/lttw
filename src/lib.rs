@@ -334,7 +334,7 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<Option<String>> {
     }
 
     // If there are rest lines (from 'full' or 'line' accept), insert them
-    if let Some(rest_lines) = &rest {
+    if let Some(ref rest_lines) = rest {
         for (i, line) in rest_lines.iter().enumerate() {
             all_lines_modified.insert(pos_y + 1 + i, line.clone());
         }

@@ -141,13 +141,15 @@ impl RingBuffer {
         no_mod: bool,
         do_evict: bool,
     ) -> LttwResult<()> {
-        if !buffer_active_and_readable()? {
-            return Ok(());
-        }
+        //if !buffer_active_and_readable()? {
+        //    // XXX must not call neovim
+        //    return Ok(());
+        //}
 
-        if no_mod && buffer_modified() {
-            return Ok(());
-        }
+        //if no_mod && buffer_modified() {
+        //    // XXX must not call neovim
+        //    return Ok(());
+        //}
 
         self.pick_chunk_inner(text, filename, do_evict)
     }
