@@ -12,8 +12,24 @@ use {
     std::path::Path,
 };
 
+// NOTE important we cannot safely call into neovim from tokio worker threads
+//
+// https://github.com/noib3/nvim-oxi/issues/260
+//     "Essentially never call neovim's functions outside of callbacks and plugin entrypoints and
+//      never call neovim's functions from another thread."
+
+fn assert_not_tokio_worker() {
+    let t = std::thread::current();
+    if let Some(n) = t.name() {
+        if n.contains("tokio") {
+            panic!("function must not be called from Tokio runtime worker thread (name: {n})",);
+        }
+    }
+}
+
 // are we in insert mode
 pub fn in_insert_mode() -> LttwResult<bool> {
+    assert_not_tokio_worker();
     let mode_result = api::get_mode()?;
     let mode_bytes = mode_result.mode.as_bytes();
     let mode_char = mode_bytes.first().copied().unwrap_or(b'?'); // Default to '?' if empty
@@ -22,6 +38,7 @@ pub fn in_insert_mode() -> LttwResult<bool> {
 
 // are we in normal mode
 pub fn in_normal_mode() -> LttwResult<bool> {
+    assert_not_tokio_worker();
     let mode_result = api::get_mode()?;
     let mode_bytes = mode_result.mode.as_bytes();
     let mode_char = mode_bytes.first().copied().unwrap_or(b'?'); // Default to '?' if empty
@@ -30,6 +47,7 @@ pub fn in_normal_mode() -> LttwResult<bool> {
 
 /// Get current buffer position ([0,0]-indexed)
 pub fn get_pos() -> (usize, usize) {
+    assert_not_tokio_worker();
     // Safety: handle cursor error gracefully
     let (line, col) = match Window::current().get_cursor() {
         Ok((l, c)) => (l, c),
@@ -48,6 +66,7 @@ pub fn get_buf_lines<R>(line_range: R) -> Vec<String>
 where
     R: RangeBounds<usize>,
 {
+    assert_not_tokio_worker();
     // Safety: handle get_lines error gracefully
     // Use Buffer::current() directly in the match to avoid lifetime issues
     match Buffer::current().get_lines(line_range, false) {
@@ -58,12 +77,14 @@ where
 
 /// Get buffer lines from Neovim
 pub fn get_buf_line_count() -> usize {
+    assert_not_tokio_worker();
     let buf = Buffer::current();
     buf.line_count().unwrap_or(0)
 }
 
 /// Get buffer lines from Neovim
 pub fn buffer_modified() -> bool {
+    assert_not_tokio_worker();
     let buf = Buffer::current();
     // TODO test that this get_var is working
     let is_modified: bool = buf.get_var("modified").unwrap_or(false);
@@ -72,6 +93,7 @@ pub fn buffer_modified() -> bool {
 
 /// Get buffer lines from Neovim
 pub fn get_buf_filename() -> LttwResult<String> {
+    assert_not_tokio_worker();
     let buf = Buffer::current();
     let buf_file_name = buf.get_name()?;
     // convert to string
@@ -80,19 +102,18 @@ pub fn get_buf_filename() -> LttwResult<String> {
 }
 /// Get buffer lines from Neovim
 pub fn buffer_active_and_readable() -> LttwResult<bool> {
+    assert_not_tokio_worker();
     let buf = Buffer::current();
     let loaded = buf.is_loaded(); // acts like buf_listed
     let buf_file_name = buf.get_name()?;
     let is_readable = is_readable(buf_file_name.as_path());
     Ok(loaded && is_readable)
 }
-fn is_readable(path: &Path) -> bool {
-    path.exists() && fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
-}
 
 /// Get buffer lines from Neovim
 /// pos_y is zero indexed
 pub fn get_buf_line(pos_y: usize) -> String {
+    assert_not_tokio_worker();
     let buf = Buffer::current();
     let Ok(lines) = buf.get_lines(pos_y..=pos_y, false) else {
         return "".to_string();
@@ -102,18 +123,16 @@ pub fn get_buf_line(pos_y: usize) -> String {
 }
 
 /// Get current buffer
-pub fn get_current_buffer() -> u64 {
-    // Safety: handle buffer handle conversion error
-    let buf: u64 = Buffer::current().handle().try_into().unwrap_or(0);
-    buf
+pub fn get_current_buffer_id() -> u64 {
+    assert_not_tokio_worker();
+    Buffer::current().handle().try_into().unwrap_or(0)
 }
 
-pub fn get_buffer_handle() -> u64 {
-    // Safety: handle buffer handle conversion error
-    let handle: u64 = Buffer::current().handle().try_into().unwrap_or(0);
-    handle
-}
+// --------------------------
 
+fn is_readable(path: &Path) -> bool {
+    path.exists() && fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
+}
 /// Generate a random number in the range [i0, i1]
 pub fn random_range(i0: usize, i1: usize) -> usize {
     let mut rng = rand::thread_rng();

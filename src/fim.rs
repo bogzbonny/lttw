@@ -4,21 +4,20 @@
 // including context gathering, request building, response processing,
 // and rendering suggestions.
 
-use crate::FimTimingsData;
-
 use {
     crate::{
-        context::{get_local_context, LocalContext},
-        get_buf_lines, get_buffer_handle, get_pos, in_insert_mode,
+        cache::compute_hashes,
+        context::get_local_context,
+        get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
         plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
-        spawn_fim_completion_worker,
         utils::{get_buf_filename, get_buf_line, get_buf_line_count, random_range, sha256},
-        Error, FimCompletionMessage, LttwResult,
+        Error, FimCompletionMessage, FimTimingsData, LttwResult,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition, Buffer},
     serde::{Deserialize, Serialize},
     std::sync::Arc,
+    std::time::{Duration, Instant},
 };
 
 /// FIM completion request
@@ -132,6 +131,220 @@ pub fn build_info_string(
     };
 
     info
+}
+
+pub fn fim_try_hint() -> LttwResult<()> {
+    if !in_insert_mode()? {
+        return Ok(());
+    }
+    let (pos_x, pos_y) = get_pos();
+    let state = get_state();
+    let lines = get_buf_lines(..);
+    let buffer_handle = get_current_buffer_id();
+    fim_try_hint_inner(state, pos_x, pos_y, buffer_handle, lines)
+}
+
+/// Try to generate a suggestion using the data in the cache
+/// Looks at the previous 10 characters to see if a completion is cached.
+/// If one is found at (x,y) then it checks that the characters typed after (x,y)
+/// match up with the cached completion result.
+///
+/// # Returns
+///  - `Some(RenderedSuggestion)` - If a cached completion is found
+///  - `None` - If no cached completion is found
+pub fn fim_try_hint_inner(
+    state: Arc<PluginState>,
+    pos_x: usize,
+    pos_y: usize,
+    buffer_handle: u64,
+    lines: Vec<String>,
+) -> LttwResult<()> {
+    // Get local context
+    let ctx = get_local_context(&lines, pos_x, pos_y, None, &state.config.read());
+    state.debug_manager.read().log("fim_try_hint_inner", "");
+
+    // Compute primary hash
+    let primary_hash = format!("{}{}{}{}", ctx.prefix, ctx.middle, "Î", ctx.suffix);
+    let hash = sha256(&primary_hash);
+
+    // Check if the completion is cached (and update LRU order)
+    let mut response = state.cache.write().get(&hash);
+
+    if response.is_none() {
+        // ... or if there is a cached completion nearby (128 characters behind)
+        // Looks at the previous 128 characters to see if a completion is cached.
+        let pm = format!("{}{}", ctx.prefix, ctx.middle);
+        let mut best_len = 0;
+        let mut best_response: Option<FimResponse> = None;
+
+        // Only search if pm has enough characters
+        if pm.len() < 2 {
+            return Ok(());
+        }
+
+        // iterate through the prefix+midde string while removing characters from the tail
+        //
+        let mut char_indices = pm.char_indices().collect::<Vec<_>>();
+        char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
+                                             // its never used
+        let char_len = char_indices.len() - 1;
+
+        let max_iters = 128; // TODO parameterize this
+        for i in 1..=(max_iters.min(char_len.saturating_sub(1))) {
+            let split_byte_idx = char_indices[char_len - i].0;
+            let (pm_with_less_tail, removed) = pm.split_at(split_byte_idx);
+
+            let ctx_new = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
+            let hash_new = sha256(&ctx_new);
+
+            if let Some(response_) = state.cache.write().get(&hash_new) {
+                let content = &response_.content;
+                if content.is_empty() {
+                    continue;
+                }
+
+                // Check that the removed text matches the beginning of the cached response
+                // NOTE 'i' always is == removed.len()
+                // don't bother if i == content.len() because then there isn't any additional
+                // predicted text
+                if content.starts_with(removed) {
+                    // Found a match - use the rest of the content
+                    let Some(remaining) = content.strip_prefix(removed) else {
+                        continue;
+                    };
+
+                    // could use chars().count() but it's not to important
+                    if !remaining.is_empty() && remaining.len() > best_len {
+                        best_len = remaining.len();
+                        best_response = Some(FimResponse {
+                            content: remaining.to_string(),
+                            timings: response_.timings,
+                            tokens_cached: response_.tokens_cached,
+                            truncated: response_.truncated,
+                        });
+                    }
+                }
+            }
+        }
+        response = best_response;
+    }
+
+    let mut prev_for_next_fim: Option<Vec<String>> = None;
+    if let Some(response) = response {
+        state.debug_manager.read().log(
+            "fim_try_hint_inner",
+            format!("found cached response: {response:#?}"),
+        );
+        let content = response.content;
+        if content.is_empty() {
+            return Ok(());
+        }
+
+        render_fim_suggestion(state.clone(), pos_x, pos_y, &content, ctx.line_cur, None)?;
+
+        // run async speculative FIM in the background for this position
+        // TODO should this just always run even when no hint is shown?
+        let hint_shown = state.fim_state.read().hint_shown;
+        if hint_shown {
+            prev_for_next_fim = Some(vec![content]);
+        }
+    }
+
+    // Spawn a FIM in the background
+    let rt = state.tokio_runtime.clone();
+    rt.read().spawn(async move {
+        // TODO log error
+        let _ = spawn_fim_completion_worker(
+            state,
+            pos_x,
+            pos_y,
+            buffer_handle,
+            lines,
+            prev_for_next_fim,
+        )
+        .await;
+    });
+    Ok(())
+}
+
+/// Implementation of FIM worker with optional debounce sequence tracking
+async fn spawn_fim_completion_worker(
+    state: Arc<PluginState>,
+    cursor_x: usize,
+    cursor_y: usize,
+    buffer_handle: u64,
+    buffer_lines: Vec<String>,
+    prev: Option<Vec<String>>, // speculative FIM content
+) -> LttwResult<()> {
+    let seq = state.increment_debounce_sequence();
+
+    // Check debounce if we have a sequence
+    let debounce_ms = {
+        let config = state.config.read();
+        config.debounce_ms
+    };
+
+    // This is the most recent request, check if debounce has elapsed
+    let now = Instant::now();
+    let last_spawn = *state.fim_worker_debounce_last_spawn.read();
+    let elapsed = now.duration_since(last_spawn);
+    let debounce_expired = elapsed >= Duration::from_millis(debounce_ms as u64);
+
+    if !debounce_expired {
+        // Still within debounce period. Since this is the most recent request,
+        // we should wait until debounce expires and then spawn.
+        let remaining_ms = debounce_ms as u64 - elapsed.as_millis() as u64;
+        state.debug_manager.read().log(
+            "spawn_fim_completion_worker",
+            format!("Within debounce period, (seq {seq}, remaining {remaining_ms}ms)",),
+        );
+
+        // Wait for remaining debounce time
+        tokio::time::sleep(Duration::from_millis(remaining_ms)).await;
+
+        // Re-check if we're still the most recent request
+        let latest_sequence = *state.fim_worker_debounce_seq.read();
+
+        if seq < latest_sequence {
+            // A newer request has come in, discard this one
+            state.debug_manager.read().log(
+                "spawn_fim_completion_worker",
+                format!(
+                    "Discarding stale worker after wait (seq {seq} < latest {latest_sequence})",
+                ),
+            );
+            return Ok(());
+        }
+    }
+    state.record_worker_spawn();
+
+    state.debug_manager.read().log(
+        "spawn_fim_completion_worker",
+        format!("Spawning worker for ({}, {})", cursor_x, cursor_y),
+    );
+
+    //// Collect all neovim information at the start
+    //let fim_state = state.fim_state.clone();
+
+    //// Spawn async task to perform HTTP request
+    //// Check if we should trigger speculative FIM
+    //let speculative_fim = {
+    //    let fim_state_lock = fim_state.read();
+    //    fim_state_lock.hint_shown && !fim_state_lock.content.is_empty()
+    //}
+
+    //let prev_content = if speculative_fim {
+    //    let fim_state_lock = fim_state.read();
+    //    // Trigger Speculative FIM
+    //    Some(&*fim_state_lock.content.clone())
+    //} else {
+    //    None
+    //};
+
+    // TODO handle error
+    fim_completion(state, cursor_x, cursor_y, buffer_handle, buffer_lines, prev).await?;
+
+    Ok(())
 }
 
 /// Main FIM completion function that sends a request to the server
@@ -275,7 +488,7 @@ pub async fn fim_completion(
     state.debug_manager.read().log("fim_completion", "8");
 
     let state__ = state.clone();
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         //state
         //    .debug_manager
         //    .read()
@@ -393,6 +606,7 @@ pub async fn fim_completion(
     }
     state.debug_manager.read().log("fim_completion", "11");
 
+    handle.await?;
     Ok(())
 }
 
@@ -419,171 +633,6 @@ fn should_abort(cursor_y: usize, orig_line: &str, content: &str) -> bool {
     }
 
     true
-}
-
-pub fn fim_try_hint() -> LttwResult<()> {
-    if !in_insert_mode()? {
-        return Ok(());
-    }
-    let (pos_x, pos_y) = get_pos();
-    let state = get_state();
-    let lines = get_buf_lines(..);
-    let buffer_handle = get_buffer_handle();
-    fim_try_hint_inner(state, pos_x, pos_y, buffer_handle, lines)
-}
-
-/// Try to generate a suggestion using the data in the cache
-/// Looks at the previous 10 characters to see if a completion is cached.
-/// If one is found at (x,y) then it checks that the characters typed after (x,y)
-/// match up with the cached completion result.
-///
-/// # Returns
-/// * `Some(RenderedSuggestion)` - If a cached completion is found
-/// * `None` - If no cached completion is found
-pub fn fim_try_hint_inner(
-    state: Arc<PluginState>,
-    pos_x: usize,
-    pos_y: usize,
-    buffer_handle: u64,
-    lines: Vec<String>,
-) -> LttwResult<()> {
-    // Get local context
-    let ctx = get_local_context(&lines, pos_x, pos_y, None, &state.config.read());
-    state.debug_manager.read().log("fim_try_hint_inner", "");
-
-    // Compute primary hash
-    let primary_hash = format!("{}{}{}{}", ctx.prefix, ctx.middle, "Î", ctx.suffix);
-    let hash = sha256(&primary_hash);
-
-    // Check if the completion is cached (and update LRU order)
-    let mut response = state.cache.write().get(&hash);
-
-    if response.is_none() {
-        // ... or if there is a cached completion nearby (128 characters behind)
-        // Looks at the previous 128 characters to see if a completion is cached.
-        let pm = format!("{}{}", ctx.prefix, ctx.middle);
-        let mut best_len = 0;
-        let mut best_response: Option<FimResponse> = None;
-
-        // Only search if pm has enough characters
-        if pm.len() < 2 {
-            return Ok(());
-        }
-
-        // iterate through the prefix+midde string while removing characters from the tail
-        //
-        let mut char_indices = pm.char_indices().collect::<Vec<_>>();
-        char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
-                                             // its never used
-        let char_len = char_indices.len() - 1;
-
-        let max_iters = 128; // TODO parameterize this
-        for i in 1..=(max_iters.min(char_len.saturating_sub(1))) {
-            let split_byte_idx = char_indices[char_len - i].0;
-            let (pm_with_less_tail, removed) = pm.split_at(split_byte_idx);
-
-            let ctx_new = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
-            let hash_new = sha256(&ctx_new);
-
-            if let Some(response_) = state.cache.write().get(&hash_new) {
-                let content = &response_.content;
-                if content.is_empty() {
-                    continue;
-                }
-
-                // Check that the removed text matches the beginning of the cached response
-                // NOTE 'i' always is == removed.len()
-                // don't bother if i == content.len() because then there isn't any additional
-                // predicted text
-                if content.starts_with(removed) {
-                    // Found a match - use the rest of the content
-                    let Some(remaining) = content.strip_prefix(removed) else {
-                        continue;
-                    };
-
-                    // could use chars().count() but it's not to important
-                    if !remaining.is_empty() && remaining.len() > best_len {
-                        best_len = remaining.len();
-                        best_response = Some(FimResponse {
-                            content: remaining.to_string(),
-                            timings: response_.timings,
-                            tokens_cached: response_.tokens_cached,
-                            truncated: response_.truncated,
-                        });
-                    }
-                }
-            }
-        }
-        response = best_response;
-    }
-
-    let mut prev_for_next_fim: Option<Vec<String>> = None;
-    if let Some(response) = response {
-        state.debug_manager.read().log(
-            "fim_try_hint_inner",
-            format!("found cached response: {response:#?}"),
-        );
-        let content = response.content;
-        if content.is_empty() {
-            return Ok(());
-        }
-
-        render_fim_suggestion(state.clone(), pos_x, pos_y, &content, ctx.line_cur, None)?;
-
-        // run async speculative FIM in the background for this position
-        // TODO should this just always run even when no hint is shown?
-        let hint_shown = state.fim_state.read().hint_shown;
-        if hint_shown {
-            prev_for_next_fim = Some(vec![content]);
-        }
-    }
-
-    // Spawn a FIM in the background
-    let rt = state.tokio_runtime.clone();
-    rt.read().spawn(async move {
-        // TODO log error
-        let _ = spawn_fim_completion_worker(
-            state,
-            pos_x,
-            pos_y,
-            buffer_handle,
-            lines,
-            prev_for_next_fim,
-        )
-        .await;
-    });
-    Ok(())
-}
-
-/// Compute hashes for caching
-pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
-    let mut hashes = Vec::new();
-
-    // Primary hash
-    let primary = format!("{}{}{}{}", ctx.prefix, ctx.middle, "Î", ctx.suffix);
-    let hash = sha256(&primary);
-    hashes.push(hash);
-
-    // Truncated prefix hashes (up to 3 levels)
-    let mut prefix_trim = ctx.prefix.clone();
-    // Safety: Use regex with proper error handling
-    let re = match regex::Regex::new(r"^[^\n]*\n") {
-        Ok(r) => r,
-        Err(_) => return hashes, // Return partial hashes on regex error
-    };
-    let max_hashes = 3; // TODO parameterize this
-    for _ in 0..max_hashes {
-        prefix_trim = re.replace(&prefix_trim, "").to_string();
-        if prefix_trim.is_empty() {
-            break;
-        }
-
-        let hash_input = format!("{}{}{}{}", prefix_trim, ctx.middle, "Î", ctx.suffix);
-        let hash = sha256(&hash_input);
-        hashes.push(hash);
-    }
-
-    hashes
 }
 
 /// Send FIM request to the server
@@ -1022,7 +1071,10 @@ pub struct RenderedSuggestion {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::cache::Cache, crate::ring_buffer::RingBuffer};
+    use {
+        super::*,
+        crate::{cache::Cache, context::LocalContext, ring_buffer::RingBuffer},
+    };
 
     #[test]
     fn test_compute_hashes() {

@@ -4,7 +4,7 @@
 // eviction policy to manage memory usage and improve performance.
 
 use {
-    crate::fim::FimResponse,
+    crate::{context::LocalContext, fim::FimResponse, utils::sha256},
     serde::{Deserialize, Serialize},
     std::collections::{HashMap, VecDeque},
 };
@@ -90,4 +90,35 @@ impl Cache {
     pub fn max_keys(&self) -> usize {
         self.max_keys
     }
+}
+
+/// Compute hashes for caching
+pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
+    let mut hashes = Vec::new();
+
+    // Primary hash
+    let primary = format!("{}{}{}{}", ctx.prefix, ctx.middle, "Î", ctx.suffix);
+    let hash = sha256(&primary);
+    hashes.push(hash);
+
+    // Truncated prefix hashes (up to 3 levels)
+    let mut prefix_trim = ctx.prefix.clone();
+    // Safety: Use regex with proper error handling
+    let re = match regex::Regex::new(r"^[^\n]*\n") {
+        Ok(r) => r,
+        Err(_) => return hashes, // Return partial hashes on regex error
+    };
+    let max_hashes = 3; // TODO parameterize this
+    for _ in 0..max_hashes {
+        prefix_trim = re.replace(&prefix_trim, "").to_string();
+        if prefix_trim.is_empty() {
+            break;
+        }
+
+        let hash_input = format!("{}{}{}{}", prefix_trim, ctx.middle, "Î", ctx.suffix);
+        let hash = sha256(&hash_input);
+        hashes.push(hash);
+    }
+
+    hashes
 }

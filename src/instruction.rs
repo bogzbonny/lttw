@@ -5,7 +5,7 @@
 
 use {
     crate::{
-        config::LttwConfig, get_buf_lines, get_pos, get_state, utils::get_current_buffer, Error,
+        config::LttwConfig, get_buf_lines, get_pos, get_state, utils::get_current_buffer_id, Error,
         LttwResult,
     },
     nvim_oxi::{api::Buffer, Dictionary},
@@ -486,7 +486,7 @@ pub fn build_instruction_virt_text(
 #[allow(dead_code)]
 fn inst_start(l0: i64, l1: i64, inst: &str) -> LttwResult<i64> {
     let state = get_state();
-    let bufnr = get_current_buffer();
+    let bufnr = get_current_buffer_id();
     let lines = get_buf_lines(..);
 
     // Create new instruction request
@@ -792,7 +792,7 @@ fn inst_finalize(req_id: i64) -> LttwResult<()> {
 #[allow(dead_code)]
 fn inst_accept() -> LttwResult<()> {
     let state = get_state();
-    let bufnr = get_current_buffer();
+    let bufnr = get_current_buffer_id();
 
     // Find instruction request for current buffer (prioritize Ready status)
     let (req_id_to_accept, req) = {
@@ -891,7 +891,7 @@ fn inst_accept() -> LttwResult<()> {
 #[allow(dead_code)]
 fn inst_cancel() -> LttwResult<()> {
     let state = get_state();
-    let bufnr = get_current_buffer();
+    let bufnr = get_current_buffer_id();
     let (_, pos_y) = get_pos();
 
     // Find and cancel the instruction request at the current line
@@ -950,7 +950,7 @@ fn inst_cancel() -> LttwResult<()> {
 /// Instruction rerun function - re-runs the last instruction
 pub fn inst_rerun() -> LttwResult<Option<String>> {
     let state = get_state();
-    let bufnr = get_current_buffer();
+    let bufnr = get_current_buffer_id();
     let (_, pos_y) = get_pos();
 
     // Find the instruction request at the current line
@@ -994,7 +994,7 @@ pub fn inst_rerun() -> LttwResult<Option<String>> {
 /// Instruction continue function - continues with a new instruction
 pub fn inst_continue() -> LttwResult<Option<String>> {
     let state = get_state();
-    let bufnr = get_current_buffer();
+    let bufnr = get_current_buffer_id();
     let (_, pos_y) = get_pos();
 
     // Find the instruction request at the current line

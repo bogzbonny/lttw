@@ -21,6 +21,9 @@ pub enum Error {
 
     #[error("Regex error: {0}")]
     Regex(#[from] regex::Error),
+
+    #[error("tokio JoinError error: {0}")]
+    JoinError(#[from] tokio::task::JoinError),
 }
 
 impl From<nvim_oxi::api::Error> for Error {

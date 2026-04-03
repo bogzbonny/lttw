@@ -27,14 +27,14 @@ use {
         },
         Dictionary, Function,
     },
-    plugin_state::{get_state, init_state, PluginState},
+    plugin_state::{get_state, init_state},
     std::{
         convert::TryInto,
-        sync::{atomic::Ordering, Arc},
+        sync::atomic::Ordering,
         time::{Duration, Instant},
     },
     tokio::sync::mpsc,
-    utils::{get_buf_filename, get_buf_lines, get_buffer_handle, get_pos, in_insert_mode},
+    utils::{get_buf_filename, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode},
 };
 
 // FIM completion channel types for async communication between worker and main thread
@@ -126,6 +126,7 @@ pub struct FimState {
 }
 
 impl FimState {
+    #[allow(clippy::too_many_arguments)]
     fn update(
         &mut self,
         hint_shown: bool,
@@ -199,86 +200,6 @@ fn init_completion_processing_thread() {
             nvim_oxi::schedule(|_| process_pending_display());
         },
     );
-}
-
-/// Implementation of FIM worker with optional debounce sequence tracking
-async fn spawn_fim_completion_worker(
-    state: Arc<PluginState>,
-    cursor_x: usize,
-    cursor_y: usize,
-    buffer_handle: u64,
-    buffer_lines: Vec<String>,
-    prev: Option<Vec<String>>, // speculative FIM content
-) -> LttwResult<()> {
-    let seq = state.increment_debounce_sequence();
-
-    // Check debounce if we have a sequence
-    let debounce_ms = {
-        let config = state.config.read();
-        config.debounce_ms
-    };
-
-    // This is the most recent request, check if debounce has elapsed
-    let now = Instant::now();
-    let last_spawn = *state.fim_worker_debounce_last_spawn.read();
-    let elapsed = now.duration_since(last_spawn);
-    let debounce_expired = elapsed >= Duration::from_millis(debounce_ms as u64);
-
-    if !debounce_expired {
-        // Still within debounce period. Since this is the most recent request,
-        // we should wait until debounce expires and then spawn.
-        let remaining_ms = debounce_ms as u64 - elapsed.as_millis() as u64;
-        state.debug_manager.read().log(
-            "spawn_fim_completion_worker",
-            format!("Within debounce period, (seq {seq}, remaining {remaining_ms}ms)",),
-        );
-
-        // Wait for remaining debounce time
-        tokio::time::sleep(Duration::from_millis(remaining_ms)).await;
-
-        // Re-check if we're still the most recent request
-        let latest_sequence = *state.fim_worker_debounce_seq.read();
-
-        if seq < latest_sequence {
-            // A newer request has come in, discard this one
-            state.debug_manager.read().log(
-                "spawn_fim_completion_worker",
-                format!(
-                    "Discarding stale worker after wait (seq {seq} < latest {latest_sequence})",
-                ),
-            );
-            return Ok(());
-        }
-    }
-    state.record_worker_spawn();
-
-    state.debug_manager.read().log(
-        "spawn_fim_completion_worker",
-        format!("Spawning worker for ({}, {})", cursor_x, cursor_y),
-    );
-
-    //// Collect all neovim information at the start
-    //let fim_state = state.fim_state.clone();
-
-    //// Spawn async task to perform HTTP request
-    //// Check if we should trigger speculative FIM
-    //let speculative_fim = {
-    //    let fim_state_lock = fim_state.read();
-    //    fim_state_lock.hint_shown && !fim_state_lock.content.is_empty()
-    //};
-
-    //let prev_content = if speculative_fim {
-    //    let fim_state_lock = fim_state.read();
-    //    // Trigger Speculative FIM
-    //    Some(&*fim_state_lock.content.clone())
-    //} else {
-    //    None
-    //};
-
-    // TODO handle error
-    fim::fim_completion(state, cursor_x, cursor_y, buffer_handle, buffer_lines, prev).await?;
-
-    Ok(())
 }
 
 /// Process pending FIM display queue - drains and displays messages on the main thread
