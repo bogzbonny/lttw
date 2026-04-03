@@ -4,6 +4,8 @@
 // including context gathering, request building, response processing,
 // and rendering suggestions.
 
+use crate::FimTimingsData;
+
 use {
     crate::{
         context::{get_local_context, LocalContext},
@@ -44,7 +46,7 @@ pub struct FimRequest {
     pub prev: Vec<String>,
 }
 
-/// FIM completion response
+/// FIM completion response (uses flat keys from server)
 #[derive(Debug, Clone, Deserialize)]
 pub struct FimResponse {
     pub content: String,
@@ -67,16 +69,24 @@ pub struct FimResult {
     pub info: Option<String>,
 }
 
-/// FIM timing information
+/// FIM timing information (matches server response format with flat keys)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FimTimings {
+    #[serde(rename = "timings/prompt_n")]
     pub prompt_n: Option<i64>,
+    #[serde(rename = "timings/prompt_ms")]
     pub prompt_ms: Option<f64>,
+    #[serde(rename = "timings/prompt_per_token_ms")]
     pub prompt_per_token_ms: Option<f64>,
+    #[serde(rename = "timings/prompt_per_second")]
     pub prompt_per_second: Option<f64>,
+    #[serde(rename = "timings/predicted_n")]
     pub predicted_n: Option<i64>,
+    #[serde(rename = "timings/predicted_ms")]
     pub predicted_ms: Option<f64>,
+    #[serde(rename = "timings/predicted_per_token_ms")]
     pub predicted_per_token_ms: Option<f64>,
+    #[serde(rename = "timings/predicted_per_second")]
     pub predicted_per_second: Option<f64>,
 }
 
@@ -150,6 +160,7 @@ pub fn fim_completion(
     lines: Vec<String>,
     prev: Option<Vec<String>>, // speculative FIM content
 ) -> Result<(), FimError> {
+    state.debug_manager.read().log("fim_completion", "0");
     let (
         n_predict,
         stop,
@@ -172,16 +183,20 @@ pub fn fim_completion(
             config.ring_chunk_size,
         )
     };
+    state.debug_manager.read().log("fim_completion", "1");
 
     // Get local context
     let ctx = get_local_context(&lines, pos_x, pos_y, prev.clone(), &state.config.read());
+    state.debug_manager.read().log("fim_completion", "2");
 
     // Skip auto FIM if too much suffix
     if ctx.line_cur_suffix.len() > state.config.read().max_line_suffix as usize {
         return Ok(());
     }
+    state.debug_manager.read().log("fim_completion", "3");
 
     let hashes = compute_hashes(&ctx);
+    state.debug_manager.read().log("fim_completion", "4");
 
     // if we already have a cached completion for one of the hashes, don't send a request
     if state.config.read().auto_fim {
@@ -192,6 +207,7 @@ pub fn fim_completion(
             }
         }
     }
+    state.debug_manager.read().log("fim_completion", "5");
 
     // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
     // This prevents redundant context from cluttering the ring buffer
@@ -200,12 +216,13 @@ pub fn fim_completion(
     let ring_chunk_size_half = (ring_chunk_size / 2) as usize;
     let start_line = pos_y.saturating_sub(ring_chunk_size_half);
     let end_line = (pos_y + ring_chunk_size_half).min(lines.len());
+    state.debug_manager.read().log("fim_completion", "6");
 
     // Safety: ensure we have valid range and enough lines
     if start_line >= end_line || start_line >= lines.len() {
         return Ok(());
     }
-
+    state.debug_manager.read().log("fim_completion", "7");
     let text: Vec<String> = lines[start_line..end_line].to_vec();
     let text_len = text.len();
 
@@ -270,13 +287,15 @@ pub fn fim_completion(
 
     let last_pick_pos_y = state.fim_state.read().get_last_pick_pos_y();
     let state_ = state.clone();
+    state.debug_manager.read().log("fim_completion", "8");
 
     let rt = state.tokio_runtime.clone();
+    let state__ = state.clone();
     rt.read().spawn(async move {
-        state
-            .debug_manager
-            .read()
-            .log("sending msg", format!("{request:#?}"));
+        //state
+        //    .debug_manager
+        //    .read()
+        //    .log("sending msg", format!("{request:#?}"));
         // Send request without holding locks
         let Ok(response_text) = send_request(&request, endpoint_fim, model, api_key).await else {
             // TODO log error
@@ -292,7 +311,7 @@ pub fn fim_completion(
 
         // Cache the response with timing info (new block for re-acquired locks)
         {
-            let mut cache_lock = state.cache.write();
+            let mut cache_lock = state__.cache.write();
             for hash in &hashes {
                 cache_lock.insert(hash.clone(), response.clone());
             }
@@ -305,12 +324,26 @@ pub fn fim_completion(
         if should_abort(pos_y, orig_line, &content) {
             return;
         }
+
+        // Extract timing data from the response if available
+        let timings = response.timings.as_ref().map(|t| FimTimingsData {
+            n_prompt: t.prompt_n.unwrap_or(0),
+            t_prompt_ms: t.prompt_ms.unwrap_or(0.0),
+            s_prompt: t.prompt_per_second.unwrap_or(0.0),
+            n_predict: t.predicted_n.unwrap_or(0),
+            t_predict_ms: t.predicted_ms.unwrap_or(0.0),
+            s_predict: t.predicted_per_second.unwrap_or(0.0),
+            tokens_cached: response.tokens_cached,
+            truncated: response.truncated,
+        });
+
         let msg = FimCompletionMessage {
             buffer_handle,
             buffer_lines: lines,
             cursor_x: pos_x,
             cursor_y: pos_y,
             content,
+            timings,
         };
 
         if let Err(_e) = tx.send(msg).await {
@@ -321,6 +354,7 @@ pub fn fim_completion(
             //);
         }
     });
+    state.debug_manager.read().log("fim_completion", "9");
 
     // Ring buffer pick logic - gather extra context when cursor moves significantly
     // and process it in the background
@@ -330,8 +364,11 @@ pub fn fim_completion(
         true
     };
 
+    state.debug_manager.read().log("fim_completion", "10");
     if do_ring_buffer_pick {
         // Get ring configuration
+        state.debug_manager.read().log("fim_completion", "10.1");
+
         let (ring_scope, n_prefix, n_suffix, ring_chunk_size) = {
             let config = state_.config.read();
             (
@@ -341,17 +378,22 @@ pub fn fim_completion(
                 config.ring_chunk_size as usize,
             )
         };
+        state.debug_manager.read().log("fim_completion", "10.2");
 
         let prefix_start = pos_y.saturating_sub(ring_scope);
         let prefix_end = pos_y.saturating_sub(n_prefix);
+        state.debug_manager.read().log("fim_completion", "10.21");
         let prefix_lines = get_buf_lines(prefix_start..=prefix_end);
+        state.debug_manager.read().log("fim_completion", "10.3");
         let filename = get_buf_filename()?;
         if !prefix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
             ring_buffer_lock.pick_chunk(prefix_lines, filename.clone(), false, false)?;
         }
+        state.debug_manager.read().log("fim_completion", "10.4");
 
         let max_y = get_buf_line_count();
+        state.debug_manager.read().log("fim_completion", "10.5");
         let suffix_start = (pos_y + n_suffix).min(max_y);
         let suffix_end = (pos_y + n_suffix + ring_chunk_size).min(max_y);
         let suffix_lines = get_buf_lines(suffix_start..=suffix_end);
@@ -360,9 +402,12 @@ pub fn fim_completion(
             ring_buffer_lock.pick_chunk(suffix_lines, filename, false, false)?;
         }
 
+        state.debug_manager.read().log("fim_completion", "10.6");
         // Update the last pick position
         state_.fim_state.write().set_last_pick_pos_y(pos_y);
+        state.debug_manager.read().log("fim_completion", "10.7");
     }
+    state.debug_manager.read().log("fim_completion", "11");
 
     Ok(())
 }
@@ -499,7 +544,7 @@ pub fn fim_try_hint_inner(
             return Ok(());
         }
 
-        render_fim_suggestion(state.clone(), pos_x, pos_y, &content, ctx.line_cur)?;
+        render_fim_suggestion(state.clone(), pos_x, pos_y, &content, ctx.line_cur, None)?;
 
         // run async speculative FIM in the background for this position
         // TODO should this just always run even when no hint is shown?
@@ -600,6 +645,7 @@ pub fn render_fim_suggestion(
     pos_y: usize,
     content: &str,
     line_cur: String,
+    timings: Option<FimTimingsData>,
 ) -> NvimResult<()> {
     // Parse content into lines
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
@@ -661,7 +707,7 @@ pub fn render_fim_suggestion(
         format!("Displaying FIM hint: \n{}", lines.join("\n")),
     );
 
-    // Update FIM state
+    // Update FIM state with timing data
     state.fim_state.write().update(
         can_accept,
         pos_x,
@@ -669,6 +715,7 @@ pub fn render_fim_suggestion(
         line_cur.to_string(),
         can_accept,
         lines,
+        timings,
     );
 
     // Display virtual text using extmarks
@@ -676,12 +723,24 @@ pub fn render_fim_suggestion(
 }
 
 /// Display FIM hint as virtual text using extmarks with optional inline info
+/// The info string is rendered with RightAlign positioning for right-justified display
 fn display_fim_text(state: &Arc<PluginState>) -> NvimResult<()> {
     // Lock the fim_state and config to get the data we need
-    let (hint_shown, content, extmark_ns, pos_y, pos_x, line_cur, _config, debug_manager) = {
+    let (
+        hint_shown,
+        content,
+        extmark_ns,
+        pos_y,
+        pos_x,
+        line_cur,
+        config,
+        debug_manager,
+        timing_data,
+    ) = {
         let fs = state.fim_state.read();
         let config = state.config.read().clone();
         let debug_manager = state.debug_manager.read().clone();
+        let timing_data = fs.timings.clone();
         (
             fs.hint_shown,
             fs.content.clone(),
@@ -691,6 +750,7 @@ fn display_fim_text(state: &Arc<PluginState>) -> NvimResult<()> {
             fs.line_cur.clone(),
             config,
             debug_manager,
+            timing_data,
         )
     };
 
@@ -712,51 +772,133 @@ fn display_fim_text(state: &Arc<PluginState>) -> NvimResult<()> {
         let (suggestion_text, use_inline) =
             trim_suggestion_curr_line(&suggestion_text, pos_x, &line_cur);
 
-        // Build inline info string if show_info is enabled (mode 2 = inline)
-        let virt_text_vec: Vec<(String, String)> =
-            { vec![(suggestion_text.to_string(), "Comment".to_string())] };
+        // Create extmark opts for suggestion text
+        let mut suggestion_opts = SetExtmarkOptsBuilder::default();
 
-        // Create extmark opts with virtual text using builder pattern
-        let mut opts = SetExtmarkOptsBuilder::default();
-        opts.virt_text(virt_text_vec);
+        // For single line suggestions, use inline or overlay based on context
+        let suggestion_virt_text = vec![(suggestion_text, "Comment".to_string())];
+        suggestion_opts.virt_text(suggestion_virt_text);
 
-        let mut text_pos = ExtmarkVirtTextPosition::Overlay;
+        let mut suggestion_pos = ExtmarkVirtTextPosition::Overlay;
         if content.len() == 1 && use_inline {
-            text_pos = ExtmarkVirtTextPosition::Inline;
+            suggestion_pos = ExtmarkVirtTextPosition::Inline;
         }
+        suggestion_opts.virt_text_pos(suggestion_pos);
 
-        opts.virt_text_pos(text_pos);
-
-        // Add multi-line support - display rest of suggestion lines below
+        // Add multi-line support for the suggestion - display rest of suggestion lines below
         if content.len() > 1 {
             let mut virt_lines: Vec<Vec<(String, String)>> = Vec::new();
-
-            // Add remaining content lines
             for line in &content[1..] {
                 virt_lines.push(vec![(line.clone(), "Comment".to_string())]);
             }
-
-            opts.virt_lines(virt_lines);
+            suggestion_opts.virt_lines(virt_lines);
         }
 
-        // last minute abort possibility
-        if !in_insert_mode()? {
-            return Ok(());
-        }
-
-        // Set the extmark at cursor position
-        match buf.set_extmark(ns_id, pos_y, pos_x, &opts.build()) {
+        // Set the extmark for suggestion text at cursor position
+        match buf.set_extmark(ns_id, pos_y, pos_x, &suggestion_opts.build()) {
             Ok(_id) => {
                 debug_manager.log(
                     "display_fim_text",
-                    format!("Set extmark at line {}, col {}", pos_y, pos_x),
+                    format!("Set suggestion extmark at line {}, col {}", pos_y, pos_x),
                 );
             }
             Err(e) => {
                 debug_manager.log(
                     "display_fim_text",
-                    format!("Error setting extmark: {:?}", e),
+                    format!("Error setting suggestion extmark: {:?}", e),
                 );
+            }
+        }
+
+        // Add build info string with RightAlign positioning when show_info is enabled
+        // The info string shows inference statistics like timing, cache status, etc.
+        let show_info = config.show_info;
+        if show_info > 0 {
+            // Get ring buffer and cache stats for info string
+            let ring_buffer = state.ring_buffer.read();
+            let cache = state.cache.read();
+
+            let ring_chunks = ring_buffer.len();
+            let ring_n_evict = ring_buffer.n_evict();
+            let ring_queued = ring_buffer.queued_len();
+
+            let cache_size = cache.len();
+            let max_cache_keys = config.max_cache_keys as usize;
+
+            // Build the info string using stored timing data
+            let info_string = if let Some(t) = timing_data {
+                // Convert FimTimingsData to FimTimings (for the build_info_string function)
+                let ft = FimTimings {
+                    prompt_n: Some(t.n_prompt),
+                    prompt_ms: Some(t.t_prompt_ms),
+                    prompt_per_token_ms: None,
+                    prompt_per_second: Some(t.s_prompt),
+                    predicted_n: Some(t.n_predict),
+                    predicted_ms: Some(t.t_predict_ms),
+                    predicted_per_token_ms: None,
+                    predicted_per_second: Some(t.s_predict),
+                };
+
+                build_info_string(
+                    &ft,
+                    t.tokens_cached,
+                    t.truncated,
+                    ring_chunks,
+                    config.ring_n_chunks as usize,
+                    ring_n_evict,
+                    ring_queued,
+                    cache_size,
+                    max_cache_keys,
+                )
+            } else {
+                // No timing data available, return empty string
+                String::new()
+            };
+
+            if !info_string.is_empty() {
+                // Create a separate extmark for the info string with RightAlign positioning
+                let info_text = info_string.clone();
+                let mut info_opts = SetExtmarkOptsBuilder::default();
+                let info_virt_text = vec![(info_string, "llama_hl_fim_info".to_string())];
+                info_opts.virt_text(info_virt_text);
+
+                // Use RightAlign positioning for the info string
+                // This displays the info at the right side of the window
+                info_opts.virt_text_pos(ExtmarkVirtTextPosition::RightAlign);
+
+                // Set the extmark at EOL position with right_gravity
+                // For RightAlign, we set the position at the end of the line
+                // Use the suggestion text length to find approximate end position
+                let suggestion_text = content[0].clone();
+                let suggestion_len = suggestion_text.len();
+                let eol_col = suggestion_len + pos_x;
+
+                // Debug log with position info
+                debug_manager.log(
+                    "display_fim_text",
+                    format!(
+                        "Setting info extmark with RightAlign at line {}, col {}. Suggestion len: {}, pos_x: {}, Info: '{}'",
+                        pos_y, eol_col, suggestion_len, pos_x, info_text
+                    ),
+                );
+
+                match buf.set_extmark(ns_id, pos_y, eol_col, &info_opts.build()) {
+                    Ok(_id) => {
+                        debug_manager.log(
+                            "display_fim_text",
+                            format!(
+                                "Set info extmark at line {}, col {} (RightAlign)",
+                                pos_y, pos_x
+                            ),
+                        );
+                    }
+                    Err(e) => {
+                        debug_manager.log(
+                            "display_fim_text",
+                            format!("Error setting info extmark: {:?}", e),
+                        );
+                    }
+                }
             }
         }
     }

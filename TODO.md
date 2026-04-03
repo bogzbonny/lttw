@@ -11,13 +11,27 @@
 
 ^^^^^^^^^ DONE
 
+01. panic condition if open fim.rs and scroll really fast down and then try
+    insert mode
+     - https://github.com/noib3/nvim-oxi/issues/260 sheds a lot of light
+       - "Essentially never call neovim's functions outside of callbacks and
+         plugin entrypoints and never call neovim's functions from another
+         thread. "
+     - ALL neovim function calls eg. getting buffer information MUST occur from
+       the neovim main thread! 
+        - Callbacks which happen through an autocommand SHOULD BE OKAY
+        - All spawned threads need to either have neovim-dependant information
+          fed to them or access it through TimerHandle which executes on the
+          main thread.
+     - TODO 
+        - make more function async so it will be easier to audit 
+        - reduce usage of retrieving the tokio runtime and use tokio::spawn
+          directly whenever already inside the runtime
+
 01. bizzare issue with re-rendering msgs as they come where the cursor gets
     slammed to the end of the queue message. 
      - probably something to do with inline extmarks or even improper placement 
      (not checking before display if the x_pos is wrong?) 
-
-01. panic condition if open fim.rs and scroll really fast down and then try
-    insert mode
 
 01. better global error management
     https://github.com/noib3/nvim-oxi/issues/231

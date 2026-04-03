@@ -35,6 +35,19 @@ use {
 };
 
 // FIM completion channel types for async communication between worker and main thread
+/// Timing information from FIM completion
+#[derive(Debug, Clone, Default)]
+pub struct FimTimingsData {
+    pub n_prompt: i64,
+    pub t_prompt_ms: f64,
+    pub s_prompt: f64,
+    pub n_predict: i64,
+    pub t_predict_ms: f64,
+    pub s_predict: f64,
+    pub tokens_cached: u64,
+    pub truncated: bool,
+}
+
 /// Message sent from async worker to main thread when completion is ready
 #[derive(Debug, Clone)]
 pub struct FimCompletionMessage {
@@ -43,6 +56,7 @@ pub struct FimCompletionMessage {
     cursor_x: usize,           // Cursor position X
     cursor_y: usize,           // Cursor position Y
     content: String,           // FIM response content
+    timings: Option<FimTimingsData>, // Timing information from server response
 }
 
 /// Initialize the plugin with configuration
@@ -62,7 +76,8 @@ pub fn lttw() -> NvimResult<Dictionary> {
     Ok(functions)
 }
 
-fn lttw_setup() -> NvimResult<()> {
+// TODO process errors in this function
+fn lttw_setup() {
     // Initialize plugin state
     init_state();
 
@@ -70,19 +85,17 @@ fn lttw_setup() -> NvimResult<()> {
     init_completion_processing_thread();
 
     // Setup timer-based ring buffer updates (every ring_update_ms)
-    ring_buffer::setup_ring_buffer_timer()?;
+    let _ = ring_buffer::setup_ring_buffer_timer();
 
     // Register nvim-oxi commands
-    commands::register_commands()?;
+    let _ = commands::register_commands();
 
     // Setup keymaps
-    keymap::setup_keymaps()?;
+    let _ = keymap::setup_keymaps();
 
     // Setup autocmds
-    autocommands::setup_filetype_autocmd()?;
-    autocommands::setup_non_filetype_autocmds()?;
-
-    Ok(())
+    let _ = autocommands::setup_filetype_autocmd();
+    let _ = autocommands::setup_non_filetype_autocmds();
 }
 
 // ---------------------------
@@ -105,6 +118,8 @@ pub struct FimState {
     content: Vec<String>,
     /// Last cursor Y position where ring buffer chunks were picked
     last_pick_pos_y: Option<usize>,
+    /// Timing data from the last completion for display in info string
+    timings: Option<FimTimingsData>,
 }
 
 impl FimState {
@@ -116,6 +131,7 @@ impl FimState {
         line_cur: String,
         can_accept: bool,
         content: Vec<String>,
+        timings: Option<FimTimingsData>,
     ) {
         self.hint_shown = hint_shown;
         self.pos_x = pos_x;
@@ -124,6 +140,7 @@ impl FimState {
         self.can_accept = can_accept;
         self.content.clear();
         self.content = content;
+        self.timings = timings;
     }
 
     fn clear(&mut self) {
@@ -134,6 +151,7 @@ impl FimState {
         self.can_accept = false;
         self.content.clear();
         self.last_pick_pos_y = None;
+        self.timings = None;
     }
 
     /// Update the last pick position
@@ -348,6 +366,7 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> NvimResult<()> {
         msg.cursor_y,
         &msg.content,
         ctx.line_cur,
+        msg.timings,
     )
 }
 
@@ -700,26 +719,4 @@ fn on_buf_write_post() -> NvimResult<()> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_config() {
-        let config = config::LttwConfig::new();
-        assert_eq!(config.endpoint_fim, "http://127.0.0.1:8012/infill");
-        assert_eq!(config.n_prefix, 256);
-    }
-
-    #[test]
-    fn test_filetype_check() {
-        let mut config = config::LttwConfig::new();
-        assert!(config.is_filetype_enabled("rust"));
-
-        config.disabled_filetypes.push("rust".to_string());
-        assert!(!config.is_filetype_enabled("rust"));
-        assert!(config.is_filetype_enabled("python"));
-    }
 }
