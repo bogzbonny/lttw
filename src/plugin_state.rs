@@ -37,6 +37,7 @@ pub struct PluginState {
     pub cache: Arc<RwLock<cache::Cache>>,
     pub ring_buffer: Arc<RwLock<ring_buffer::RingBuffer>>,
     pub debug_manager: Arc<RwLock<debug::DebugManager>>,
+    pub nvim_mode: Arc<RwLock<Vec<u8>>>, // string bytes for the mode name
     pub last_move_time: Arc<RwLock<Instant>>, // (vim s:t_last_move)
     pub instruction_requests: Arc<RwLock<HashMap<i64, InstructionRequestState>>>,
     pub enabled: Arc<AtomicBool>,
@@ -94,6 +95,7 @@ impl Default for PluginState {
                 chunk_size,
             ))),
             debug_manager: Arc::new(RwLock::new(debug::DebugManager::new())),
+            nvim_mode: Arc::new(RwLock::new(Vec::new())),
             last_move_time: Arc::new(RwLock::new(Instant::now())),
             instruction_requests: Arc::new(RwLock::new(HashMap::new())),
             inst_ns,
@@ -131,5 +133,20 @@ impl PluginState {
     /// Record that a worker was spawned (update last_spawn timestamp)
     pub fn record_worker_spawn(&self) {
         *self.fim_worker_debounce_last_spawn.write() = Instant::now();
+    }
+
+    pub fn in_insert_mode(&self) -> LttwResult<bool> {
+        let bz = self.nvim_mode.read();
+        let Some(mode_char) = bz.first() else {
+            return Ok(false);
+        };
+        Ok(mode_char == &b'i')
+    }
+    pub fn in_normal_mode(&self) -> LttwResult<bool> {
+        let bz = self.nvim_mode.read();
+        let Some(mode_char) = bz.first() else {
+            return Ok(false);
+        };
+        Ok(mode_char == &b'n')
     }
 }

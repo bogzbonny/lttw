@@ -3,7 +3,7 @@
 // This module provides various utility functions used throughout the plugin.
 
 use {
-    crate::LttwResult,
+    crate::{get_state, LttwResult},
     nvim_oxi::{
         api::{
             self, get_option_value,
@@ -14,9 +14,7 @@ use {
     },
     rand::Rng,
     sha2::{Digest, Sha256},
-    std::fs,
-    std::ops::RangeBounds,
-    std::path::Path,
+    std::{backtrace::Backtrace, fs, ops::RangeBounds, path::Path},
 };
 
 // NOTE important we cannot safely call into neovim from tokio worker threads
@@ -29,7 +27,14 @@ fn assert_not_tokio_worker() {
     let t = std::thread::current();
     if let Some(n) = t.name() {
         if n.contains("tokio") {
-            panic!("function must not be called from Tokio runtime worker thread (name: {n})",);
+            let state = get_state();
+            let bt = Backtrace::force_capture();
+            state
+                .debug_manager
+                .read()
+                .log("assert_not_tokio_worker", format!("Backtrace:\n{bt:?}"));
+
+            panic!("function must not be called from Tokio runtime worker thread (name: {n})");
         }
     }
 }
@@ -50,6 +55,13 @@ pub fn in_normal_mode() -> LttwResult<bool> {
     let mode_bytes = mode_result.mode.as_bytes();
     let mode_char = mode_bytes.first().copied().unwrap_or(b'?'); // Default to '?' if empty
     Ok(mode_char == b'n')
+}
+
+// are we in normal mode
+pub fn get_mode_bz() -> LttwResult<Vec<u8>> {
+    assert_not_tokio_worker();
+    let mode_result = api::get_mode()?;
+    Ok(mode_result.mode.as_bytes().to_vec())
 }
 
 /// Get current buffer position ([0,0]-indexed)

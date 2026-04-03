@@ -51,7 +51,8 @@ async fn ring_update() -> LttwResult<()> {
     let state = get_state();
 
     // update only if in normal mode or if the cursor hasn't moved for a while
-    if in_normal_mode()? || (*state.last_move_time.read()).elapsed() < Duration::from_secs(3) {
+    if state.in_normal_mode()? || (*state.last_move_time.read()).elapsed() < Duration::from_secs(3)
+    {
         return Ok(());
     }
 

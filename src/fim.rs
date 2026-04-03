@@ -262,6 +262,7 @@ pub fn fim_try_hint_inner(
             prev_for_next_fim = Some(vec![content]);
         }
     }
+    let filename = get_buf_filename()?;
 
     // Spawn a FIM in the background
     let rt = state.tokio_runtime.clone();
@@ -273,6 +274,7 @@ pub fn fim_try_hint_inner(
             pos_x,
             pos_y,
             buffer_id,
+            filename,
             lines,
             prev_for_next_fim,
         )
@@ -290,6 +292,7 @@ async fn spawn_fim_completion_worker(
     cursor_x: usize,
     cursor_y: usize,
     buffer_id: u64,
+    filename: String,
     buffer_lines: Vec<String>,
     prev: Option<Vec<String>>, // speculative FIM content
 ) -> LttwResult<()> {
@@ -346,6 +349,7 @@ async fn spawn_fim_completion_worker(
         cursor_x,
         cursor_y,
         buffer_id,
+        filename,
         buffer_lines,
         prev,
     )
@@ -364,6 +368,7 @@ pub async fn fim_completion(
     pos_x: usize,
     pos_y: usize,
     buffer_id: u64,
+    filename: String,
     lines: Vec<String>,
     prev: Option<Vec<String>>, // speculative FIM content
 ) -> LttwResult<()> {
@@ -592,9 +597,8 @@ pub async fn fim_completion(
         let prefix_start = pos_y.saturating_sub(ring_scope).min(max_y);
         let prefix_end = pos_y.saturating_sub(n_prefix).min(max_y);
         state.debug_manager.read().log("fim_completion", "10.21");
-        let prefix_lines = &lines[prefix_start..=prefix_end]; // XXX
+        let prefix_lines = &lines[prefix_start..=prefix_end];
         state.debug_manager.read().log("fim_completion", "10.3");
-        let filename = get_buf_filename()?;
         if !prefix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
             ring_buffer_lock.pick_chunk(prefix_lines, filename.clone(), false, false)?;

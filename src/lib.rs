@@ -2,7 +2,7 @@
 //
 // This module provides the entry point for the Neovim plugin using nvim-oxi.
 // All core logic is implemented in Rust modules and exposed to Neovim via FFI.
-pub mod autocommands;
+pub mod autocmd;
 pub mod cache;
 pub mod commands;
 pub mod config;
@@ -31,8 +31,8 @@ use {
     tokio::sync::mpsc,
     utils::{
         clear_buf_namespace_objects, del_autocmd, get_buf_filename, get_buf_lines,
-        get_current_buffer_id, get_current_filetype, get_pos, get_yanked_text, in_insert_mode,
-        set_buf_lines, set_window_cursor,
+        get_current_buffer_id, get_current_filetype, get_mode_bz, get_pos, get_yanked_text,
+        in_insert_mode, set_buf_lines, set_window_cursor,
     },
 };
 
@@ -96,8 +96,8 @@ fn lttw_setup() {
     let _ = keymap::setup_keymaps();
 
     // Setup autocmds
-    let _ = autocommands::setup_filetype_autocmd();
-    let _ = autocommands::setup_non_filetype_autocmds();
+    let _ = autocmd::setup_filetype_autocmd();
+    let _ = autocmd::setup_non_filetype_autocmds();
 }
 
 // ---------------------------
@@ -445,7 +445,7 @@ fn enable_plugin() -> LttwResult<()> {
     keymap::setup_keymaps()?;
 
     // Setup autocmds
-    autocommands::setup_non_filetype_autocmds()?;
+    autocmd::setup_non_filetype_autocmds()?;
 
     // Hide any existing FIM hints
     fim_hide()?;
@@ -501,7 +501,7 @@ fn toggle_auto_fim() -> LttwResult<bool> {
     }
 
     // Re-setup autocmds with new config
-    autocommands::setup_non_filetype_autocmds()?;
+    autocmd::setup_non_filetype_autocmds()?;
 
     Ok(new_value)
 }
@@ -512,6 +512,13 @@ fn on_move() -> LttwResult<()> {
     state.debug_manager.read().log("on_move", "Cursor moved");
     fim_hide()?;
     fim_try_hint()?;
+    Ok(())
+}
+
+/// Toggle auto_fim configuration
+fn set_mode_in_state() -> LttwResult<()> {
+    let state = get_state();
+    *state.nvim_mode.write() = get_mode_bz()?;
     Ok(())
 }
 

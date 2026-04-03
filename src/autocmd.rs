@@ -1,7 +1,7 @@
 use crate::{
     filetype::on_buf_enter_check_filetype,
     fim_hide, get_state, on_buf_enter_gather_chunks, on_buf_leave, on_buf_write_post, on_move,
-    on_text_yank_post,
+    on_text_yank_post, set_mode_in_state,
     utils::{create_autocmd, del_autocmd},
     LttwResult,
 };
@@ -19,6 +19,19 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
             .callback(|_| {
                 let _ = fim_hide();
                 // TODO log error
+                false
+            })
+            .build(),
+    )
+    .unwrap_or(0);
+    ids.push(id);
+
+    let id = create_autocmd(
+        ["ModeChanged"],
+        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+            .callback(|_| {
+                // TODO log error
+                let _ = set_mode_in_state();
                 false
             })
             .build(),
