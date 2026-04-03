@@ -8,12 +8,13 @@ use {
     crate::{
         cache::compute_hashes,
         context::get_local_context,
+        context::LocalContext,
         get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
         plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
         utils::{
-            clear_buf_namespace_objects, get_buf_filename, get_buf_line, get_buf_line_count,
-            random_range, set_buf_extmark, sha256,
+            clear_buf_namespace_objects, get_buf_filename, get_buf_line, random_range,
+            set_buf_extmark, sha256,
         },
         Error, FimCompletionMessage, FimTimingsData, LttwResult,
     },
@@ -155,6 +156,8 @@ pub fn fim_try_hint() -> LttwResult<()> {
 /// # Returns
 ///  - `Some(RenderedSuggestion)` - If a cached completion is found
 ///  - `None` - If no cached completion is found
+///
+/// NOTE this happens on the neovim main thread
 pub fn fim_try_hint_inner(
     state: Arc<PluginState>,
     pos_x: usize,
@@ -243,7 +246,14 @@ pub fn fim_try_hint_inner(
             return Ok(());
         }
 
-        render_fim_suggestion(state.clone(), pos_x, pos_y, &content, ctx.line_cur, None)?;
+        render_fim_suggestion(
+            state.clone(),
+            pos_x,
+            pos_y,
+            &content,
+            ctx.line_cur.clone(),
+            None,
+        )?;
 
         // run async speculative FIM in the background for this position
         // TODO should this just always run even when no hint is shown?
@@ -257,16 +267,26 @@ pub fn fim_try_hint_inner(
     let rt = state.tokio_runtime.clone();
     rt.read().spawn(async move {
         // TODO log error
-        let _ =
-            spawn_fim_completion_worker(state, pos_x, pos_y, buffer_id, lines, prev_for_next_fim)
-                .await;
+        let _ = spawn_fim_completion_worker(
+            state,
+            ctx,
+            pos_x,
+            pos_y,
+            buffer_id,
+            lines,
+            prev_for_next_fim,
+        )
+        .await;
     });
     Ok(())
 }
 
 /// Implementation of FIM worker with optional debounce sequence tracking
+///
+/// NOTE this DOES NOT happens on the neovim main thread - don't call neovim functions
 async fn spawn_fim_completion_worker(
     state: Arc<PluginState>,
+    ctx: LocalContext,
     cursor_x: usize,
     cursor_y: usize,
     buffer_id: u64,
@@ -320,35 +340,27 @@ async fn spawn_fim_completion_worker(
         format!("Spawning worker for ({}, {})", cursor_x, cursor_y),
     );
 
-    //// Collect all neovim information at the start
-    //let fim_state = state.fim_state.clone();
-
-    //// Spawn async task to perform HTTP request
-    //// Check if we should trigger speculative FIM
-    //let speculative_fim = {
-    //    let fim_state_lock = fim_state.read();
-    //    fim_state_lock.hint_shown && !fim_state_lock.content.is_empty()
-    //}
-
-    //let prev_content = if speculative_fim {
-    //    let fim_state_lock = fim_state.read();
-    //    // Trigger Speculative FIM
-    //    Some(&*fim_state_lock.content.clone())
-    //} else {
-    //    None
-    //};
-
-    // TODO handle error
-    fim_completion(state, cursor_x, cursor_y, buffer_id, buffer_lines, prev).await?;
+    fim_completion(
+        state,
+        ctx,
+        cursor_x,
+        cursor_y,
+        buffer_id,
+        buffer_lines,
+        prev,
+    )
+    .await?;
 
     Ok(())
 }
 
 /// Main FIM completion function that sends a request to the server
 /// Returns the content and optionally timing info for display
-#[allow(clippy::too_many_arguments)] // FIM requires context from multiple sources
+///
+/// NOTE this DOES NOT happens on the neovim main thread - don't call neovim functions
 pub async fn fim_completion(
     state: Arc<PluginState>,
+    ctx: LocalContext,
     pos_x: usize,
     pos_y: usize,
     buffer_id: u64,
@@ -381,7 +393,6 @@ pub async fn fim_completion(
     state.debug_manager.read().log("fim_completion", "1");
 
     // Get local context
-    let ctx = get_local_context(&lines, pos_x, pos_y, prev.clone(), &state.config.read());
     state.debug_manager.read().log("fim_completion", "2");
 
     // Skip auto FIM if too much suffix
@@ -511,14 +522,17 @@ pub async fn fim_completion(
             }
         }
 
-        // Send result through channel
-        let Some(orig_line) = lines.get(pos_y) else {
-            return;
-        };
-        if should_abort(pos_y, orig_line, &content) {
-            return;
-        }
+        // NOTE this causes a race condition as it calls neovim functions
+        //
+        //let Some(orig_line) = lines.get(pos_y) else {
+        //    return;
+        //};
+        // TODO fix or delete
+        //if should_abort(pos_y, orig_line, &content) {
+        //    return;
+        //}
 
+        // Send result through channel
         // Extract timing data from the response if available
         let timings = response.timings.as_ref().map(|t| FimTimingsData {
             n_prompt: t.prompt_n.unwrap_or(0),
@@ -533,7 +547,7 @@ pub async fn fim_completion(
 
         let msg = FimCompletionMessage {
             buffer_id,
-            buffer_lines: lines,
+            ctx,
             cursor_x: pos_x,
             cursor_y: pos_y,
             content,
@@ -574,10 +588,11 @@ pub async fn fim_completion(
         };
         state.debug_manager.read().log("fim_completion", "10.2");
 
-        let prefix_start = pos_y.saturating_sub(ring_scope);
-        let prefix_end = pos_y.saturating_sub(n_prefix);
+        let max_y = lines.len() - 1;
+        let prefix_start = pos_y.saturating_sub(ring_scope).min(max_y);
+        let prefix_end = pos_y.saturating_sub(n_prefix).min(max_y);
         state.debug_manager.read().log("fim_completion", "10.21");
-        let prefix_lines = get_buf_lines(prefix_start..=prefix_end);
+        let prefix_lines = &lines[prefix_start..=prefix_end]; // XXX
         state.debug_manager.read().log("fim_completion", "10.3");
         let filename = get_buf_filename()?;
         if !prefix_lines.is_empty() {
@@ -586,11 +601,10 @@ pub async fn fim_completion(
         }
         state.debug_manager.read().log("fim_completion", "10.4");
 
-        let max_y = get_buf_line_count();
         state.debug_manager.read().log("fim_completion", "10.5");
         let suffix_start = (pos_y + n_suffix).min(max_y);
         let suffix_end = (pos_y + n_suffix + ring_chunk_size).min(max_y);
-        let suffix_lines = get_buf_lines(suffix_start..=suffix_end);
+        let suffix_lines = &lines[suffix_start..=suffix_end];
         if !suffix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
             ring_buffer_lock.pick_chunk(suffix_lines, filename, false, false)?;
@@ -608,6 +622,7 @@ pub async fn fim_completion(
 }
 
 // should we abort the completion because the content has changed since we started this completion
+#[allow(dead_code)] // TODO fix or delete (needs to not make neovim calls not on the main thread)
 fn should_abort(cursor_y: usize, orig_line: &str, content: &str) -> bool {
     let (_new_x, new_y) = get_pos();
     if cursor_y != new_y {
@@ -669,6 +684,8 @@ pub async fn send_request(
 
 /// Render FIM suggestion at the current cursor location
 /// Filters out duplicate text that already exists in the buffer
+///
+/// NOTE this happens on the neovim main thread
 pub fn render_fim_suggestion(
     state: Arc<PluginState>,
     pos_x: usize,
@@ -754,6 +771,8 @@ pub fn render_fim_suggestion(
 
 /// Display FIM hint as virtual text using extmarks with optional inline info
 /// The info string is rendered with RightAlign positioning for right-justified display
+//
+/// NOTE this happens on the neovim main thread
 fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
     // Lock the fim_state and config to get the data we need
     let (
@@ -1125,7 +1144,7 @@ mod tests {
         // Add first chunk
         ring_buffer
             .pick_chunk_inner(
-                vec![
+                &[
                     "fn main() {".to_string(),
                     "    println!(\"hello\");".to_string(),
                     "}".to_string(),
@@ -1142,7 +1161,7 @@ mod tests {
         // Add second chunk (should not evict first since they're different)
         ring_buffer
             .pick_chunk_inner(
-                vec![
+                &[
                     "use std::io;".to_string(),
                     "fn read_input() {".to_string(),
                     "    let mut s = String::new();".to_string(),
@@ -1158,7 +1177,7 @@ mod tests {
         // Add third chunk
         ring_buffer
             .pick_chunk_inner(
-                vec![
+                &[
                     "mod test;".to_string(),
                     "fn test_func() {".to_string(),
                     "    assert_eq!(1, 1);".to_string(),
@@ -1174,7 +1193,7 @@ mod tests {
         // Add fourth chunk - should evict the oldest one due to max_chunks limit
         ring_buffer
             .pick_chunk_inner(
-                vec![
+                &[
                     "pub fn export_func() {".to_string(),
                     "    test_func();".to_string(),
                     "}".to_string(),
@@ -1204,7 +1223,7 @@ mod tests {
 
         // Add first chunk
         ring_buffer
-            .pick_chunk_inner(chunk1.clone(), String::new(), true)
+            .pick_chunk_inner(&chunk1, String::new(), true)
             .unwrap();
         ring_buffer.update();
 
@@ -1215,7 +1234,7 @@ mod tests {
         chunk2[1] = "    let x = 100;".to_string(); // Slightly different
 
         ring_buffer
-            .pick_chunk_inner(chunk2, String::new(), true)
+            .pick_chunk_inner(&chunk2, String::new(), true)
             .unwrap();
         ring_buffer.update();
 
@@ -1232,7 +1251,7 @@ mod tests {
         // Add some chunks to the ring buffer
         ring_buffer
             .pick_chunk_inner(
-                vec![
+                &[
                     "mod module1;".to_string(),
                     "mod module2;".to_string(),
                     "mod module3;".to_string(),
@@ -1285,7 +1304,7 @@ mod tests {
         // Add chunks to ring buffer
         ring_buffer
             .pick_chunk_inner(
-                vec![
+                &[
                     "fn test1() {".to_string(),
                     "    println!(\"test1\");".to_string(),
                     "}".to_string(),
@@ -1343,7 +1362,7 @@ mod tests {
 
         ring_buffer
             .pick_chunk_inner(
-                vec![
+                &[
                     "fn func1() {".to_string(),
                     "    let x = 1;".to_string(),
                     "}".to_string(),
@@ -1365,7 +1384,7 @@ mod tests {
             ];
 
             ring_buffer
-                .pick_chunk_inner(similar_chunk, String::new(), true)
+                .pick_chunk_inner(&similar_chunk, String::new(), true)
                 .unwrap();
             ring_buffer.update();
         }
@@ -1389,7 +1408,7 @@ mod tests {
         ];
 
         ring_buffer
-            .pick_chunk_inner(chunk_data.clone(), String::new(), true)
+            .pick_chunk_inner(&chunk_data, String::new(), true)
             .unwrap();
         ring_buffer.update();
 
@@ -1408,7 +1427,7 @@ mod tests {
         for i in 0..5 {
             ring_buffer
                 .pick_chunk_inner(
-                    vec![
+                    &[
                         format!("fn func{}_()", i),
                         format!("    let x = {};", i),
                         "}".to_string(),
@@ -1454,7 +1473,7 @@ mod tests {
 
         // Add chunk first time
         ring_buffer
-            .pick_chunk_inner(chunk.clone(), String::new(), true)
+            .pick_chunk_inner(&chunk, String::new(), true)
             .unwrap();
         ring_buffer.update();
 
@@ -1462,7 +1481,7 @@ mod tests {
 
         // Try to add exact same chunk again (should be ignored)
         ring_buffer
-            .pick_chunk_inner(chunk.clone(), String::new(), true)
+            .pick_chunk_inner(&chunk, String::new(), true)
             .unwrap();
 
         // Should still be 1 (no duplicate added)
@@ -1470,7 +1489,7 @@ mod tests {
 
         // Try to add same chunk via queued (should also be ignored)
         ring_buffer
-            .pick_chunk_inner(chunk, String::new(), true)
+            .pick_chunk_inner(&chunk, String::new(), true)
             .unwrap();
 
         // Should still have same queued count

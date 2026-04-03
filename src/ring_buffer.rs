@@ -135,7 +135,7 @@ impl RingBuffer {
     /// * `do_evict` - If true, evict chunks that are very similar to the new one
     pub fn pick_chunk(
         &mut self,
-        text: Vec<String>,
+        text: &[String],
         filename: String,
         no_mod: bool,
         do_evict: bool,
@@ -158,7 +158,7 @@ impl RingBuffer {
     /// * `do_evict` - If true, evict chunks that are very similar to the new one
     pub fn pick_chunk_inner(
         &mut self,
-        text: Vec<String>,
+        text: &[String],
         filename: String,
         do_evict: bool,
     ) -> LttwResult<()> {
@@ -185,7 +185,7 @@ impl RingBuffer {
                 0
             };
             let l1 = (l0 + chunk_size_half).min(text_len);
-            text[l0..l1].to_vec()
+            &text[l0..l1]
         };
 
         let chunk_str = chunk.join("\n") + "\n";
@@ -200,7 +200,7 @@ impl RingBuffer {
 
         // Evict queued chunks that are very similar
         for i in (0..self.queued.len()).rev() {
-            if chunk_similarity(&self.queued[i].data, &chunk) > 0.9 {
+            if chunk_similarity(&self.queued[i].data, chunk) > 0.9 {
                 if do_evict {
                     self.queued.remove(i);
                     self.n_evict += 1;
@@ -212,7 +212,7 @@ impl RingBuffer {
 
         // Also evict chunks from the ring
         for i in (0..self.chunks.len()).rev() {
-            if chunk_similarity(&self.chunks[i].data, &chunk) > 0.9 {
+            if chunk_similarity(&self.chunks[i].data, chunk) > 0.9 {
                 if do_evict {
                     self.chunks.remove(i);
                     self.n_evict += 1;
@@ -229,7 +229,7 @@ impl RingBuffer {
         }
 
         self.queued.push(Chunk {
-            data: chunk,
+            data: chunk.to_vec(),
             chunk_str,
             time: Instant::now(),
             filename, // Will be set by caller
@@ -334,7 +334,7 @@ mod tests {
         let mut ring = RingBuffer::new(3, 64);
 
         ring.pick_chunk_inner(
-            vec![
+            &[
                 "line1".to_string(),
                 "line2".to_string(),
                 "line3".to_string(),
@@ -344,7 +344,7 @@ mod tests {
         )
         .unwrap();
         ring.pick_chunk_inner(
-            vec![
+            &[
                 "line4".to_string(),
                 "line5".to_string(),
                 "line6".to_string(),
@@ -368,7 +368,7 @@ mod tests {
 
         // Add chunks
         ring.pick_chunk_inner(
-            vec![
+            &[
                 "line1".to_string(),
                 "line2".to_string(),
                 "line3".to_string(),
@@ -378,7 +378,7 @@ mod tests {
         )
         .unwrap();
         ring.pick_chunk_inner(
-            vec![
+            &[
                 "line4".to_string(),
                 "line5".to_string(),
                 "line6".to_string(),
@@ -388,7 +388,7 @@ mod tests {
         )
         .unwrap();
         ring.pick_chunk_inner(
-            vec![
+            &[
                 "line7".to_string(),
                 "line8".to_string(),
                 "line9".to_string(),
@@ -413,7 +413,7 @@ mod tests {
         let mut ring = RingBuffer::new(2, 64);
 
         ring.pick_chunk_inner(
-            vec![
+            &[
                 "line1".to_string(),
                 "line2".to_string(),
                 "line3".to_string(),
@@ -423,7 +423,7 @@ mod tests {
         )
         .unwrap();
         ring.pick_chunk_inner(
-            vec![
+            &[
                 "line4".to_string(),
                 "line5".to_string(),
                 "line6".to_string(),
@@ -452,7 +452,7 @@ mod tests {
 
         for _i in 0..10 {
             ring.pick_chunk_inner(
-                vec![
+                &[
                     "line1".to_string(),
                     "line2".to_string(),
                     "line3".to_string(),
@@ -472,7 +472,7 @@ mod tests {
         let mut ring = RingBuffer::new(2, 64);
 
         ring.pick_chunk_inner(
-            vec![
+            &[
                 "line1".to_string(),
                 "line2".to_string(),
                 "line3".to_string(),
@@ -482,7 +482,7 @@ mod tests {
         )
         .unwrap();
         ring.pick_chunk_inner(
-            vec![
+            &[
                 "line4".to_string(),
                 "line5".to_string(),
                 "line6".to_string(),
@@ -504,7 +504,7 @@ mod tests {
         let mut ring = RingBuffer::new(2, 64);
 
         ring.pick_chunk_inner(
-            vec![
+            &[
                 "line1".to_string(),
                 "line2".to_string(),
                 "line3".to_string(),
@@ -514,7 +514,7 @@ mod tests {
         )
         .unwrap();
         ring.pick_chunk_inner(
-            vec![
+            &[
                 "line4".to_string(),
                 "line5".to_string(),
                 "line6".to_string(),
@@ -524,7 +524,7 @@ mod tests {
         )
         .unwrap();
         ring.pick_chunk_inner(
-            vec![
+            &[
                 "line7".to_string(),
                 "line8".to_string(),
                 "line9".to_string(),

@@ -20,6 +20,7 @@ pub mod utils;
 pub use error::{Error, LttwResult};
 
 use {
+    context::LocalContext,
     fim::{fim_try_hint, FimAcceptType},
     nvim_oxi::{Dictionary, Function},
     plugin_state::{get_state, init_state},
@@ -53,7 +54,7 @@ pub struct FimTimingsData {
 #[derive(Debug, Clone)]
 pub struct FimCompletionMessage {
     buffer_id: u64,                  // Buffer handle to ensure we're still in same buffer
-    buffer_lines: Vec<String>,       // All buffer lines captured at start
+    ctx: LocalContext,               // All buffer lines captured at start
     cursor_x: usize,                 // Cursor position X
     cursor_y: usize,                 // Cursor position Y
     content: String,                 // FIM response content
@@ -269,15 +270,6 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> LttwResult<()> {
         ),
     );
 
-    // Parse response and render
-    let ctx = context::get_local_context(
-        &msg.buffer_lines,
-        msg.cursor_x,
-        msg.cursor_y,
-        None,
-        &state.config.read(),
-    );
-
     //state.debug_manager.read().log(
     //    "handle_fim_completion_message",
     //    format!("msg.content: \n{}", msg.content),
@@ -287,7 +279,7 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> LttwResult<()> {
         msg.cursor_x,
         msg.cursor_y,
         &msg.content,
-        ctx.line_cur,
+        msg.ctx.line_cur,
         msg.timings,
     )
 }
@@ -544,7 +536,7 @@ fn on_text_yank_post() -> LttwResult<()> {
 
         // Pick chunk from yanked text
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(yanked, filename, false, true)?;
+        ring_buffer_lock.pick_chunk(&yanked, filename, false, true)?;
     }
 
     Ok(())
@@ -566,7 +558,7 @@ fn on_buf_enter_gather_chunks() -> LttwResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(lines, filename, false, true)?;
+        ring_buffer_lock.pick_chunk(&lines, filename, false, true)?;
     }
 
     Ok(())
@@ -588,7 +580,7 @@ fn on_buf_leave() -> LttwResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(lines, filename, false, true)?;
+        ring_buffer_lock.pick_chunk(&lines, filename, false, true)?;
     }
 
     Ok(())
@@ -610,7 +602,7 @@ fn on_buf_write_post() -> LttwResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(lines, filename, false, true)?;
+        ring_buffer_lock.pick_chunk(&lines, filename, false, true)?;
     }
 
     Ok(())
