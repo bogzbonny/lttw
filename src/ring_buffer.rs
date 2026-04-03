@@ -175,21 +175,7 @@ impl RingBuffer {
             return Ok(());
         }
 
-        // Pick a random chunk
-        let chunk = if text.len() + 1 < self.chunk_size {
-            text
-        } else {
-            let chunk_size_half = self.chunk_size / 2;
-            let text_len = text.len();
-            // Safety: ensure we don't panic with random_range when text is too small
-            let l0 = if text_len > chunk_size_half {
-                random_range(0, text_len.saturating_sub(chunk_size_half))
-            } else {
-                0
-            };
-            let l1 = (l0 + chunk_size_half).min(text_len);
-            &text[l0..l1]
-        };
+        let chunk = self.get_chunk_from_text(text);
 
         let chunk_str = chunk.join("\n") + "\n";
 
@@ -202,27 +188,8 @@ impl RingBuffer {
         }
 
         // Evict queued chunks that are very similar
-        for i in (0..self.queued.len()).rev() {
-            if chunk_similarity(&self.queued[i].data, chunk) > 0.9 {
-                if do_evict {
-                    self.queued.remove(i);
-                    self.n_evict += 1;
-                } else {
-                    return Ok(());
-                }
-            }
-        }
-
-        // Also evict chunks from the ring
-        for i in (0..self.chunks.len()).rev() {
-            if chunk_similarity(&self.chunks[i].data, chunk) > 0.9 {
-                if do_evict {
-                    self.chunks.remove(i);
-                    self.n_evict += 1;
-                } else {
-                    return Ok(());
-                }
-            }
+        if do_evict {
+            self.evict_similar(chunk, 0.9);
         }
 
         // Keep only the last 16 queued chunks
@@ -288,6 +255,32 @@ impl RingBuffer {
     /// Get the number of evicted chunks
     pub fn n_evict(&self) -> usize {
         self.n_evict
+    }
+
+    // Gets a chunk from the text, either the whole text (in len < chunk size)
+    // or a random range selection from the provided text which is of the chunk size.
+    //
+    // Random select to:
+    // - Avoids Bias: By randomly selecting the starting position within the text, it prevents always
+    //   picking the same or similar chunks from the same locations, ensuring a more diverse context
+    //   collection llama.vim:435-438 .
+    // - Better Coverage: When gathering context from various events (yank, buffer enter/leave,
+    //   file save), random sampling helps capture different parts of the codebase that might be
+    //   relevant for future completions
+    pub fn get_chunk_from_text<'a>(&self, text: &'a [String]) -> &'a [String] {
+        let text_len = text.len();
+        if text_len < self.chunk_size {
+            text
+        } else {
+            let chunk_size_half = self.chunk_size / 2;
+            let l0 = if text_len > chunk_size_half {
+                random_range(0, text_len.saturating_sub(chunk_size_half))
+            } else {
+                0
+            };
+            let l1 = (l0 + chunk_size_half).min(text_len);
+            &text[l0..l1]
+        }
     }
 
     /// Evict chunks from the ring buffer that are very similar to the given text

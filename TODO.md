@@ -26,6 +26,10 @@ Add in rendering of the build info string (see build_info_string) to the rust
 code. Render this extmarks which are RightHand justified. 
 
 05. integrate git diff system into extra 
+     - definitely should integrate with extra_input ring_buffer system -
+       ordering is important
+     - 
+
 
 05. integrate in LSP diagnostics into extra 
      - Use autocmd and keep our own map 
@@ -59,6 +63,8 @@ local query_string = [[
        - probably want to have a config option for all the words which we don't
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
+
+10. investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
 
 10. easier to use debugging system (like debug! macro)
 20. option to not predict while in comments

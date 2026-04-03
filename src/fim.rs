@@ -434,21 +434,13 @@ pub async fn fim_completion(
         return Ok(());
     }
     state.debug_manager.read().log("fim_completion", "7");
-    let text: Vec<String> = lines[start_line..end_line].to_vec();
-    let text_len = text.len();
-
-    // TODO understand why we use a random here
-    // Safety: ensure we don't panic with random_range when text is too small
-    let l0 = if text_len > ring_chunk_size_half {
-        random_range(0, text_len.saturating_sub(ring_chunk_size_half))
-    } else {
-        0
-    };
-    let l1 = (l0 + ring_chunk_size_half).min(text_len);
-    let chunk: Vec<String> = text[l0..l1].to_vec();
-
-    if !chunk.is_empty() {
-        state.ring_buffer.write().evict_similar(&chunk, 0.5);
+    let text = &lines[start_line..end_line];
+    {
+        let mut rb = state.ring_buffer.write();
+        let chunk = rb.get_chunk_from_text(text);
+        if !chunk.is_empty() {
+            rb.evict_similar(&chunk, 0.5);
+        }
     }
 
     // Build request
