@@ -11,10 +11,13 @@ use {
         get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
         plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
-        utils::{get_buf_filename, get_buf_line, get_buf_line_count, random_range, sha256},
+        utils::{
+            clear_buf_namespace_objects, get_buf_filename, get_buf_line, get_buf_line_count,
+            random_range, set_buf_extmark, sha256,
+        },
         Error, FimCompletionMessage, FimTimingsData, LttwResult,
     },
-    nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition, Buffer},
+    nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition},
     serde::{Deserialize, Serialize},
     std::sync::Arc,
     std::time::{Duration, Instant},
@@ -140,8 +143,8 @@ pub fn fim_try_hint() -> LttwResult<()> {
     let (pos_x, pos_y) = get_pos();
     let state = get_state();
     let lines = get_buf_lines(..);
-    let buffer_handle = get_current_buffer_id();
-    fim_try_hint_inner(state, pos_x, pos_y, buffer_handle, lines)
+    let buffer_id = get_current_buffer_id();
+    fim_try_hint_inner(state, pos_x, pos_y, buffer_id, lines)
 }
 
 /// Try to generate a suggestion using the data in the cache
@@ -156,7 +159,7 @@ pub fn fim_try_hint_inner(
     state: Arc<PluginState>,
     pos_x: usize,
     pos_y: usize,
-    buffer_handle: u64,
+    buffer_id: u64,
     lines: Vec<String>,
 ) -> LttwResult<()> {
     // Get local context
@@ -254,15 +257,9 @@ pub fn fim_try_hint_inner(
     let rt = state.tokio_runtime.clone();
     rt.read().spawn(async move {
         // TODO log error
-        let _ = spawn_fim_completion_worker(
-            state,
-            pos_x,
-            pos_y,
-            buffer_handle,
-            lines,
-            prev_for_next_fim,
-        )
-        .await;
+        let _ =
+            spawn_fim_completion_worker(state, pos_x, pos_y, buffer_id, lines, prev_for_next_fim)
+                .await;
     });
     Ok(())
 }
@@ -272,7 +269,7 @@ async fn spawn_fim_completion_worker(
     state: Arc<PluginState>,
     cursor_x: usize,
     cursor_y: usize,
-    buffer_handle: u64,
+    buffer_id: u64,
     buffer_lines: Vec<String>,
     prev: Option<Vec<String>>, // speculative FIM content
 ) -> LttwResult<()> {
@@ -342,7 +339,7 @@ async fn spawn_fim_completion_worker(
     //};
 
     // TODO handle error
-    fim_completion(state, cursor_x, cursor_y, buffer_handle, buffer_lines, prev).await?;
+    fim_completion(state, cursor_x, cursor_y, buffer_id, buffer_lines, prev).await?;
 
     Ok(())
 }
@@ -354,7 +351,7 @@ pub async fn fim_completion(
     state: Arc<PluginState>,
     pos_x: usize,
     pos_y: usize,
-    buffer_handle: u64,
+    buffer_id: u64,
     lines: Vec<String>,
     prev: Option<Vec<String>>, // speculative FIM content
 ) -> LttwResult<()> {
@@ -535,7 +532,7 @@ pub async fn fim_completion(
         });
 
         let msg = FimCompletionMessage {
-            buffer_handle,
+            buffer_id,
             buffer_lines: lines,
             cursor_x: pos_x,
             cursor_y: pos_y,
@@ -793,13 +790,10 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
 
     // Clear any existing extmarks in the namespace before setting new ones
     if let Some(ns_id) = extmark_ns {
-        let mut buf = Buffer::current();
-        let _ = buf.clear_namespace(ns_id, ..);
+        clear_buf_namespace_objects(ns_id)?;
     }
 
     if let Some(ns_id) = extmark_ns {
-        let mut buf = Buffer::current();
-
         // Build virtual text string - first line of suggestion
         let suggestion_text = content[0].clone();
         let (suggestion_text, use_inline) =
@@ -828,7 +822,7 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
         }
 
         // Set the extmark for suggestion text at cursor position
-        match buf.set_extmark(ns_id, pos_y, pos_x, &suggestion_opts.build()) {
+        match set_buf_extmark(ns_id, pos_y, pos_x, &suggestion_opts.build()) {
             Ok(_id) => {
                 debug_manager.log(
                     "display_fim_text",
@@ -915,7 +909,7 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
                     ),
                 );
 
-                match buf.set_extmark(ns_id, pos_y, eol_col, &info_opts.build()) {
+                match set_buf_extmark(ns_id, pos_y, eol_col, &info_opts.build()) {
                     Ok(_id) => {
                         debug_manager.log(
                             "display_fim_text",

@@ -3,12 +3,12 @@ use {
         autocommands::clear_filetype_autocommand, debug_clear, debug_toggle, disable_plugin,
         enable_plugin, instruction, is_enabled, toggle_auto_fim, LttwResult,
     },
-    nvim_oxi::api::{self},
+    nvim_oxi::api::create_user_command,
 };
 
 /// Register nvim-oxi commands for the plugin
 pub fn register_commands() -> LttwResult<()> {
-    let _ = api::create_user_command(
+    let _ = create_user_command(
         "LttwToggleAutoFim",
         |_| -> LttwResult<()> {
             let _ = toggle_auto_fim();
@@ -17,7 +17,7 @@ pub fn register_commands() -> LttwResult<()> {
         &Default::default(),
     );
 
-    let _ = api::create_user_command(
+    let _ = create_user_command(
         "LttwDisable",
         |_| -> LttwResult<()> {
             // manual disabling also removes the filetype check autocommand
@@ -28,7 +28,7 @@ pub fn register_commands() -> LttwResult<()> {
         &Default::default(),
     );
 
-    let _ = api::create_user_command(
+    let _ = create_user_command(
         "LttwEnable",
         |_| -> LttwResult<()> {
             let _ = enable_plugin();
@@ -37,20 +37,20 @@ pub fn register_commands() -> LttwResult<()> {
         &Default::default(),
     );
 
-    let _ = api::create_user_command(
+    let _ = create_user_command(
         "LttwIsEnabled",
         |_| -> LttwResult<()> {
             let en = is_enabled();
             let msg = format!("LttwIsEnabled: {}", en);
             // Use nvim_command to execute an echo command
-            api::command(&format!("echo '{}'", msg))?;
+            nvim_oxi::api::command(&format!("echo '{}'", msg))?;
             Ok(())
         },
         &Default::default(),
     );
 
     // Instruction commands
-    let _ = api::create_user_command(
+    let _ = create_user_command(
         "LttwInst",
         |_| -> LttwResult<()> {
             // TODO: Get visual range and start instruction
@@ -60,7 +60,7 @@ pub fn register_commands() -> LttwResult<()> {
         &Default::default(),
     );
 
-    let _ = api::create_user_command(
+    let _ = create_user_command(
         "LttwInstRerun",
         |_| -> LttwResult<()> {
             instruction::inst_rerun()?;
@@ -69,7 +69,7 @@ pub fn register_commands() -> LttwResult<()> {
         &Default::default(),
     );
 
-    let _ = api::create_user_command(
+    let _ = create_user_command(
         "LttwInstContinue",
         |_| -> LttwResult<()> {
             instruction::inst_continue()?;
@@ -79,7 +79,7 @@ pub fn register_commands() -> LttwResult<()> {
     );
 
     // Debug commands
-    let _ = api::create_user_command(
+    let _ = create_user_command(
         "LttwDebugToggle",
         |_| -> LttwResult<()> {
             debug_toggle()?;
@@ -88,7 +88,7 @@ pub fn register_commands() -> LttwResult<()> {
         &Default::default(),
     );
 
-    let _ = api::create_user_command(
+    let _ = create_user_command(
         "LttwDebugClear",
         |_| -> LttwResult<()> {
             debug_clear()?;

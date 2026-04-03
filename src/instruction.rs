@@ -5,10 +5,12 @@
 
 use {
     crate::{
-        config::LttwConfig, get_buf_lines, get_pos, get_state, utils::get_current_buffer_id, Error,
-        LttwResult,
+        config::LttwConfig,
+        get_buf_lines, get_pos, get_state,
+        utils::{del_buf_extmark, get_current_buffer_id, set_buf_extmark, set_buf_lines},
+        Error, LttwResult,
     },
-    nvim_oxi::{api::Buffer, Dictionary},
+    nvim_oxi::Dictionary,
     serde::{Deserialize, Serialize},
     std::sync::atomic::Ordering,
 };
@@ -500,8 +502,6 @@ fn inst_start(l0: i64, l1: i64, inst: &str) -> LttwResult<i64> {
 
     // Add visual marker at the end of the range
     if let Some(ns_id) = req.ns_id {
-        let mut buf = Buffer::current();
-
         // Create extmark at end of range to show instruction status
         let opts = nvim_oxi::api::opts::SetExtmarkOptsBuilder::default()
             .virt_text(vec![(
@@ -511,7 +511,7 @@ fn inst_start(l0: i64, l1: i64, inst: &str) -> LttwResult<i64> {
             .virt_text_pos(nvim_oxi::api::types::ExtmarkVirtTextPosition::Eol)
             .build();
 
-        match buf.set_extmark(ns_id, l1 as usize, 0, &opts) {
+        match set_buf_extmark(ns_id, l1 as usize, 0, &opts) {
             Ok(id) => {
                 req.extmark_id = Some(id);
                 state.debug_manager.read().log(
@@ -690,11 +690,9 @@ fn inst_update_virt_text(req_id: i64) -> LttwResult<()> {
         }
     };
 
-    let mut buf = Buffer::current();
-
     // Clear old extmark
     if let Some(old_id) = extmark_id {
-        let _ = buf.del_extmark(ns_id, old_id);
+        let _ = del_buf_extmark(ns_id, old_id);
     }
 
     // Create new extmark with updated status
@@ -703,7 +701,7 @@ fn inst_update_virt_text(req_id: i64) -> LttwResult<()> {
         .virt_text_pos(nvim_oxi::api::types::ExtmarkVirtTextPosition::Eol)
         .build();
 
-    match buf.set_extmark(ns_id, range_1, 0, &opts) {
+    match set_buf_extmark(ns_id, range_1, 0, &opts) {
         Ok(new_id) => {
             // Update the request with new extmark id
             let mut instruction_requests_lock = state.instruction_requests.write();
@@ -824,8 +822,7 @@ fn inst_accept() -> LttwResult<()> {
                 // Still clean up the visual marker
                 if let Some(ns_id) = req.ns_id {
                     if let Some(extmark_id) = req.extmark_id {
-                        let mut buf = Buffer::current();
-                        let _ = buf.del_extmark(ns_id, extmark_id);
+                        del_buf_extmark(ns_id, extmark_id)?;
                     }
                 }
                 return Ok(());
@@ -846,11 +843,10 @@ fn inst_accept() -> LttwResult<()> {
             );
 
             // Apply the result to the buffer using current buffer (assuming we're on the right buffer)
-            let mut buf = Buffer::current();
 
             // Delete the original range and insert new lines in one operation
             // set_lines replaces lines in range [start, end) with new lines
-            match buf.set_lines(l0..(l1 + 1), true, result_lines) {
+            match set_buf_lines(l0..(l1 + 1), result_lines) {
                 Ok(_) => {
                     let state = get_state();
                     state.debug_manager.read().log(
@@ -869,9 +865,8 @@ fn inst_accept() -> LttwResult<()> {
 
             // Clear the visual marker from the original location
             if req.ns_id.is_some() && req.extmark_id.is_some() {
-                let mut buf = Buffer::current();
                 if let (Some(ns_id), Some(extmark_id)) = (req.ns_id, req.extmark_id) {
-                    let _ = buf.del_extmark(ns_id, extmark_id);
+                    del_buf_extmark(ns_id, extmark_id)?;
                 }
             }
 
@@ -920,8 +915,7 @@ fn inst_cancel() -> LttwResult<()> {
             // Delete the visual marker
             if let Some(ns_id) = req.ns_id {
                 if let Some(extmark_id) = req.extmark_id {
-                    let mut buf = Buffer::current();
-                    match buf.del_extmark(ns_id, extmark_id) {
+                    match del_buf_extmark(ns_id, extmark_id) {
                         Ok(_) => {
                             let state = get_state();
                             state.debug_manager.read().log(

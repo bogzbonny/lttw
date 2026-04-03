@@ -3,7 +3,7 @@ use {
         cache, config, debug, instruction::InstructionRequestState, ring_buffer, Error,
         FimCompletionMessage, FimState, LttwResult,
     },
-    nvim_oxi::api,
+    nvim_oxi::api::create_namespace,
     parking_lot::RwLock,
     std::{
         collections::HashMap,
@@ -71,8 +71,8 @@ impl Default for PluginState {
         let chunk_size = config.ring_chunk_size as usize;
 
         // Create namespaces for extmarks
-        let extmark_ns = Some(api::create_namespace("lttw_fim"));
-        let inst_ns = Some(api::create_namespace("lttw_inst"));
+        let extmark_ns = Some(create_namespace("lttw_fim"));
+        let inst_ns = Some(create_namespace("lttw_inst"));
 
         // Create a multi-threaded tokio runtime
         let runtime = match tokio::runtime::Builder::new_multi_thread()

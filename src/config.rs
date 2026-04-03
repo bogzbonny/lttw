@@ -4,7 +4,7 @@
 // configuration into a strongly-typed Rust struct.
 
 use {
-    crate::LttwResult,
+    crate::{utils::get_var, LttwResult},
     nvim_oxi::conversion::FromObject,
     serde::{Deserialize, Serialize},
     serde_json::Value,
@@ -110,13 +110,11 @@ impl LttwConfig {
     /// Load configuration from Neovim global variable vim.g.lttw_config
     /// This merges user config with defaults - only handles basic types supported by nvim_oxi
     pub fn from_nvim_globals() -> Self {
-        use nvim_oxi::api;
-
         // Start with defaults
         let mut config = Self::default();
 
         // Try to get vim.g.lttw_config
-        let obj: nvim_oxi::Object = match api::get_var("lttw_config") {
+        let obj: nvim_oxi::Object = match get_var("lttw_config") {
             Ok(o) => o,
             Err(_) => return config, // Return defaults on error
         };

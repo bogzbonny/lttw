@@ -21,20 +21,18 @@ pub use error::{Error, LttwResult};
 
 use {
     fim::{fim_try_hint, FimAcceptType},
-    nvim_oxi::{
-        api::{
-            del_autocmd, {self, Buffer, Window},
-        },
-        Dictionary, Function,
-    },
+    nvim_oxi::{Dictionary, Function},
     plugin_state::{get_state, init_state},
     std::{
-        convert::TryInto,
         sync::atomic::Ordering,
         time::{Duration, Instant},
     },
     tokio::sync::mpsc,
-    utils::{get_buf_filename, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode},
+    utils::{
+        clear_buf_namespace_objects, del_autocmd, get_buf_filename, get_buf_lines,
+        get_current_buffer_id, get_current_filetype, get_pos, get_yanked_text, in_insert_mode,
+        set_buf_lines, set_window_cursor,
+    },
 };
 
 // FIM completion channel types for async communication between worker and main thread
@@ -54,11 +52,11 @@ pub struct FimTimingsData {
 /// Message sent from async worker to main thread when completion is ready
 #[derive(Debug, Clone)]
 pub struct FimCompletionMessage {
-    buffer_handle: u64,        // Buffer handle to ensure we're still in same buffer
-    buffer_lines: Vec<String>, // All buffer lines captured at start
-    cursor_x: usize,           // Cursor position X
-    cursor_y: usize,           // Cursor position Y
-    content: String,           // FIM response content
+    buffer_id: u64,                  // Buffer handle to ensure we're still in same buffer
+    buffer_lines: Vec<String>,       // All buffer lines captured at start
+    cursor_x: usize,                 // Cursor position X
+    cursor_y: usize,                 // Cursor position Y
+    content: String,                 // FIM response content
     timings: Option<FimTimingsData>, // Timing information from server response
 }
 
@@ -74,7 +72,7 @@ pub struct FimCompletionMessage {
 pub fn lttw() -> LttwResult<Dictionary> {
     let mut functions = Dictionary::new();
 
-    functions.insert::<&str, Function<(), ()>>("lttw_setup", Function::from(|_| lttw_setup()));
+    functions.insert::<&str, Function<(), ()>>("setup", Function::from(|_| lttw_setup()));
 
     Ok(functions)
 }
@@ -208,7 +206,7 @@ fn process_pending_display() -> LttwResult<()> {
 
     // Only display if we are in insert mode
     if !in_insert_mode()? {
-        fim_hide(); // failsafe if somehow a hint weezled its way in there
+        fim_hide()?; // failsafe if somehow a hint weezled its way in there
         return Ok(());
     }
 
@@ -251,13 +249,13 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> LttwResult<()> {
     let state = get_state();
 
     // Check if we're still in the same buffer
-    let current_buf: u64 = Buffer::current().handle().try_into().unwrap_or(0);
-    if current_buf != msg.buffer_handle {
+    let current_buf = get_current_buffer_id();
+    if current_buf != msg.buffer_id {
         state.debug_manager.read().log(
             "handle_fim_completion_message",
             format!(
                 "Buffer changed, ignoring completion (expected {}, got {})",
-                msg.buffer_handle, current_buf
+                msg.buffer_id, current_buf
             ),
         );
         return Ok(());
@@ -267,7 +265,7 @@ fn handle_fim_completion_message(msg: FimCompletionMessage) -> LttwResult<()> {
         "handle_fim_completion_message",
         format!(
             "Received completion for buffer {} at ({}, {})",
-            msg.buffer_handle, msg.cursor_x, msg.cursor_y
+            msg.buffer_id, msg.cursor_x, msg.cursor_y
         ),
     );
 
@@ -334,13 +332,8 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<Option<String>> {
     );
 
     // Set the buffer lines with the accepted content
-    let buf = Buffer::current();
-
     // Get current lines and convert to owned strings
-    let all_lines: Vec<String> = match buf.get_lines(.., false) {
-        Ok(iter) => iter.map(|s| s.to_string()).collect(),
-        Err(_) => Vec::new(),
-    };
+    let all_lines: Vec<String> = get_buf_lines(..);
 
     // Update the current line with the new content
     let mut all_lines_modified = all_lines.clone();
@@ -362,24 +355,19 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<Option<String>> {
         pos_y + 1
     };
 
-    let mut buf = Buffer::current();
-    buf.set_lines(
-        pos_y..=pos_y, // replace the one line with all the new content (can be multiple lines)
-        true,
-        all_lines_modified[pos_y..end_line].to_vec(),
-    )?;
+    // replace the one line with all the new content (can be multiple lines)
+    set_buf_lines(pos_y..=pos_y, all_lines_modified[pos_y..end_line].to_vec())?;
 
     // Move the cursor to the end of the accepted text
-    let mut window = Window::current();
     if let Some(rest_lines) = &rest {
         let new_pos_y = pos_y + rest_lines.len();
         let new_pos_x = rest_lines.last().map_or(0, |line| line.len());
-        let _ = window.set_cursor(new_pos_y + 1, new_pos_x);
+        set_window_cursor(new_pos_x, new_pos_y)?;
     } else if let Some(inline) = inline_loc {
-        let _ = window.set_cursor(pos_y + 1, inline);
+        set_window_cursor(inline, pos_y)?;
     } else {
         let new_col = new_line.len();
-        let _ = window.set_cursor(pos_y + 1, new_col);
+        set_window_cursor(new_col, pos_y)?;
     }
 
     // Clear the FIM hint - use write lock
@@ -387,15 +375,14 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<Option<String>> {
 
     // Clear virtual text from display
     if let Some(ns_id) = state.extmark_ns {
-        let mut buf = Buffer::current();
-        let _ = buf.clear_namespace(ns_id, ..);
+        clear_buf_namespace_objects(ns_id)?
     }
 
     Ok(Some(new_line))
 }
 
 /// FIM hide function - clears the FIM hint from display
-fn fim_hide() {
+fn fim_hide() -> LttwResult<()> {
     let state = get_state();
     //state
     //    .debug_manager
@@ -404,11 +391,11 @@ fn fim_hide() {
 
     // Clear virtual text using nvim_buf_clear_namespace()
     if let Some(ns_id_val) = state.extmark_ns {
-        let mut buf = Buffer::current();
-        let _ = buf.clear_namespace(ns_id_val, ..);
+        clear_buf_namespace_objects(ns_id_val)?
     }
 
     state.fim_state.write().clear();
+    Ok(())
 }
 
 /// Debug toggle function - toggles logging
@@ -448,7 +435,7 @@ fn enable_plugin() -> LttwResult<()> {
     }
 
     // Check filetype
-    let filetype = filetype::get_filetype()?;
+    let filetype = get_current_filetype()?;
     if !state.config.read().is_filetype_enabled(&filetype) {
         state.debug_manager.read().log(
             "enable_plugin",
@@ -469,7 +456,7 @@ fn enable_plugin() -> LttwResult<()> {
     autocommands::setup_non_filetype_autocmds()?;
 
     // Hide any existing FIM hints
-    fim_hide();
+    fim_hide()?;
 
     // Mark as enabled
     state.enabled.store(true, Ordering::SeqCst);
@@ -492,7 +479,7 @@ fn disable_plugin() -> LttwResult<()> {
         .log("disable_plugin", "Disabling plugin");
 
     // Hide FIM hints
-    fim_hide();
+    fim_hide()?;
 
     // Remove keymaps
     keymap::remove_keymaps()?;
@@ -531,7 +518,7 @@ fn on_move() -> LttwResult<()> {
     let state = get_state();
     *state.last_move_time.write() = Instant::now();
     state.debug_manager.read().log("on_move", "Cursor moved");
-    fim_hide();
+    fim_hide()?;
     fim_try_hint()?;
     Ok(())
 }
@@ -542,8 +529,7 @@ fn on_text_yank_post() -> LttwResult<()> {
 
     // Get yanked text using vim.fn.getreg()
     // NOTE " is the default register for yanked text
-    let reg_content: String =
-        api::call_function("getreg", ("\"",)).unwrap_or_else(|_| String::new());
+    let reg_content = get_yanked_text()?;
 
     // Split by newlines to get individual lines
     let yanked: Vec<String> = reg_content.split('\n').map(|s| s.to_string()).collect();
@@ -568,12 +554,7 @@ fn on_text_yank_post() -> LttwResult<()> {
 fn on_buf_enter_gather_chunks() -> LttwResult<()> {
     let state = get_state();
 
-    let buf = Buffer::current();
-    let all_lines = buf.get_lines(.., false);
-    let lines: Vec<String> = match all_lines {
-        Ok(iter) => iter.map(|s| s.to_string()).collect(),
-        Err(_) => Vec::new(),
-    };
+    let lines = get_buf_lines(..);
 
     if lines.len() > 3 {
         let filename = get_buf_filename().unwrap_or_default();
@@ -595,12 +576,7 @@ fn on_buf_enter_gather_chunks() -> LttwResult<()> {
 fn on_buf_leave() -> LttwResult<()> {
     let state = get_state();
 
-    let buf = Buffer::current();
-    let all_lines = buf.get_lines(.., false);
-    let lines: Vec<String> = match all_lines {
-        Ok(iter) => iter.map(|s| s.to_string()).collect(),
-        Err(_) => Vec::new(),
-    };
+    let lines = get_buf_lines(..);
 
     if lines.len() > 3 {
         let filename = get_buf_filename().unwrap_or_default();
@@ -622,12 +598,7 @@ fn on_buf_leave() -> LttwResult<()> {
 fn on_buf_write_post() -> LttwResult<()> {
     let state = get_state();
 
-    let buf = Buffer::current();
-    let all_lines = buf.get_lines(.., false);
-    let lines: Vec<String> = match all_lines {
-        Ok(iter) => iter.map(|s| s.to_string()).collect(),
-        Err(_) => Vec::new(),
-    };
+    let lines = get_buf_lines(..);
 
     if lines.len() > 3 {
         let filename = get_buf_filename().unwrap_or_default();

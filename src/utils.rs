@@ -4,7 +4,14 @@
 
 use {
     crate::LttwResult,
-    nvim_oxi::api::{self, Buffer, Window},
+    nvim_oxi::{
+        api::{
+            self, get_option_value,
+            opts::{CreateAutocmdOpts, OptionOpts, SetExtmarkOpts},
+            Buffer, Window,
+        },
+        conversion::FromObject,
+    },
     rand::Rng,
     sha2::{Digest, Sha256},
     std::fs,
@@ -71,8 +78,41 @@ where
     // Use Buffer::current() directly in the match to avoid lifetime issues
     match Buffer::current().get_lines(line_range, false) {
         Ok(iter) => iter.map(|s| s.to_string()).collect(),
+        // TODO log error
         Err(_) => Vec::new(), // Return empty vec on error
     }
+}
+
+/// Get buffer lines from Neovim
+pub fn set_buf_lines<R>(line_range: R, replacement: Vec<String>) -> LttwResult<()>
+where
+    R: RangeBounds<usize>,
+{
+    assert_not_tokio_worker();
+
+    let mut buf = Buffer::current();
+    buf.set_lines(line_range, true, replacement)?;
+    Ok(())
+}
+
+pub fn set_buf_extmark(
+    ns_id: u32,
+    line: usize,
+    col: usize,
+    opts: &SetExtmarkOpts,
+) -> LttwResult<u32> {
+    assert_not_tokio_worker();
+
+    let mut buf = Buffer::current();
+    Ok(buf.set_extmark(ns_id, line, col, opts)?)
+}
+
+pub fn del_buf_extmark(ns_id: u32, extmark_id: u32) -> LttwResult<()> {
+    assert_not_tokio_worker();
+
+    let mut buf = Buffer::current();
+    buf.del_extmark(ns_id, extmark_id)?;
+    Ok(())
 }
 
 /// Get buffer lines from Neovim
@@ -80,6 +120,37 @@ pub fn get_buf_line_count() -> usize {
     assert_not_tokio_worker();
     let buf = Buffer::current();
     buf.line_count().unwrap_or(0)
+}
+
+pub fn create_autocmd<'a, I>(events: I, opts: &CreateAutocmdOpts) -> LttwResult<u32>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    assert_not_tokio_worker();
+    Ok(nvim_oxi::api::create_autocmd(events, opts)?)
+}
+
+pub fn del_autocmd(id: u32) -> LttwResult<()> {
+    assert_not_tokio_worker();
+    nvim_oxi::api::del_autocmd(id)?;
+    Ok(())
+}
+
+pub fn get_var<Var>(name: &str) -> LttwResult<Var>
+where
+    Var: FromObject,
+{
+    assert_not_tokio_worker();
+    Ok(nvim_oxi::api::get_var(name)?)
+}
+
+pub fn get_yanked_text() -> LttwResult<String> {
+    assert_not_tokio_worker();
+    // Get yanked text using vim.fn.getreg()
+    // NOTE " is the default register for yanked text
+    let reg_content: String =
+        api::call_function("getreg", ("\"",)).unwrap_or_else(|_| String::new());
+    Ok(reg_content)
 }
 
 /// Get buffer lines from Neovim
@@ -126,6 +197,29 @@ pub fn get_buf_line(pos_y: usize) -> String {
 pub fn get_current_buffer_id() -> u64 {
     assert_not_tokio_worker();
     Buffer::current().handle().try_into().unwrap_or(0)
+}
+
+/// Get current buffer
+pub fn clear_buf_namespace_objects(ns_id: u32) -> LttwResult<()> {
+    assert_not_tokio_worker();
+    let mut buf = Buffer::current();
+    buf.clear_namespace(ns_id, ..)?;
+    Ok(())
+}
+
+/// Set the window cursor,
+/// pos_x and pos_y are 0 indexed
+pub fn set_window_cursor(pos_x: usize, pos_y: usize) -> LttwResult<()> {
+    assert_not_tokio_worker();
+    let mut window = Window::current();
+    window.set_cursor(pos_y + 1, pos_x)?;
+    Ok(())
+}
+
+pub fn get_current_filetype() -> LttwResult<String> {
+    assert_not_tokio_worker();
+    let ft = get_option_value::<String>("filetype", &OptionOpts::default())?;
+    Ok(ft)
 }
 
 // --------------------------

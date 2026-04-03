@@ -57,6 +57,8 @@ code. Render this extmarks which are RightHand justified.
 05. fix tests-integrations (compile errors) 
 10. easier to use debugging system 
 20. option to not predict while in comments
+20. allow for a more regular setup by passing config params through the setup
+    function
 
  
 

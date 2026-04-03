@@ -1,17 +1,13 @@
 use {
     crate::{fim::FimAcceptType, fim_accept, fim_is_hint_shown, get_state, LttwResult},
-    nvim_oxi::api::{
-        opts::SetKeymapOptsBuilder,
-        types::Mode,
-        {self},
-    },
+    nvim_oxi::api::{del_keymap, opts::SetKeymapOptsBuilder, set_keymap, types::Mode},
 };
 
 // Expression mapping helper functions removed - using command-based callbacks instead
 /// Setup keymaps function - maps keys to call nvim-oxi commands directly
 pub fn setup_keymaps() -> LttwResult<()> {
     // Instruction trigger
-    let _ = api::set_keymap(
+    let _ = set_keymap(
         Mode::Normal,
         "<leader>lli",
         ":LttwInst<CR>",
@@ -19,7 +15,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
     );
 
     // Instruction rerun
-    let _ = api::set_keymap(
+    let _ = set_keymap(
         Mode::Normal,
         "<leader>llr",
         ":LttwInstRerun<CR>",
@@ -27,7 +23,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
     );
 
     // Instruction continue
-    let _ = api::set_keymap(
+    let _ = set_keymap(
         Mode::Normal,
         "<leader>llc",
         ":LttwInstContinue<CR>",
@@ -38,7 +34,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
     // These commands check if FIM hint is shown and act accordingly
 
     // FIM accept full (Shift TAB) - check if FIM shown, accept if yes, insert tab if no
-    let _ = api::set_keymap(
+    let _ = set_keymap(
         Mode::Insert,
         "<S-Tab>",
         "",
@@ -60,7 +56,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
     );
 
     // FIM accept line (TAB) - check if FIM shown, accept line if yes, re-inject S-Tab if no
-    let _ = api::set_keymap(
+    let _ = set_keymap(
         Mode::Insert,
         "<Tab>",
         "",
@@ -91,44 +87,44 @@ pub fn remove_keymaps() -> LttwResult<()> {
 
     // Unmap FIM keymaps
     if !config.keymap_fim_trigger.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_fim_trigger);
+        let _ = del_keymap(Mode::Normal, &config.keymap_fim_trigger);
     }
     if !config.keymap_fim_accept_full.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_fim_accept_full);
+        let _ = del_keymap(Mode::Normal, &config.keymap_fim_accept_full);
     }
     if !config.keymap_fim_accept_line.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_fim_accept_line);
+        let _ = del_keymap(Mode::Normal, &config.keymap_fim_accept_line);
     }
     if !config.keymap_fim_accept_word.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_fim_accept_word);
+        let _ = del_keymap(Mode::Normal, &config.keymap_fim_accept_word);
     }
 
     // Unmap instruction keymaps
     if !config.keymap_inst_trigger.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_inst_trigger);
+        let _ = del_keymap(Mode::Normal, &config.keymap_inst_trigger);
     }
     if !config.keymap_inst_rerun.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_inst_rerun);
+        let _ = del_keymap(Mode::Normal, &config.keymap_inst_rerun);
     }
     if !config.keymap_inst_continue.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_inst_continue);
+        let _ = del_keymap(Mode::Normal, &config.keymap_inst_continue);
     }
     if !config.keymap_inst_accept.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_inst_accept);
+        let _ = del_keymap(Mode::Normal, &config.keymap_inst_accept);
     }
     if !config.keymap_inst_cancel.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_inst_cancel);
+        let _ = del_keymap(Mode::Normal, &config.keymap_inst_cancel);
     }
 
     // Unmap debug keymaps
     if !config.keymap_debug_toggle.is_empty() {
-        let _ = api::del_keymap(Mode::Normal, &config.keymap_debug_toggle);
+        let _ = del_keymap(Mode::Normal, &config.keymap_debug_toggle);
     }
 
     // Unmap FIM insert-mode keymaps for accept/cancel (these are always set up)
-    let _ = api::del_keymap(Mode::Insert, "<Tab>");
-    let _ = api::del_keymap(Mode::Insert, "<Esc>");
-    let _ = api::del_keymap(Mode::Insert, "<S-Tab>");
+    let _ = del_keymap(Mode::Insert, "<Tab>");
+    let _ = del_keymap(Mode::Insert, "<Esc>");
+    let _ = del_keymap(Mode::Insert, "<S-Tab>");
 
     Ok(())
 }
