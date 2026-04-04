@@ -6,7 +6,7 @@
 
 use {
     crate::{
-        cache::{compute_hashes, compute_hashes_from_prefix_middle},
+        cache::compute_hashes,
         context::get_local_context,
         context::LocalContext,
         get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
@@ -178,7 +178,7 @@ pub fn fim_try_hint_inner(
 
     // Check if the completion is cached (and update LRU order)
     let mut response = state.cache.write().get(&hash);
-    let mut recache = None; // recache the truncated nearby completion if we find one
+    let mut recache = false; // recache the truncated nearby completion if we find one
 
     if response.is_none() {
         // ... or if there is a cached completion nearby (128 characters behind)
@@ -232,7 +232,7 @@ pub fn fim_try_hint_inner(
                             tokens_cached: response_.tokens_cached,
                             truncated: response_.truncated,
                         });
-                        recache = Some(new_prefix_middle)
+                        recache = true;
                     }
                 }
             }
@@ -242,8 +242,8 @@ pub fn fim_try_hint_inner(
 
     // recache the re-found response at the new position - this way the response can still be found
     // if it was longer than 128 characters and the user is accepting this line by line.
-    if let (Some(prefix_middle), Some(resp)) = (recache, &response) {
-        let hashes = compute_hashes_from_prefix_middle(prefix_middle, &ctx.suffix);
+    if recache && let Some(resp) = &response {
+        let hashes = compute_hashes(&ctx);
         let mut cache_lock = state.cache.write();
         for hash in &hashes {
             cache_lock.insert(hash.clone(), resp.clone());
