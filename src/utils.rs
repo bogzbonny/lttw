@@ -4,6 +4,7 @@
 
 use {
     crate::{get_state, LttwResult},
+    ahash::AHasher,
     nvim_oxi::{
         api::{
             self, get_option_value,
@@ -12,9 +13,11 @@ use {
         },
         conversion::FromObject,
     },
-    rand::Rng,
-    sha2::{Digest, Sha256},
-    std::{backtrace::Backtrace, fs, ops::RangeBounds, path::Path},
+    rand::RngExt,
+    std::{
+        hash::Hasher,
+        {backtrace::Backtrace, fs, ops::RangeBounds, path::Path},
+    },
 };
 
 // NOTE important we cannot safely call into neovim from tokio worker threads
@@ -241,18 +244,21 @@ fn is_readable(path: &Path) -> bool {
 }
 /// Generate a random number in the range [i0, i1]
 pub fn random_range(i0: usize, i1: usize) -> usize {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     // Safety: ensure valid range
     if i0 > i1 {
         return i0; // Return lower bound if invalid range
     }
-    rng.gen_range(i0..=i1)
+    rng.random_range(i0..=i1)
 }
 
 /// Compute SHA256 hash of a string
-pub fn sha256(input: &str) -> String {
-    let hash = Sha256::digest(input.as_bytes());
-    format!("{:x}", hash)
+pub fn hash_input(input: &str) -> String {
+    //let hash = Sha256::digest(input.as_bytes());
+    let mut hasher = AHasher::default();
+    hasher.write(input.as_bytes());
+    let hash = hasher.finish();
+    format!("{hash:x}")
 }
 
 /// Get current working directory
@@ -268,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_sha256() {
-        let hash = sha256("hello");
+        let hash = hash_input("hello");
         assert_eq!(hash.len(), 64); // SHA256 produces 64 hex characters
         assert_eq!(
             hash,

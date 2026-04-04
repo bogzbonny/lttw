@@ -4,7 +4,7 @@
 // eviction policy to manage memory usage and improve performance.
 
 use {
-    crate::{context::LocalContext, fim::FimResponse, utils::sha256},
+    crate::{context::LocalContext, fim::FimResponse, utils::hash_input},
     serde::{Deserialize, Serialize},
     std::collections::{HashMap, VecDeque},
 };
@@ -19,7 +19,7 @@ pub struct CacheEntry {
 /// Cache with LRU eviction
 #[derive(Debug, Clone)]
 pub struct Cache {
-    data: std::collections::HashMap<String, FimResponse>,
+    data: HashMap<String, FimResponse>,
     lru_order: VecDeque<String>,
     max_keys: usize,
 }
@@ -98,7 +98,7 @@ pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
 
     // Primary hash
     let primary = format!("{}{}{}{}", ctx.prefix, ctx.middle, "Î", ctx.suffix);
-    let hash = sha256(&primary);
+    let hash = hash_input(&primary);
     hashes.push(hash);
 
     // Truncated prefix hashes (up to 3 levels)
@@ -115,8 +115,8 @@ pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
             break;
         }
 
-        let hash_input = format!("{}{}{}{}", prefix_trim, ctx.middle, "Î", ctx.suffix);
-        let hash = sha256(&hash_input);
+        let inp = format!("{}{}{}{}", prefix_trim, ctx.middle, "Î", ctx.suffix);
+        let hash = hash_input(&inp);
         hashes.push(hash);
     }
 

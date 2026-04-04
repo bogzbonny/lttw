@@ -14,7 +14,7 @@ use {
         ring_buffer::ExtraContext,
         utils::{
             clear_buf_namespace_objects, get_buf_filename, get_buf_line, random_range,
-            set_buf_extmark, sha256,
+            set_buf_extmark, hash_input,
         },
         Error, FimCompletionMessage, FimTimingsData, LttwResult,
     },
@@ -171,7 +171,7 @@ pub fn fim_try_hint_inner(
 
     // Compute primary hash
     let primary_hash = format!("{}{}{}{}", ctx.prefix, ctx.middle, "Î", ctx.suffix);
-    let hash = sha256(&primary_hash);
+    let hash = hash_input(&primary_hash);
 
     // Check if the completion is cached (and update LRU order)
     let mut response = state.cache.write().get(&hash);
@@ -201,7 +201,7 @@ pub fn fim_try_hint_inner(
             let (pm_with_less_tail, removed) = pm.split_at(split_byte_idx);
 
             let ctx_new = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
-            let hash_new = sha256(&ctx_new);
+            let hash_new = hash_input(&ctx_new);
 
             if let Some(response_) = state.cache.write().get(&hash_new) {
                 let content = &response_.content;
