@@ -6,10 +6,12 @@
      - probably something to do with inline extmarks or even improper placement 
      (not checking before display if the x_pos is wrong?) 
 
+01. TOSS FIMs which are nolonger for the correct buffer location.
+     -> ensure that when a cached FIM is used, the location is updated
+     appropriately (don't want to toss these precious caches accidently)
+
 01. Remove trailing prediction lines if they match 
      - go through one by one
-
-01. check on the amount of llm calls make sure we're not goin crzy
 
 01. Add (info) stats as rhs extmarks
  - alternatively maybe send this information through LSP progress messages. 
@@ -23,11 +25,11 @@ PURELY by using nvim-oxi
 Add in rendering of the build info string (see build_info_string) to the rust
 code. Render this extmarks which are RightHand justified. 
 
+03. track the amount of llm calls make sure we're not goin crzy
+
 05. integrate git diff system into extra 
      - definitely should integrate with extra_input ring_buffer system -
        ordering is important
-     - 
-
 
 05. integrate in LSP diagnostics into extra 
      - Use autocmd and keep our own map 
@@ -35,6 +37,7 @@ code. Render this extmarks which are RightHand justified.
 
 05. add config option for debugging (default false)
 05. fix tests-integrations (compile errors) 
+
 
 ------------------------
 
@@ -62,8 +65,6 @@ local query_string = [[
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
 
-10. investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
-
 10. easier to use debugging system (like debug! macro)
 20. option to not predict while in comments
 20. better global error printing 
@@ -72,7 +73,5 @@ local query_string = [[
     function
 20. Option to ONLY accept single line inline suggestions if typing within a fully
     closed bracket system within a line example: "#[derive(Debug, Cl[CURSOR], Default)]"
-
-
- 
+30. investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
 
