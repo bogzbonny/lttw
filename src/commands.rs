@@ -84,7 +84,7 @@ pub fn register_commands() -> LttwResult<()> {
         "LttwEnableDebug",
         |_| -> LttwResult<()> {
             debug_enable()?;
-            nvim_oxi::api::command("debug enabled")?;
+            nvim_oxi::api::command("echo 'debug enabled'")?;
             Ok(())
         },
         &Default::default(),
@@ -94,7 +94,7 @@ pub fn register_commands() -> LttwResult<()> {
         "LttwDisableDebug",
         |_| -> LttwResult<()> {
             debug_disable()?;
-            nvim_oxi::api::command("debug disabled")?;
+            nvim_oxi::api::command("echo 'debug disabled'")?;
             Ok(())
         },
         &Default::default(),

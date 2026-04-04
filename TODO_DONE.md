@@ -165,3 +165,16 @@ like in the llama#fim
         - make more function async so it will be easier to audit 
         - reduce usage of retrieving the tokio runtime and use tokio::spawn
           directly whenever already inside the runtime
+
+01. TOSS FIMs which are nolonger for the correct buffer location.
+     -> ensure that when a cached FIM is used, the location is updated
+     appropriately (don't want to toss these precious caches accidently)
+
+01. bizzare issue with re-rendering msgs as they come where the cursor gets
+    slammed to the end of the queue message. 
+     - probably something to do with inline extmarks or even improper placement 
+     (not checking before display if the x_pos is wrong?) 
+01. fix should abort to prevent unnecessary llm calls
+     - streamlined the debounce system a bit. 
+01. Add (info) stats as lsp progress messages 
+     - send this information through LSP progress messages. 

@@ -1,13 +1,3 @@
-01. TOSS FIMs which are nolonger for the correct buffer location.
-     -> ensure that when a cached FIM is used, the location is updated
-     appropriately (don't want to toss these precious caches accidently)
-
-01. bizzare issue with re-rendering msgs as they come where the cursor gets
-    slammed to the end of the queue message. 
-     - probably something to do with inline extmarks or even improper placement 
-     (not checking before display if the x_pos is wrong?) 
-01. fix should abort to prevent unnecessary llm calls
-     - streamlined the debounce system a bit. 
 
 ^^^^^^^^^ DONE
 
@@ -16,9 +6,6 @@
      - NOTE this could use the stop_strings, however that seems problematic if
        the actual completion DOES really have a duplication of the stop string
        which its meant to generate. 
-
-01. Add (info) stats as lsp progress messages
-     - send this information through LSP progress messages. 
 
 05. integrate git diff system into extra_inputs 
      - definitely should integrate with extra_input ring_buffer system -

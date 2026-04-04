@@ -49,7 +49,7 @@ pub struct FimRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct FimResponse {
     pub content: String,
-    #[serde(default)]
+    #[serde(flatten)]
     pub timings: Option<FimTimings>,
     #[serde(default)]
     pub tokens_cached: u64,
@@ -267,13 +267,22 @@ pub fn fim_try_hint_inner(
         );
         let content = response.content;
         if !content.is_empty() {
+            let timings = if let Some(resp_timings) = response.timings {
+                Some(FimTimingsData::new(
+                    resp_timings,
+                    response.tokens_cached,
+                    response.truncated,
+                ))
+            } else {
+                None
+            };
             render_fim_suggestion(
                 state.clone(),
                 pos_x,
                 pos_y,
                 &content,
                 ctx.line_cur.clone(),
-                None,
+                timings,
             )?;
 
             // run async speculative FIM in the background for this position
@@ -563,11 +572,21 @@ pub async fn fim_completion(
             return;
         };
 
+        state__
+            .debug_manager
+            .read()
+            .log("response text raw", &response_text);
+
         // Parse response
         let Ok(response) = serde_json::from_str::<FimResponse>(&response_text) else {
             // TODO log error
             return;
         };
+        state__
+            .debug_manager
+            .read()
+            .log("response received", format!("{response:#?}"));
+
         let content = response.content.clone(); // Clone content for return
 
         // Cache the response with timing info (new block for re-acquired locks)
@@ -931,6 +950,8 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
 
             let cache_size = cache.len();
             let max_cache_keys = config.max_cache_keys as usize;
+
+            debug_manager.log("display_fim_text", format!("timing_data {timing_data:?}"));
 
             // Build the info string using stored timing data
             let info_string = if let Some(t) = timing_data {
