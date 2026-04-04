@@ -597,9 +597,14 @@ pub async fn fim_completion(
         // following lines
         let content = response
             .content
+            .trim_end() // trim new excess newlines which may interfer with tail matching
             .split('\n')
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
+        state__.debug_manager.read().log(
+            "filter_tail",
+            format!("\tcontent: {content:#?}\n\tten_lines: {ten_lines:#?}"),
+        );
         let content = filter_tail(&content, &ten_lines).join("\n");
         response.content = content.clone();
 
