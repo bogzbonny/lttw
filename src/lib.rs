@@ -21,7 +21,7 @@ pub use error::{Error, LttwResult};
 
 use {
     context::LocalContext,
-    fim::{fim_try_hint, render_fim_suggestion, FimAcceptType},
+    fim::{fim_try_hint, fim_try_hint_skip_debounce, render_fim_suggestion, FimAcceptType},
     nvim_oxi::{Dictionary, Function},
     plugin_state::{get_state, init_state},
     std::{
@@ -101,13 +101,6 @@ fn lttw_setup() {
 }
 
 // ---------------------------
-
-/// Check if FIM hint is shown - internal helper for commands
-fn fim_is_hint_shown() -> LttwResult<bool> {
-    let state = get_state();
-    let fim_state_lock = state.fim_state.read();
-    Ok(fim_state_lock.hint_shown)
-}
 
 /// State for FIM (Fill-in-Middle) completion
 #[derive(Debug, Clone, Default)]
@@ -359,13 +352,15 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<Option<String>> {
         set_window_cursor(new_col, pos_y)?;
     }
 
-    // Clear the FIM hint - use write lock
     state.fim_state.write().clear();
 
     // Clear virtual text from display
     if let Some(ns_id) = state.extmark_ns {
         clear_buf_namespace_objects(ns_id)?
     }
+
+    // immediately start a new FIM request skipping the debounce
+    fim_try_hint_skip_debounce()?;
 
     Ok(Some(new_line))
 }

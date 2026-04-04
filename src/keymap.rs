@@ -1,5 +1,5 @@
 use {
-    crate::{fim::FimAcceptType, fim_accept, fim_is_hint_shown, get_state, LttwResult},
+    crate::{fim::FimAcceptType, fim_accept, get_state, LttwResult},
     nvim_oxi::api::{del_keymap, opts::SetKeymapOptsBuilder, set_keymap, types::Mode},
 };
 
@@ -40,9 +40,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
         "",
         &SetKeymapOptsBuilder::default()
             .callback(|_| {
-                if let Ok(true) = fim_is_hint_shown()
-                    && let Err(e) = fim_accept(FimAcceptType::Full)
-                {
+                if let Err(e) = fim_accept(FimAcceptType::Full) {
                     // Log error but don't crash
                     let state = get_state();
                     state
@@ -62,9 +60,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
         "",
         &SetKeymapOptsBuilder::default()
             .callback(|_| {
-                if let Ok(true) = fim_is_hint_shown()
-                    && let Err(e) = fim_accept(FimAcceptType::Line)
-                {
+                if let Err(e) = fim_accept(FimAcceptType::Line) {
                     // Log error but don't crash
                     let state = get_state();
                     state.debug_manager.read().log(

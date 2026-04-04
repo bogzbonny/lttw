@@ -143,7 +143,18 @@ pub fn fim_try_hint() -> LttwResult<()> {
     let state = get_state();
     let lines = get_buf_lines(..);
     let buffer_id = get_current_buffer_id();
-    fim_try_hint_inner(state, pos_x, pos_y, buffer_id, lines)
+    fim_try_hint_inner(state, pos_x, pos_y, buffer_id, lines, false)
+}
+
+pub fn fim_try_hint_skip_debounce() -> LttwResult<()> {
+    if !in_insert_mode()? {
+        return Ok(());
+    }
+    let (pos_x, pos_y) = get_pos();
+    let state = get_state();
+    let lines = get_buf_lines(..);
+    let buffer_id = get_current_buffer_id();
+    fim_try_hint_inner(state, pos_x, pos_y, buffer_id, lines, true)
 }
 
 /// Try to generate a suggestion using the data in the cache
@@ -162,6 +173,7 @@ pub fn fim_try_hint_inner(
     pos_y: usize,
     buffer_id: u64,
     lines: Vec<String>,
+    skip_debounce: bool,
 ) -> LttwResult<()> {
     // first things first, increment the seq at the beginning to indicate to any waiting
     // fim_workers in the debounce period that there is a new show in town (so don't start!).
@@ -291,6 +303,7 @@ pub fn fim_try_hint_inner(
             filename,
             lines,
             prev_for_next_fim,
+            skip_debounce,
         )
         .await;
     });
@@ -311,39 +324,42 @@ async fn spawn_fim_completion_worker(
     filename: String,
     buffer_lines: Vec<String>,
     prev: Option<Vec<String>>, // speculative FIM content
+    skip_debounce: bool,
 ) -> LttwResult<()> {
-    // Check debounce if we have a sequence
-    let debounce_ms = state.config.read().debounce_ms;
+    if !skip_debounce {
+        // Check debounce if we have a sequence
+        let debounce_ms = state.config.read().debounce_ms;
 
-    // This is the most recent request, check if debounce has elapsed
-    let last_spawn = *state.fim_worker_debounce_last_spawn.read();
-    let elapsed = Instant::now().duration_since(last_spawn);
-    let debounce_expired = elapsed >= Duration::from_millis(debounce_ms as u64);
+        // This is the most recent request, check if debounce has elapsed
+        let last_spawn = *state.fim_worker_debounce_last_spawn.read();
+        let elapsed = Instant::now().duration_since(last_spawn);
+        let debounce_expired = elapsed >= Duration::from_millis(debounce_ms as u64);
 
-    if !debounce_expired {
-        // Still within debounce period. Since this is the most recent request,
-        // we should wait until debounce expires and then spawn.
-        let remaining_ms = debounce_ms as u64 - elapsed.as_millis() as u64;
-        state.debug_manager.read().log(
-            "spawn_fim_completion_worker",
-            format!("Within debounce period, (seq {seq}, remaining {remaining_ms}ms)",),
-        );
-
-        // Wait for remaining debounce time
-        tokio::time::sleep(Duration::from_millis(remaining_ms)).await;
-
-        // Re-check if we're still the most recent request
-        let latest_sequence = *state.fim_worker_debounce_seq.read();
-
-        if seq < latest_sequence {
-            // A newer request has come in, discard this one
+        if !debounce_expired {
+            // Still within debounce period. Since this is the most recent request,
+            // we should wait until debounce expires and then spawn.
+            let remaining_ms = debounce_ms as u64 - elapsed.as_millis() as u64;
             state.debug_manager.read().log(
                 "spawn_fim_completion_worker",
-                format!(
-                    "Discarding stale worker after wait (seq {seq} < latest {latest_sequence})",
-                ),
+                format!("Within debounce period, (seq {seq}, remaining {remaining_ms}ms)",),
             );
-            return Ok(());
+
+            // Wait for remaining debounce time
+            tokio::time::sleep(Duration::from_millis(remaining_ms)).await;
+
+            // Re-check if we're still the most recent request
+            let latest_sequence = *state.fim_worker_debounce_seq.read();
+
+            if seq < latest_sequence {
+                // A newer request has come in, discard this one
+                state.debug_manager.read().log(
+                    "spawn_fim_completion_worker",
+                    format!(
+                        "Discarding stale worker after wait (seq {seq} < latest {latest_sequence})",
+                    ),
+                );
+                return Ok(());
+            }
         }
     }
     state.record_worker_spawn();
