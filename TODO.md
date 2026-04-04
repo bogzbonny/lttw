@@ -1,6 +1,4 @@
 
-^^^^^^^^^ DONE
-
 01. Remove trailing prediction lines if they match 
      - go through one by one
      - NOTE this could use the stop_strings, however that seems problematic if
@@ -10,6 +8,11 @@
        - ACTUALLY I think this one will be a bit easier given the information
          available to us to filter out directly in fim_completion once we get
          the response (line 600) 
+
+^^^^^^^^^ DONE
+
+05. info disappears once completion is done (should only disappear once leaving
+    insert mode, or next completion displayed) 
 
 05. integrate git diff system into extra_inputs 
      - definitely should integrate with extra_input ring_buffer system -
