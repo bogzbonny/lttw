@@ -236,6 +236,10 @@ fn process_pending_display() -> LttwResult<()> {
     }
 
     if let Some(msg) = msg {
+        state.debug_manager.read().log(
+            "process_pending_display",
+            format!("valid message found {msg:?}"),
+        );
         render_fim_suggestion(
             state.clone(),
             msg.cursor_x,
@@ -270,7 +274,7 @@ fn msg_is_valid_to_display(msg: &FimCompletionMessage) -> bool {
         return false;
     };
     let curr_line = get_buf_line(y);
-    if curr_line == msg.ctx.line_cur {
+    if curr_line != msg.ctx.line_cur {
         return false;
     }
 
