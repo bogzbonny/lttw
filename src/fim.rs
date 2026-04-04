@@ -13,8 +13,7 @@ use {
         plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
         utils::{
-            clear_buf_namespace_objects, get_buf_filename, get_buf_line, hash_input,
-            set_buf_extmark,
+            clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input, set_buf_extmark,
         },
         Error, FimCompletionMessage, FimTimingsData, LttwResult,
     },
@@ -560,6 +559,13 @@ pub async fn fim_completion(
     let state_ = state.clone();
     state.debug_manager.read().log("fim_completion", "8");
 
+    // get the next 10 lines past pos_y for tail filtering
+    let end = (pos_y + 11).min(lines.len());
+    let ten_lines = lines
+        .get(pos_y + 1..end)
+        .map(|s| s.to_vec())
+        .unwrap_or_default();
+
     let state__ = state.clone();
     let handle = tokio::spawn(async move {
         //state
@@ -578,7 +584,7 @@ pub async fn fim_completion(
             .log("response text raw", &response_text);
 
         // Parse response
-        let Ok(response) = serde_json::from_str::<FimResponse>(&response_text) else {
+        let Ok(mut response) = serde_json::from_str::<FimResponse>(&response_text) else {
             // TODO log error
             return;
         };
@@ -587,7 +593,15 @@ pub async fn fim_completion(
             .read()
             .log("response received", format!("{response:#?}"));
 
-        let content = response.content.clone(); // Clone content for return
+        // TODO compare the tail of the content to the lines and filter out any matching with the
+        // following lines
+        let content = response
+            .content
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        let content = filter_tail(&content, &ten_lines).join("\n");
+        response.content = content.clone();
 
         // Cache the response with timing info (new block for re-acquired locks)
         {
@@ -596,16 +610,6 @@ pub async fn fim_completion(
                 cache_lock.insert(hash.clone(), response.clone());
             }
         }
-
-        // NOTE this causes a race condition as it calls neovim functions
-        //
-        //let Some(orig_line) = lines.get(pos_y) else {
-        //    return;
-        //};
-        // TODO fix or delete
-        //if should_abort(pos_y, orig_line, &content) {
-        //    return;
-        //}
 
         // Send result through channel
         // Extract timing data from the response if available
@@ -696,32 +700,6 @@ pub async fn fim_completion(
 
     handle.await?;
     Ok(())
-}
-
-// should we abort the completion because the content has changed since we started this completion
-#[allow(dead_code)] // TODO fix or delete (needs to not make neovim calls not on the main thread)
-fn should_abort(cursor_y: usize, orig_line: &str, content: &str) -> bool {
-    let (_new_x, new_y) = get_pos();
-    if cursor_y != new_y {
-        return true;
-    };
-    let curr_line = get_buf_line(cursor_y);
-    if curr_line == orig_line {
-        return false; // lines the same must not abort
-    }
-
-    // if the content predicted is the same as what
-    // the user has been typing then can continue
-    if curr_line.starts_with(orig_line) {
-        let Some(new_text) = curr_line.strip_prefix(orig_line) else {
-            return true;
-        };
-        if content.starts_with(new_text) {
-            return false;
-        }
-    }
-
-    true
 }
 
 /// Send FIM request to the server

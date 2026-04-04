@@ -270,3 +270,166 @@ pub fn get_current_directory() -> String {
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| ".".to_string())
 }
+
+// --------------------------
+
+pub fn filter_tail<'a>(arr1: &'a [String], arr2: &[String]) -> &'a [String] {
+    let n = arr1.len();
+    let m = arr2.len();
+
+    // Find max k such that arr1[n-k..] == arr2[0..k]
+    let mut max_k = 0;
+    for k in 1..=m.min(n) {
+        if arr1[n - k..].iter().eq(arr2[..k].iter()) {
+            max_k = k;
+        }
+    }
+
+    &arr1[..n - max_k]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_tail_example_1() {
+        let arr1 = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        let arr2 = vec!["C".to_string(), "D".to_string()];
+        assert_eq!(
+            filter_tail(&arr1, &arr2),
+            vec!["A".to_string(), "B".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_filter_tail_example_2() {
+        let arr1 = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        let arr2 = vec!["B".to_string(), "D".to_string()];
+        assert_eq!(
+            filter_tail(&arr1, &arr2),
+            vec!["A".to_string(), "B".to_string(), "C".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_filter_tail_example_3() {
+        let arr1 = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ];
+        let arr2 = vec!["C".to_string(), "D".to_string(), "E".to_string()];
+        assert_eq!(
+            filter_tail(&arr1, &arr2),
+            vec!["A".to_string(), "B".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_filter_tail_no_matches() {
+        let arr1 = vec!["X".to_string(), "Y".to_string(), "Z".to_string()];
+        let arr2 = vec!["A".to_string(), "B".to_string()];
+        assert_eq!(filter_tail(&arr1, &arr2), arr1);
+    }
+
+    #[test]
+    fn test_filter_tail_all_match_and_indices_satisfy() {
+        let arr1 = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        let arr2 = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        assert_eq!(filter_tail(&arr1, &arr2), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_filter_tail_partial_match_at_end() {
+        let arr1 = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ];
+        let arr2 = vec!["B".to_string(), "C".to_string()];
+        // arr2_idx: B->0, C->1
+        // i=3, s="D": not in arr2 → break → suffix_len=0
+        assert_eq!(filter_tail(&arr1, &arr2), arr1);
+    }
+
+    #[test]
+    fn test_filter_tail_match_at_equal_index() {
+        let arr1 = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        let arr2 = vec!["B".to_string(), "C".to_string(), "D".to_string()];
+        // arr2_idx: B->0, C->1, D->2
+        // i=2, s="C": j=1 ≤ 2 → suffix_len=1
+        // i=1, s="B": j=0 ≤ 1 → suffix_len=2
+        // i=0, s="A": not in arr2 → break
+        // suffix_len=2 → keep first 1 → ["A"]
+        assert_eq!(filter_tail(&arr1, &arr2), vec!["A".to_string()]);
+    }
+
+    #[test]
+    fn test_filter_tail_empty_arr2() {
+        let arr1 = vec!["A".to_string(), "B".to_string()];
+        let arr2: Vec<String> = vec![];
+        assert_eq!(filter_tail(&arr1, &arr2), arr1);
+    }
+
+    #[test]
+    fn test_filter_tail_empty_arr1() {
+        let arr1: Vec<String> = vec![];
+        let arr2 = vec!["A".to_string()];
+        assert_eq!(filter_tail(&arr1, &arr2), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_filter_tail_duplicate_in_arr2() {
+        let arr1 = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        let arr2 = vec!["B".to_string(), "B".to_string(), "C".to_string()];
+        assert_eq!(filter_tail(&arr1, &arr2), arr1);
+    }
+    #[test]
+    fn test_filter_tail_single_char_match() {
+        let arr1 = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        let arr2 = vec!["C".to_string()];
+        assert_eq!(
+            filter_tail(&arr1, &arr2),
+            vec!["A".to_string(), "B".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_filter_tail_longest_possible_match() {
+        let arr1 = vec!["X".to_string(), "Y".to_string(), "Z".to_string()];
+        let arr2 = vec!["Y".to_string(), "Z".to_string()];
+        assert_eq!(filter_tail(&arr1, &arr2), vec!["X".to_string()]);
+    }
+
+    #[test]
+    fn test_filter_tail_no_contiguous_match_but_noncontiguous_chars_match() {
+        // arr1 = [A,B,C,D], arr2 = [A,C,D] — suffix [C,D] is not prefix of arr2
+        let arr1 = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ];
+        let arr2 = vec!["A".to_string(), "C".to_string(), "D".to_string()];
+        assert_eq!(filter_tail(&arr1, &arr2), arr1); // no suffix of arr1 equals prefix of arr2
+    }
+
+    #[test]
+    fn test_filter_tail_long_arr2() {
+        // arr1 = [A,B,C,D], arr2 = [A,C,D] — suffix [C,D] is not prefix of arr2
+        let arr1 = vec!["A".to_string(), "B".to_string()];
+        let arr2 = vec![
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+            "E".to_string(),
+            "F".to_string(),
+            "G".to_string(),
+            "H".to_string(),
+        ];
+        assert_eq!(filter_tail(&arr1, &arr2), vec!["A".to_string()]); // no suffix of arr1 equals prefix of arr2
+    }
+}

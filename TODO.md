@@ -6,6 +6,10 @@
      - NOTE this could use the stop_strings, however that seems problematic if
        the actual completion DOES really have a duplication of the stop string
        which its meant to generate. 
+     - changes in fim.rs accept_fim_suggestion
+       - ACTUALLY I think this one will be a bit easier given the information
+         available to us to filter out directly in fim_completion once we get
+         the response (line 600) 
 
 05. integrate git diff system into extra_inputs 
      - definitely should integrate with extra_input ring_buffer system -
