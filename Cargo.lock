@@ -771,16 +771,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lttw-integration-tests"
-version = "0.1.0"
-dependencies = [
- "lttw",
- "nvim-oxi",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

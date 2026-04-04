@@ -21,7 +21,7 @@ pub use error::{Error, LttwResult};
 
 use {
     context::LocalContext,
-    fim::{fim_try_hint, FimAcceptType},
+    fim::{fim_try_hint, render_fim_suggestion, FimAcceptType},
     nvim_oxi::{Dictionary, Function},
     plugin_state::{get_state, init_state},
     std::{
@@ -30,7 +30,7 @@ use {
     },
     tokio::sync::mpsc,
     utils::{
-        clear_buf_namespace_objects, del_autocmd, get_buf_filename, get_buf_lines,
+        clear_buf_namespace_objects, del_autocmd, get_buf_filename, get_buf_line, get_buf_lines,
         get_current_buffer_id, get_current_buffer_info, get_current_filetype, get_mode_bz, get_pos,
         get_yanked_text, in_insert_mode, set_buf_lines, set_window_cursor,
     },
@@ -113,13 +113,14 @@ fn fim_is_hint_shown() -> LttwResult<bool> {
 #[derive(Debug, Clone, Default)]
 pub struct FimState {
     hint_shown: bool,
+    can_accept: bool,
+    /// Last cursor Y position where ring buffer chunks were picked
+    last_pick_pos_y: Option<usize>,
+
     pos_x: usize,
     pos_y: usize,
     line_cur: String,
-    can_accept: bool,
     content: Vec<String>,
-    /// Last cursor Y position where ring buffer chunks were picked
-    last_pick_pos_y: Option<usize>,
     /// Timing data from the last completion for display in info string
     timings: Option<FimTimingsData>,
 }
@@ -201,6 +202,7 @@ fn init_completion_processing_thread() {
     );
 }
 
+/// NOTE this occurs on the neovim thread
 /// Process pending FIM display queue - drains and displays messages on the main thread
 fn process_pending_display() -> LttwResult<()> {
     let state = get_state();
@@ -225,63 +227,54 @@ fn process_pending_display() -> LttwResult<()> {
         format!("Processing {} pending display messages", messages.len()),
     );
     // process the most recent message which has content and isn't only whitespace
-    for msg in messages.into_iter().rev() {
-        if msg.content.is_empty() || msg.content.trim().is_empty() {
-            continue;
+    let mut msg = None;
+    for msg_ in messages.into_iter().rev() {
+        if msg_is_valid_to_display(&msg_) {
+            msg = Some(msg_);
+            break;
         }
-        handle_fim_completion_message(msg)?;
-        break;
     }
 
-    // XXX NOTE the following code would be relatively consistent with llama.vim
-    // however it would lead to recursive execution loop... maybe uncomment after
-    // trying?
-    //
-    // if either the hint isn't shown OR it's only whitespace then trigger another fim
-    if !state.fim_state.read().hint_shown || !state.fim_state.read().can_accept {
-        fim_try_hint()?;
+    if let Some(msg) = msg {
+        render_fim_suggestion(
+            state.clone(),
+            msg.cursor_x,
+            msg.cursor_y,
+            &msg.content,
+            msg.ctx.line_cur,
+            msg.timings,
+        )?;
+
+        // if either the hint isn't shown OR it's only whitespace then trigger another fim
+        if !state.fim_state.read().hint_shown || !state.fim_state.read().can_accept {
+            fim_try_hint()?;
+        }
     }
 
     Ok(())
 }
 
-/// Handle FIM completion message received from async worker
-fn handle_fim_completion_message(msg: FimCompletionMessage) -> LttwResult<()> {
-    let state = get_state();
-
-    // Check if we're still in the same buffer
-    let current_buf = get_current_buffer_id();
-    if current_buf != msg.buffer_id {
-        state.debug_manager.read().log(
-            "handle_fim_completion_message",
-            format!(
-                "Buffer changed, ignoring completion (expected {}, got {})",
-                msg.buffer_id, current_buf
-            ),
-        );
-        return Ok(());
+// should we abort the completion because the content has changed since we started this completion
+#[allow(dead_code)] // TODO fix or delete (needs to not make neovim calls not on the main thread)
+fn msg_is_valid_to_display(msg: &FimCompletionMessage) -> bool {
+    if msg.content.is_empty() || msg.content.trim().is_empty() {
+        return false;
+    }
+    let id = get_current_buffer_id();
+    if id != msg.buffer_id {
+        return false;
     }
 
-    state.debug_manager.read().log(
-        "handle_fim_completion_message",
-        format!(
-            "Received completion for buffer {} at ({}, {})",
-            msg.buffer_id, msg.cursor_x, msg.cursor_y
-        ),
-    );
+    let (x, y) = get_pos();
+    if msg.cursor_y != y || msg.cursor_x != x {
+        return false;
+    };
+    let curr_line = get_buf_line(y);
+    if curr_line == msg.ctx.line_cur {
+        return false;
+    }
 
-    //state.debug_manager.read().log(
-    //    "handle_fim_completion_message",
-    //    format!("msg.content: \n{}", msg.content),
-    //);
-    fim::render_fim_suggestion(
-        state,
-        msg.cursor_x,
-        msg.cursor_y,
-        &msg.content,
-        msg.ctx.line_cur,
-        msg.timings,
-    )
+    true
 }
 
 /// FIM accept function - accepts the FIM suggestion

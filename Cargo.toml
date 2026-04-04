@@ -1,18 +1,7 @@
-[workspace]
-members = [
-    ".",
-    "tests-integration",
-]
-resolver = "2"
-
-[workspace.package]
-version = "0.1.0"
-edition = "2021"
-
 [package]
 name = "lttw"
-version.workspace = true
-edition.workspace = true
+version = "0.1.0"
+edition = "2024"
 
 [lib]
 name = "lttw"

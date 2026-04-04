@@ -28,17 +28,17 @@ use {
 
 fn assert_not_tokio_worker() {
     let t = std::thread::current();
-    if let Some(n) = t.name() {
-        if n.contains("tokio") {
-            let state = get_state();
-            let bt = Backtrace::force_capture();
-            state
-                .debug_manager
-                .read()
-                .log("assert_not_tokio_worker", format!("Backtrace:\n{bt:?}"));
+    if let Some(n) = t.name()
+        && n.contains("tokio")
+    {
+        let state = get_state();
+        let bt = Backtrace::force_capture();
+        state
+            .debug_manager
+            .read()
+            .log("assert_not_tokio_worker", format!("Backtrace:\n{bt:?}"));
 
-            panic!("function must not be called from Tokio runtime worker thread (name: {n})");
-        }
+        panic!("function must not be called from Tokio runtime worker thread (name: {n})");
     }
 }
 
@@ -68,6 +68,7 @@ pub fn get_mode_bz() -> LttwResult<Vec<u8>> {
 }
 
 /// Get current buffer position ([0,0]-indexed)
+/// returns x position, y position
 pub fn get_pos() -> (usize, usize) {
     assert_not_tokio_worker();
     // Safety: handle cursor error gracefully

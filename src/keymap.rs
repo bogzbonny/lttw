@@ -40,15 +40,15 @@ pub fn setup_keymaps() -> LttwResult<()> {
         "",
         &SetKeymapOptsBuilder::default()
             .callback(|_| {
-                if let Ok(true) = fim_is_hint_shown() {
-                    if let Err(e) = fim_accept(FimAcceptType::Full) {
-                        // Log error but don't crash
-                        let state = get_state();
-                        state
-                            .debug_manager
-                            .read()
-                            .log("Tab accept", format!("Error accepting FIM: {:?}", e));
-                    }
+                if let Ok(true) = fim_is_hint_shown()
+                    && let Err(e) = fim_accept(FimAcceptType::Full)
+                {
+                    // Log error but don't crash
+                    let state = get_state();
+                    state
+                        .debug_manager
+                        .read()
+                        .log("Tab accept", format!("Error accepting FIM: {:?}", e));
                 }
                 // TODO insert tab if not in hint mode
             })
@@ -62,15 +62,15 @@ pub fn setup_keymaps() -> LttwResult<()> {
         "",
         &SetKeymapOptsBuilder::default()
             .callback(|_| {
-                if let Ok(true) = fim_is_hint_shown() {
-                    if let Err(e) = fim_accept(FimAcceptType::Line) {
-                        // Log error but don't crash
-                        let state = get_state();
-                        state.debug_manager.read().log(
-                            "LttwFimAcceptFullOrTab",
-                            format!("Error accepting FIM: {:?}", e),
-                        );
-                    }
+                if let Ok(true) = fim_is_hint_shown()
+                    && let Err(e) = fim_accept(FimAcceptType::Line)
+                {
+                    // Log error but don't crash
+                    let state = get_state();
+                    state.debug_manager.read().log(
+                        "LttwFimAcceptFullOrTab",
+                        format!("Error accepting FIM: {:?}", e),
+                    );
                 }
                 // TODO insert tab if not in hint mode
             })

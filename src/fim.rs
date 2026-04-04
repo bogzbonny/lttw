@@ -116,7 +116,7 @@ pub fn build_info_string(
     let s_predict = timings.predicted_per_second.unwrap_or(0.0);
 
     // Build info string
-    let info = if truncated {
+    if truncated {
         format!(
             " | WARNING: the context is full: {}, increase the server context size or reduce g:lttw_config.ring_n_chunks",
             tokens_cached
@@ -132,9 +132,7 @@ pub fn build_info_string(
             n_prompt, t_prompt_ms, s_prompt,
             n_predict, t_predict_ms, s_predict
         )
-    };
-
-    info
+    }
 }
 
 pub fn fim_try_hint() -> LttwResult<()> {
@@ -683,7 +681,7 @@ pub async fn send_request(
 /// Render FIM suggestion at the current cursor location
 /// Filters out duplicate text that already exists in the buffer
 ///
-/// NOTE this happens on the neovim main thread
+/// NOTE this happens ON the neovim main thread
 pub fn render_fim_suggestion(
     state: Arc<PluginState>,
     pos_x: usize,

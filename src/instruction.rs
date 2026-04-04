@@ -812,66 +812,62 @@ fn inst_accept() -> LttwResult<()> {
         }
     };
 
-    if let Some(req_id) = req_id_to_accept {
-        if let Some(req) = req {
-            if req.result.is_empty() {
-                state.debug_manager.read().log(
-                    "inst_accept",
-                    format!("Request {} has empty result, skipping apply", req_id),
-                );
-                // Still clean up the visual marker
-                if let Some(ns_id) = req.ns_id {
-                    if let Some(extmark_id) = req.extmark_id {
-                        del_buf_extmark(ns_id, extmark_id)?;
-                    }
-                }
-                return Ok(());
-            }
-
-            let result_lines: Vec<String> = req.result.split('\n').map(|s| s.to_string()).collect();
-            let (l0, l1) = req.range;
-
+    if let Some(req_id) = req_id_to_accept
+        && let Some(req) = req
+    {
+        if req.result.is_empty() {
             state.debug_manager.read().log(
                 "inst_accept",
-                format!(
-                    "Applying {} lines to buffer {} at range ({}, {})",
-                    result_lines.len(),
-                    bufnr,
-                    l0,
-                    l1
-                ),
+                format!("Request {} has empty result, skipping apply", req_id),
             );
-
-            // Apply the result to the buffer using current buffer (assuming we're on the right buffer)
-
-            // Delete the original range and insert new lines in one operation
-            // set_lines replaces lines in range [start, end) with new lines
-            match set_buf_lines(l0..(l1 + 1), result_lines) {
-                Ok(_) => {
-                    let state = get_state();
-                    state.debug_manager.read().log(
-                        "inst_accept",
-                        "Successfully applied instruction result to buffer",
-                    );
-                }
-                Err(e) => {
-                    let state = get_state();
-                    state.debug_manager.read().log(
-                        "inst_accept",
-                        format!("Failed to set buffer lines: {:?}", e),
-                    );
-                }
+            // Still clean up the visual marker
+            if let (Some(ns_id), Some(extmark_id)) = (req.ns_id, req.extmark_id) {
+                del_buf_extmark(ns_id, extmark_id)?;
             }
-
-            // Clear the visual marker from the original location
-            if req.ns_id.is_some() && req.extmark_id.is_some() {
-                if let (Some(ns_id), Some(extmark_id)) = (req.ns_id, req.extmark_id) {
-                    del_buf_extmark(ns_id, extmark_id)?;
-                }
-            }
-
             return Ok(());
         }
+
+        let result_lines: Vec<String> = req.result.split('\n').map(|s| s.to_string()).collect();
+        let (l0, l1) = req.range;
+
+        state.debug_manager.read().log(
+            "inst_accept",
+            format!(
+                "Applying {} lines to buffer {} at range ({}, {})",
+                result_lines.len(),
+                bufnr,
+                l0,
+                l1
+            ),
+        );
+
+        // Apply the result to the buffer using current buffer (assuming we're on the right buffer)
+
+        // Delete the original range and insert new lines in one operation
+        // set_lines replaces lines in range [start, end) with new lines
+        match set_buf_lines(l0..(l1 + 1), result_lines) {
+            Ok(_) => {
+                let state = get_state();
+                state.debug_manager.read().log(
+                    "inst_accept",
+                    "Successfully applied instruction result to buffer",
+                );
+            }
+            Err(e) => {
+                let state = get_state();
+                state.debug_manager.read().log(
+                    "inst_accept",
+                    format!("Failed to set buffer lines: {:?}", e),
+                );
+            }
+        }
+
+        // Clear the visual marker from the original location
+        if let (Some(ns_id), Some(extmark_id)) = (req.ns_id, req.extmark_id) {
+            del_buf_extmark(ns_id, extmark_id)?;
+        }
+
+        return Ok(());
     }
 
     state.debug_manager.read().log(
@@ -905,37 +901,33 @@ fn inst_cancel() -> LttwResult<()> {
         }
     };
 
-    if let Some(req_id) = req_id_to_cancel {
-        if let Some(req) = req {
-            state
-                .debug_manager
-                .read()
-                .log("inst_cancel", format!("Cancelling request {}", req_id));
+    if let (Some(req_id), Some(req)) = (req_id_to_cancel, req) {
+        state
+            .debug_manager
+            .read()
+            .log("inst_cancel", format!("Cancelling request {}", req_id));
 
-            // Delete the visual marker
-            if let Some(ns_id) = req.ns_id {
-                if let Some(extmark_id) = req.extmark_id {
-                    match del_buf_extmark(ns_id, extmark_id) {
-                        Ok(_) => {
-                            let state = get_state();
-                            state.debug_manager.read().log(
-                                "inst_cancel",
-                                format!("Deleted extmark for request {}", req_id),
-                            );
-                        }
-                        Err(e) => {
-                            let state = get_state();
-                            state
-                                .debug_manager
-                                .read()
-                                .log("inst_cancel", format!("Failed to delete extmark: {:?}", e));
-                        }
-                    }
+        // Delete the visual marker
+        if let (Some(ns_id), Some(extmark_id)) = (req.ns_id, req.extmark_id) {
+            match del_buf_extmark(ns_id, extmark_id) {
+                Ok(_) => {
+                    let state = get_state();
+                    state.debug_manager.read().log(
+                        "inst_cancel",
+                        format!("Deleted extmark for request {}", req_id),
+                    );
+                }
+                Err(e) => {
+                    let state = get_state();
+                    state
+                        .debug_manager
+                        .read()
+                        .log("inst_cancel", format!("Failed to delete extmark: {:?}", e));
                 }
             }
-
-            return Ok(());
         }
+
+        return Ok(());
     }
 
     Ok(())

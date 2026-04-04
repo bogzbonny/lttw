@@ -39,10 +39,10 @@ impl Cache {
     /// Evicts the least recently used entry if the cache is full
     pub fn insert(&mut self, key: String, value: FimResponse) {
         // Check if we need to evict an entry
-        if self.data.len() >= self.max_keys {
-            if let Some(lru_key) = self.lru_order.pop_front() {
-                self.data.remove(&lru_key);
-            }
+        if self.data.len() >= self.max_keys
+            && let Some(lru_key) = self.lru_order.pop_front()
+        {
+            self.data.remove(&lru_key);
         }
 
         // Update the cache
