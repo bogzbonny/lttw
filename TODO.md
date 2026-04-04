@@ -13,6 +13,7 @@
 
 05. info disappears once completion is done (should only disappear once leaving
     insert mode, or next completion displayed) 
+      - should also appear as the FIM is displayed not when FIM is accepted
 
 05. integrate git diff system into extra_inputs 
      - definitely should integrate with extra_input ring_buffer system -

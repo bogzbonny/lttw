@@ -929,8 +929,6 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
             let cache_size = cache.len();
             let max_cache_keys = config.max_cache_keys as usize;
 
-            debug_manager.log("display_fim_text", format!("timing_data {timing_data:?}"));
-
             // Build the info string using stored timing data
             let info_string = if let Some(t) = timing_data {
                 // Convert FimTimingsData to FimTimings (for the build_info_string function)
@@ -972,38 +970,19 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
                 // This displays the info at the right side of the window
                 info_opts.virt_text_pos(ExtmarkVirtTextPosition::RightAlign);
 
-                // Set the extmark at EOL position with right_gravity
-                // For RightAlign, we set the position at the end of the line
-                // Use the suggestion text length to find approximate end position
-                let suggestion_text = content[0].clone();
-                let suggestion_len = suggestion_text.len();
-                let eol_col = suggestion_len + pos_x;
-
-                // Debug log with position info
                 debug_manager.log(
                     "display_fim_text",
                     format!(
-                        "Setting info extmark with RightAlign at line {}, col {}. Suggestion len: {}, pos_x: {}, Info: '{}'",
-                        pos_y, eol_col, suggestion_len, pos_x, info_text
+                        "Setting info extmark with RightAlign at line {pos_y}, Info: '{info_text}'",
                     ),
                 );
 
-                match set_buf_extmark(ns_id, pos_y, eol_col, &info_opts.build()) {
-                    Ok(_id) => {
-                        debug_manager.log(
-                            "display_fim_text",
-                            format!(
-                                "Set info extmark at line {}, col {} (RightAlign)",
-                                pos_y, pos_x
-                            ),
-                        );
-                    }
-                    Err(e) => {
-                        debug_manager.log(
-                            "display_fim_text",
-                            format!("Error setting info extmark: {:?}", e),
-                        );
-                    }
+                // x pos not used as right align (set to 0)
+                if let Err(e) = set_buf_extmark(ns_id, pos_y, 0, &info_opts.build()) {
+                    debug_manager.log(
+                        "display_fim_text",
+                        format!("Error setting info extmark: {:?}", e),
+                    );
                 }
             }
         }
