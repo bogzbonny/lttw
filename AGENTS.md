@@ -67,8 +67,6 @@ cargo test --profile bench
 
 **Imports:**
 ```rust
-// Standard library first
-use std::collections::HashMap;
 
 // External crates second
 use serde::{Deserialize, Serialize};

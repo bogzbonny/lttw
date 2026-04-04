@@ -3,10 +3,10 @@ use {
         cache, config, debug, instruction::InstructionRequestState, ring_buffer, Error,
         FimCompletionMessage, FimState, LttwResult,
     },
+    ahash::{HashMap, HashMapExt},
     nvim_oxi::api::create_namespace,
     parking_lot::RwLock,
     std::{
-        collections::HashMap,
         sync::{
             atomic::{AtomicBool, AtomicI64},
             Arc, OnceLock,

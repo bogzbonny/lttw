@@ -5,8 +5,9 @@
 
 use {
     crate::{context::LocalContext, fim::FimResponse, utils::hash_input},
+    ahash::{HashMap, HashMapExt},
     serde::{Deserialize, Serialize},
-    std::collections::{HashMap, VecDeque},
+    std::collections::VecDeque,
 };
 
 /// Cache entry for FIM completions
