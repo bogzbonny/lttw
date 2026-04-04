@@ -820,6 +820,9 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
         // Create extmark opts for suggestion text
         let mut suggestion_opts = SetExtmarkOptsBuilder::default();
 
+        // NOTE here "Comment" is the neovim hightlight group
+        // (hence the virt text appears like a comment)
+
         // For single line suggestions, use inline or overlay based on context
         let suggestion_virt_text = vec![(suggestion_text, "Comment".to_string())];
         suggestion_opts.virt_text(suggestion_virt_text);

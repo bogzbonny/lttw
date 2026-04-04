@@ -1,6 +1,3 @@
-
-^^^^^^^^^ DONE
-
 01. TOSS FIMs which are nolonger for the correct buffer location.
      -> ensure that when a cached FIM is used, the location is updated
      appropriately (don't want to toss these precious caches accidently)
@@ -10,36 +7,54 @@
      - probably something to do with inline extmarks or even improper placement 
      (not checking before display if the x_pos is wrong?) 
 
+^^^^^^^^^ DONE
+
+00. fix should abort to prevent unnecessary llm calls
+
 01. Remove trailing prediction lines if they match 
      - go through one by one
+     - NOTE this could use the stop_strings, however that seems problematic if
+       the actual completion DOES really have a duplication of the stop string
+       which its meant to generate. 
 
-01. Add (info) stats as rhs extmarks
- - alternatively maybe send this information through LSP progress messages. 
+01. Add (info) stats as lsp progress messages
+     - send this information through LSP progress messages. 
 
-You are in the middle of the task of translating the codebase provided under
-`llama.vim/` into a new neovim plugin written in ENTIRELY rust using neovim
-bindings through the use of the nvim-oxi crate. NOTE there is not, nor should
-there EVER be ANY lua code in this project, all plugin functionality is achieved
-PURELY by using nvim-oxi 
-
-Add in rendering of the build info string (see build_info_string) to the rust
-code. Render this extmarks which are RightHand justified. 
-
-03. track the amount of llm calls make sure we're not goin crzy
-
-05. integrate git diff system into extra 
+05. integrate git diff system into extra_inputs 
      - definitely should integrate with extra_input ring_buffer system -
        ordering is important
+     - should be a part of the same ring buffer 
 
-05. integrate in LSP diagnostics into extra 
+05. integrate in LSP diagnostics into input_prefix (?)
+     - because the diagnostics are per-line and are likely not to get reused
+       then adding them to the beginning of input prefix is likely the best
+       strategy... 
+       - NOTE If we added them as the final input_extra entry then they would
+         get priority positioning, but if we removed it on the next cache call
+         then it would break the caching mechanism and all subsiquent calls
+         would recalculate all the cached entries (which would not have had to
+         happen if we never removed this input_extra).
+
+       - HOWEVER the issue with adding it to the input_prefix, is that the
+         content CAN ACTUALLY GET TRUNCATED once it reaches llama.cpp which
+         truncates this information to fit within a batch size (for prefix and
+         suffix lines) -> We could risk it and try and add it to the prefix but
+         then make n_prefix small so that hopefully it doesn't truncate the
+         diagostic information. 
+
+       - could experiment with re-adding in the token "<FIM_PRE>" after the
+         diagnostic information is provided.. might be a problem though
+       - Caching: Your diagnostic would be cached and reused across requests,
+         potentially contaminating future completions
      - Use autocmd and keep our own map 
      - https://neovim.io/doc/user/diagnostic/#diagnostic-events
 
 05. add config option for debugging (default false)
-05. fix tests-integrations (compile errors) 
 
 
 ------------------------
+
+10. track the amount of llm calls make sure we're not goin crzy
 
 10. integrate definitions of all nearby objects 
      - Iterate through all the nearby words and to go-to-definition
@@ -65,6 +80,7 @@ local query_string = [[
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
 
+
 10. easier to use debugging system (like debug! macro)
 20. option to not predict while in comments
 20. better global error printing 
@@ -75,3 +91,4 @@ local query_string = [[
     closed bracket system within a line example: "#[derive(Debug, Cl[CURSOR], Default)]"
 30. investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
 
+20. instruction system 

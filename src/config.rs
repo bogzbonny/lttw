@@ -22,8 +22,12 @@ pub struct LttwConfig {
     pub api_key: String,
 
     // Context configuration
-    pub n_prefix: u32,
-    pub n_suffix: u32,
+    // NOTE even though we feed in the following 'n' number of lines for prefix and suffix,
+    // those lines will be trucated further in the FIM completion system within llama.cpp which
+    // balances prefix:suffix content to being 3:1 AND ensures that all of that content fits into a
+    // single batch (`--batch-size` flag)
+    pub n_prefix: u32, // number of prefix lines fed into the inline endpoint
+    pub n_suffix: u32, // number of suffix lines fed into the inline endpoint
     pub n_predict: u32,
     pub stop_strings: Vec<String>,
     pub t_max_prompt_ms: u32,
