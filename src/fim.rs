@@ -6,7 +6,7 @@
 
 use {
     crate::{
-        cache::compute_hashes,
+        cache::{compute_hashes, compute_hashes_from_prefix_middle},
         context::get_local_context,
         context::LocalContext,
         get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
@@ -163,16 +163,22 @@ pub fn fim_try_hint_inner(
     buffer_id: u64,
     lines: Vec<String>,
 ) -> LttwResult<()> {
+    // first things first, increment the seq at the beginning to indicate to any waiting
+    // fim_workers in the debounce period that there is a new show in town (so don't start!).
+    // We do this first because the following cache checking may take a bit of time.
+    let seq = state.increment_debounce_sequence();
+
     // Get local context
     let ctx = get_local_context(&lines, pos_x, pos_y, None, &state.config.read());
     state.debug_manager.read().log("fim_try_hint_inner", "");
 
     // Compute primary hash
-    let primary_hash = format!("{}{}{}{}", ctx.prefix, ctx.middle, "Î", ctx.suffix);
-    let hash = hash_input(&primary_hash);
+    let primary_hash_inp = format!("{}{}Î{}", ctx.prefix, ctx.middle, ctx.suffix);
+    let hash = hash_input(&primary_hash_inp);
 
     // Check if the completion is cached (and update LRU order)
     let mut response = state.cache.write().get(&hash);
+    let mut recache = None; // recache the truncated nearby completion if we find one
 
     if response.is_none() {
         // ... or if there is a cached completion nearby (128 characters behind)
@@ -198,8 +204,8 @@ pub fn fim_try_hint_inner(
             let split_byte_idx = char_indices[char_len - i].0;
             let (pm_with_less_tail, removed) = pm.split_at(split_byte_idx);
 
-            let ctx_new = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
-            let hash_new = hash_input(&ctx_new);
+            let new_prefix_middle = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
+            let hash_new = hash_input(&new_prefix_middle);
 
             if let Some(response_) = state.cache.write().get(&hash_new) {
                 let content = &response_.content;
@@ -226,11 +232,22 @@ pub fn fim_try_hint_inner(
                             tokens_cached: response_.tokens_cached,
                             truncated: response_.truncated,
                         });
+                        recache = Some(new_prefix_middle)
                     }
                 }
             }
         }
         response = best_response;
+    }
+
+    // recache the re-found response at the new position - this way the response can still be found
+    // if it was longer than 128 characters and the user is accepting this line by line.
+    if let (Some(prefix_middle), Some(resp)) = (recache, &response) {
+        let hashes = compute_hashes_from_prefix_middle(prefix_middle, &ctx.suffix);
+        let mut cache_lock = state.cache.write();
+        for hash in &hashes {
+            cache_lock.insert(hash.clone(), resp.clone());
+        }
     }
 
     let mut prev_for_next_fim: Option<Vec<String>> = None;
@@ -240,24 +257,22 @@ pub fn fim_try_hint_inner(
             format!("found cached response: {response:#?}"),
         );
         let content = response.content;
-        if content.is_empty() {
-            return Ok(());
-        }
+        if !content.is_empty() {
+            render_fim_suggestion(
+                state.clone(),
+                pos_x,
+                pos_y,
+                &content,
+                ctx.line_cur.clone(),
+                None,
+            )?;
 
-        render_fim_suggestion(
-            state.clone(),
-            pos_x,
-            pos_y,
-            &content,
-            ctx.line_cur.clone(),
-            None,
-        )?;
-
-        // run async speculative FIM in the background for this position
-        // TODO should this just always run even when no hint is shown?
-        let hint_shown = state.fim_state.read().hint_shown;
-        if hint_shown {
-            prev_for_next_fim = Some(vec![content]);
+            // run async speculative FIM in the background for this position
+            // TODO should this just always run even when no hint is shown?
+            let hint_shown = state.fim_state.read().hint_shown;
+            if hint_shown {
+                prev_for_next_fim = Some(vec![content]);
+            }
         }
     }
     let filename = get_buf_filename()?;
@@ -269,6 +284,7 @@ pub fn fim_try_hint_inner(
         let _ = spawn_fim_completion_worker(
             state,
             ctx,
+            seq,
             pos_x,
             pos_y,
             buffer_id,
@@ -288,6 +304,7 @@ pub fn fim_try_hint_inner(
 async fn spawn_fim_completion_worker(
     state: Arc<PluginState>,
     ctx: LocalContext,
+    seq: u64,
     cursor_x: usize,
     cursor_y: usize,
     buffer_id: u64,
@@ -295,18 +312,12 @@ async fn spawn_fim_completion_worker(
     buffer_lines: Vec<String>,
     prev: Option<Vec<String>>, // speculative FIM content
 ) -> LttwResult<()> {
-    let seq = state.increment_debounce_sequence();
-
     // Check debounce if we have a sequence
-    let debounce_ms = {
-        let config = state.config.read();
-        config.debounce_ms
-    };
+    let debounce_ms = state.config.read().debounce_ms;
 
     // This is the most recent request, check if debounce has elapsed
-    let now = Instant::now();
     let last_spawn = *state.fim_worker_debounce_last_spawn.read();
-    let elapsed = now.duration_since(last_spawn);
+    let elapsed = Instant::now().duration_since(last_spawn);
     let debounce_expired = elapsed >= Duration::from_millis(debounce_ms as u64);
 
     if !debounce_expired {

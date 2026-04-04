@@ -1,7 +1,7 @@
 use {
     crate::{
-        autocmd::clear_filetype_autocommand, debug_clear, debug_toggle, disable_plugin,
-        enable_plugin, instruction, is_enabled, toggle_auto_fim, LttwResult,
+        autocmd::clear_filetype_autocommand, debug_clear, debug_disable, debug_enable,
+        disable_plugin, enable_plugin, instruction, is_enabled, toggle_auto_fim, LttwResult,
     },
     nvim_oxi::api::create_user_command,
 };
@@ -79,10 +79,22 @@ pub fn register_commands() -> LttwResult<()> {
     );
 
     // Debug commands
+
     let _ = create_user_command(
-        "LttwDebugToggle",
+        "LttwEnableDebug",
         |_| -> LttwResult<()> {
-            debug_toggle()?;
+            debug_enable()?;
+            nvim_oxi::api::command("debug enabled")?;
+            Ok(())
+        },
+        &Default::default(),
+    );
+
+    let _ = create_user_command(
+        "LttwDisableDebug",
+        |_| -> LttwResult<()> {
+            debug_disable()?;
+            nvim_oxi::api::command("debug disabled")?;
             Ok(())
         },
         &Default::default(),

@@ -6,10 +6,10 @@
     slammed to the end of the queue message. 
      - probably something to do with inline extmarks or even improper placement 
      (not checking before display if the x_pos is wrong?) 
+01. fix should abort to prevent unnecessary llm calls
+     - streamlined the debounce system a bit. 
 
 ^^^^^^^^^ DONE
-
-00. fix should abort to prevent unnecessary llm calls
 
 01. Remove trailing prediction lines if they match 
      - go through one by one
@@ -49,12 +49,17 @@
      - Use autocmd and keep our own map 
      - https://neovim.io/doc/user/diagnostic/#diagnostic-events
 
-05. add config option for debugging (default false)
 
+05. Use TAB from normal mode to fix lines with diagnostic errors (THEN I can
+    simply jump using [[ / ]] and then tab to fix those lines! yay) 
+     - I'm not sure if it'll be a pain to still use FIM for this or not
+     - Kinda thinking that it should maybe be TAB-TAB from normal mode to
+       activate the FIM completion?
 
 ------------------------
 
 10. track the amount of llm calls make sure we're not goin crzy
+
 
 10. integrate definitions of all nearby objects 
      - Iterate through all the nearby words and to go-to-definition
@@ -87,6 +92,7 @@ local query_string = [[
     https://github.com/noib3/nvim-oxi/issues/231
 20. allow for a more regular setup by passing config params through the setup
     function
+20. add config option for debugging (default false)
 20. Option to ONLY accept single line inline suggestions if typing within a fully
     closed bracket system within a line example: "#[derive(Debug, Cl[CURSOR], Default)]"
 20. Iff there are only two lines and the second line is all whitespace (new
@@ -94,6 +100,7 @@ local query_string = [[
     shows up
 
 30. investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
+     - I think would require a implementing my own FIM system, which would be
+       useful anyways
 
-
-20. instruction system 
+40. instruction system LOW priority can use CodeCompanion for now

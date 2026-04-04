@@ -387,16 +387,16 @@ fn fim_hide() -> LttwResult<()> {
     Ok(())
 }
 
-/// Debug toggle function - toggles logging
-fn debug_toggle() -> LttwResult<bool> {
+fn debug_enable() -> LttwResult<()> {
     let state = get_state();
-    let enabled = state.debug_manager.read().is_enabled();
+    state.debug_manager.write().enabled = true;
+    Ok(())
+}
 
-    // Toggle logging
-    let mut debug_manager_lock = state.debug_manager.write();
-    debug_manager_lock.set_enabled(!enabled);
-
-    Ok(!enabled)
+fn debug_disable() -> LttwResult<()> {
+    let state = get_state();
+    state.debug_manager.write().enabled = true;
+    Ok(())
 }
 
 /// Debug clear function

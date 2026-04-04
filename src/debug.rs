@@ -9,7 +9,7 @@ use {crate::utils, std::fmt::Display, std::fs::OpenOptions, std::io::Write, std:
 #[derive(Debug, Clone)]
 pub struct DebugManager {
     log_file_path: String,
-    enabled: bool,
+    pub enabled: bool,
 }
 
 impl DebugManager {
@@ -22,7 +22,7 @@ impl DebugManager {
 
         Self {
             log_file_path,
-            enabled: true,
+            enabled: false,
         }
     }
 

@@ -95,28 +95,58 @@ impl Cache {
 
 /// Compute hashes for caching
 pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
-    let mut hashes = Vec::new();
+    let max_hashes = 3; // TODO parameterize this
+    let mut hashes = Vec::with_capacity(max_hashes + 1);
 
     // Primary hash
-    let primary = format!("{}{}{}{}", ctx.prefix, ctx.middle, "Î", ctx.suffix);
+    let primary = format!("{}{}Î{}", ctx.prefix, ctx.middle, ctx.suffix);
     let hash = hash_input(&primary);
     hashes.push(hash);
 
     // Truncated prefix hashes (up to 3 levels)
     let mut prefix_trim = ctx.prefix.clone();
-    // Safety: Use regex with proper error handling
     let re = match regex::Regex::new(r"^[^\n]*\n") {
         Ok(r) => r,
         Err(_) => return hashes, // Return partial hashes on regex error
     };
-    let max_hashes = 3; // TODO parameterize this
     for _ in 0..max_hashes {
         prefix_trim = re.replace(&prefix_trim, "").to_string();
         if prefix_trim.is_empty() {
             break;
         }
 
-        let inp = format!("{}{}{}{}", prefix_trim, ctx.middle, "Î", ctx.suffix);
+        let inp = format!("{}{}Î{}", prefix_trim, ctx.middle, ctx.suffix);
+        let hash = hash_input(&inp);
+        hashes.push(hash);
+    }
+
+    hashes
+}
+
+/// Compute hashes for caching
+pub fn compute_hashes_from_prefix_middle(prefix_middle: String, suffix: &str) -> Vec<String> {
+    let max_hashes = 3; // TODO parameterize this
+    let mut hashes = Vec::with_capacity(max_hashes + 1);
+
+    // Primary hash
+    let primary = format!("{prefix_middle}Î{suffix}");
+    let hash = hash_input(&primary);
+    hashes.push(hash);
+
+    // Truncated prefix hashes (up to 3 levels)
+    let mut pm_trim = prefix_middle;
+    let re = match regex::Regex::new(r"^[^\n]*\n") {
+        Ok(r) => r,
+        Err(_) => return hashes, // Return partial hashes on regex error
+    };
+    for _ in 0..max_hashes {
+        pm_trim = re.replace(&pm_trim, "").to_string();
+        if pm_trim.lines().count() == 1 {
+            // final line is the middle line so must break now
+            break;
+        }
+
+        let inp = format!("{pm_trim}Î{suffix}");
         let hash = hash_input(&inp);
         hashes.push(hash);
     }
