@@ -8,12 +8,20 @@
        - ACTUALLY I think this one will be a bit easier given the information
          available to us to filter out directly in fim_completion once we get
          the response (line 600) 
-
-^^^^^^^^^ DONE
-
 05. info disappears once completion is done (should only disappear once leaving
     insert mode, or next completion displayed) 
       - should also appear as the FIM is displayed not when FIM is accepted
+
+^^^^^^^^^ DONE
+
+01. debug to see if rerender-fim suggestion is causing infinite loops (see
+    process_pending_display)
+
+05. track the number of llm calls currently running. 
+     - if the max number of concurrent llm calls is reached then the debounce 
+       should simply wait until this goes down before launching.. ALSO all
+       waiting debounced llm calls should abort unless they are the top of the
+       seq after waiting for the llm calls to go down.
 
 05. integrate git diff system into extra_inputs 
      - definitely should integrate with extra_input ring_buffer system -
@@ -44,6 +52,12 @@
      - Use autocmd and keep our own map 
      - https://neovim.io/doc/user/diagnostic/#diagnostic-events
 
+05. integrate in LSP Completions into input_prefix (?)
+     - suppliment the llm completions with suggestions from the LSP completions
+     - MAYBE also just provide the LSP completion as an option immediately until
+       the LLM response comes in. I noticed with ALE (from insert mode go C-X
+       then C-O) it gives a suggestion with a `...` in it which is probably
+       where the cursor should just be inserted if the completion is accepted.
 
 05. Use TAB from normal mode to fix lines with diagnostic errors (THEN I can
     simply jump using [[ / ]] and then tab to fix those lines! yay) 

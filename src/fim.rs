@@ -363,19 +363,27 @@ async fn spawn_fim_completion_worker(
     prev: Option<Vec<String>>, // speculative FIM content
     skip_debounce: bool,
 ) -> LttwResult<()> {
+    let semaphone = state.fim_worker_semaphore.clone();
     if !skip_debounce {
         // Check debounce if we have a sequence
-        let debounce_ms = state.config.read().debounce_ms;
+        let debounce_min_ms = state.config.read().debounce_min_ms;
+        let debounce_max_ms = state.config.read().debounce_max_ms;
+        let max_req = state.config.read().max_concurrent_fim_requests;
+        let free_permits = semaphone.available_permits();
+        let debounce_ms = debounce_min_ms
+            + ((debounce_max_ms.saturating_sub(debounce_min_ms) as f64)
+                * (max_req as f64 - free_permits as f64)
+                / max_req as f64) as u64; // linearly increase debounce time based on queue depth
 
         // This is the most recent request, check if debounce has elapsed
         let last_spawn = *state.fim_worker_debounce_last_spawn.read();
         let elapsed = Instant::now().duration_since(last_spawn);
-        let debounce_expired = elapsed >= Duration::from_millis(debounce_ms as u64);
+        let debounce_expired = elapsed >= Duration::from_millis(debounce_ms);
 
         if !debounce_expired {
             // Still within debounce period. Since this is the most recent request,
             // we should wait until debounce expires and then spawn.
-            let remaining_ms = debounce_ms as u64 - elapsed.as_millis() as u64;
+            let remaining_ms = debounce_ms - elapsed.as_millis() as u64;
             state.debug_manager.read().log(
                 "spawn_fim_completion_worker",
                 format!("Within debounce period, (seq {seq}, remaining {remaining_ms}ms)",),
@@ -383,22 +391,24 @@ async fn spawn_fim_completion_worker(
 
             // Wait for remaining debounce time
             tokio::time::sleep(Duration::from_millis(remaining_ms)).await;
-
-            // Re-check if we're still the most recent request
-            let latest_sequence = *state.fim_worker_debounce_seq.read();
-
-            if seq < latest_sequence {
-                // A newer request has come in, discard this one
-                state.debug_manager.read().log(
-                    "spawn_fim_completion_worker",
-                    format!(
-                        "Discarding stale worker after wait (seq {seq} < latest {latest_sequence})",
-                    ),
-                );
-                return Ok(());
-            }
         }
     }
+
+    // use a semaphone to make sure we don't make to many concurrent llm requests
+    let permit = semaphone.acquire().await;
+
+    // Re-check if we're still the most recent request
+    let latest_sequence = *state.fim_worker_debounce_seq.read();
+    if seq < latest_sequence {
+        // A newer request has come in, discard this one
+        state.debug_manager.read().log(
+            "spawn_fim_completion_worker",
+            format!("Discarding stale worker after wait (seq {seq} < latest {latest_sequence})",),
+        );
+        drop(permit);
+        return Ok(());
+    }
+
     state.record_worker_spawn();
 
     state.debug_manager.read().log(
@@ -418,6 +428,7 @@ async fn spawn_fim_completion_worker(
     )
     .await?;
 
+    drop(permit);
     Ok(())
 }
 
@@ -459,24 +470,20 @@ pub async fn fim_completion(
             config.ring_chunk_size,
         )
     };
-    state.debug_manager.read().log("fim_completion", "1");
 
     // Get local context
-    state.debug_manager.read().log("fim_completion", "2");
 
-    // Skip auto FIM if too much suffix
+    // Skip auto FIM if too much suffix characters, might be the case for dense text
+    // where there's simply a lot of chs on a few suffix lines
     if ctx.line_cur_suffix.len() > state.config.read().max_line_suffix as usize {
         return Ok(());
     }
-    state.debug_manager.read().log("fim_completion", "3");
-
     if prev.is_none() {
         // the first request should be quick - we will launch a speculative request after this one is displayed
         t_max_predict_ms = 250 // TODO parameterize this
     }
 
     let hashes = compute_hashes(&ctx);
-    state.debug_manager.read().log("fim_completion", "4");
 
     // if we already have a cached completion for one of the hashes, don't send a request
     if state.config.read().auto_fim {
@@ -487,7 +494,6 @@ pub async fn fim_completion(
             }
         }
     }
-    state.debug_manager.read().log("fim_completion", "5");
 
     // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
     // This prevents redundant context from cluttering the ring buffer
@@ -496,13 +502,11 @@ pub async fn fim_completion(
     let ring_chunk_size_half = (ring_chunk_size / 2) as usize;
     let start_line = pos_y.saturating_sub(ring_chunk_size_half);
     let end_line = (pos_y + ring_chunk_size_half).min(lines.len());
-    state.debug_manager.read().log("fim_completion", "6");
 
     // Safety: ensure we have valid range and enough lines
     if start_line >= end_line || start_line >= lines.len() {
         return Ok(());
     }
-    state.debug_manager.read().log("fim_completion", "7");
     let text = &lines[start_line..end_line];
     {
         let mut rb = state.ring_buffer.write();
@@ -557,7 +561,6 @@ pub async fn fim_completion(
 
     let last_pick = state.fim_state.read().get_last_pick_buf_id_pos_y();
     let state_ = state.clone();
-    state.debug_manager.read().log("fim_completion", "8");
 
     // get the next 10 lines past pos_y for tail filtering
     let end = (pos_y + 11).min(lines.len());
@@ -593,10 +596,15 @@ pub async fn fim_completion(
             .read()
             .log("response received", format!("{response:#?}"));
 
-        // TODO compare the tail of the content to the lines and filter out any matching with the
+        // compare the tail of the content to the lines and filter out any matching with the
         // following lines
-        let content = response
-            .content
+        //
+        // NOTE first add the prefix then also strip the prefix at the end. This will allow
+        // for full line tail removal of even the first line if the LLM is just reproducing the
+        // the suffix entirely even in the first line (IF we included the prefix)
+        let current_line_prefix = ctx.line_cur.chars().take(pos_x).collect::<String>();
+        let content = current_line_prefix.clone() + &response.content;
+        let content = content
             .trim_end() // trim new excess newlines which may interfer with tail matching
             .split('\n')
             .map(|s| s.to_string())
@@ -606,6 +614,10 @@ pub async fn fim_completion(
             format!("\tcontent: {content:#?}\n\tten_lines: {ten_lines:#?}"),
         );
         let content = filter_tail(&content, &ten_lines).join("\n");
+        let content = content
+            .strip_prefix(&current_line_prefix)
+            .unwrap_or(&content)
+            .to_string();
         response.content = content.clone();
 
         // Cache the response with timing info (new block for re-acquired locks)
@@ -646,7 +658,6 @@ pub async fn fim_completion(
             //);
         }
     });
-    state.debug_manager.read().log("fim_completion", "9");
 
     // Ring buffer pick logic - gather extra context when cursor moves significantly or to a new
     // buffer and process it in the background
@@ -656,11 +667,8 @@ pub async fn fim_completion(
         true
     };
 
-    state.debug_manager.read().log("fim_completion", "10");
     if do_ring_buffer_pick {
         // Get ring configuration
-        state.debug_manager.read().log("fim_completion", "10.1");
-
         let (ring_scope, n_prefix, n_suffix, ring_chunk_size) = {
             let config = state_.config.read();
             (
@@ -670,21 +678,16 @@ pub async fn fim_completion(
                 config.ring_chunk_size as usize,
             )
         };
-        state.debug_manager.read().log("fim_completion", "10.2");
 
         let max_y = lines.len() - 1;
         let prefix_start = pos_y.saturating_sub(ring_scope).min(max_y);
         let prefix_end = pos_y.saturating_sub(n_prefix).min(max_y);
-        state.debug_manager.read().log("fim_completion", "10.21");
         let prefix_lines = &lines[prefix_start..=prefix_end];
-        state.debug_manager.read().log("fim_completion", "10.3");
         if !prefix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
             ring_buffer_lock.pick_chunk(&state_, prefix_lines, filename.clone(), false, false)?;
         }
-        state.debug_manager.read().log("fim_completion", "10.4");
 
-        state.debug_manager.read().log("fim_completion", "10.5");
         let suffix_start = (pos_y + n_suffix).min(max_y);
         let suffix_end = (pos_y + n_suffix + ring_chunk_size).min(max_y);
         let suffix_lines = &lines[suffix_start..=suffix_end];
@@ -693,16 +696,14 @@ pub async fn fim_completion(
             ring_buffer_lock.pick_chunk(&state_, suffix_lines, filename, false, false)?;
         }
 
-        state.debug_manager.read().log("fim_completion", "10.6");
         // Update the last pick position
         state_
             .fim_state
             .write()
             .set_last_pick_buf_id_pos_y(buffer_id, pos_y);
-        state.debug_manager.read().log("fim_completion", "10.7");
     }
-    state.debug_manager.read().log("fim_completion", "11");
 
+    // wait until the request handle has completed before spawning
     handle.await?;
     Ok(())
 }

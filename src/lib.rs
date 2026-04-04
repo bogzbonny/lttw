@@ -261,6 +261,10 @@ fn process_pending_display() -> LttwResult<()> {
 
         // if either the hint isn't shown OR it's only whitespace then trigger another fim
         if !state.fim_state.read().hint_shown || !state.fim_state.read().can_accept {
+            state
+                .debug_manager
+                .read()
+                .log("process_pending_display", "rerendering fim suggestion");
             fim_try_hint()?;
         }
     }

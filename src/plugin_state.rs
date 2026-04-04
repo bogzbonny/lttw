@@ -13,7 +13,10 @@ use {
         },
         time::Instant,
     },
-    tokio::{runtime::Runtime, sync::mpsc},
+    tokio::{
+        runtime::Runtime,
+        sync::{mpsc, Semaphore},
+    },
 };
 
 // Global state - using OnceLock for thread-safe initialization
@@ -46,6 +49,7 @@ pub struct PluginState {
     pub fim_state: Arc<RwLock<FimState>>,
     pub fim_worker_debounce_seq: Arc<RwLock<u64>>,
     pub fim_worker_debounce_last_spawn: Arc<RwLock<Instant>>,
+    pub fim_worker_semaphore: Arc<tokio::sync::Semaphore>,
     pub extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
     #[allow(dead_code)]
     pub inst_ns: Option<u32>, // Namespace for instruction extmarks
@@ -80,6 +84,7 @@ impl Default for PluginState {
         let max_cache_keys = config.max_cache_keys as usize;
         let ring_n_chunks = config.ring_n_chunks as usize;
         let chunk_size = config.ring_chunk_size as usize;
+        let max_req = config.max_concurrent_fim_requests as usize;
 
         // Create namespaces for extmarks
         let extmark_ns = Some(create_namespace("lttw_fim"));
@@ -114,6 +119,7 @@ impl Default for PluginState {
             fim_state: Arc::new(RwLock::new(FimState::default())),
             fim_worker_debounce_seq: Arc::new(RwLock::new(0)),
             fim_worker_debounce_last_spawn: Arc::new(RwLock::new(Instant::now())),
+            fim_worker_semaphore: Arc::new(Semaphore::new(max_req)),
             extmark_ns,
             enabled: Arc::new(AtomicBool::new(enable_at_startup)),
             autocmd_ids: Arc::new(RwLock::new(Vec::new())),

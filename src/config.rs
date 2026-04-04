@@ -32,7 +32,9 @@ pub struct LttwConfig {
     pub stop_strings: Vec<String>,
     pub t_max_prompt_ms: u32,
     pub t_max_predict_ms: u32,
-    pub debounce_ms: u32,
+    pub debounce_min_ms: u64,
+    pub debounce_max_ms: u64,
+    pub max_concurrent_fim_requests: u32,
 
     // Display configuration
     pub show_info: u8,
@@ -80,7 +82,9 @@ impl Default for LttwConfig {
             stop_strings: Vec::new(),
             t_max_prompt_ms: 500,
             t_max_predict_ms: 1000,
-            debounce_ms: 100,
+            debounce_min_ms: 20,
+            debounce_max_ms: 200,
+            max_concurrent_fim_requests: 3, // good to be larger than 1 to allow for speculative FIM
             show_info: 2,
             auto_fim: true,
             max_line_suffix: 8,
@@ -184,8 +188,14 @@ impl LttwConfig {
         if let Some(v) = get_i64("t_max_predict_ms") {
             config.t_max_predict_ms = v as u32;
         }
-        if let Some(v) = get_i64("debounce_ms") {
-            config.debounce_ms = v as u32;
+        if let Some(v) = get_i64("debounce_min_ms") {
+            config.debounce_min_ms = v as u64;
+        }
+        if let Some(v) = get_i64("debounce_max_ms") {
+            config.debounce_max_ms = v as u64;
+        }
+        if let Some(v) = get_i64("max_concurrent_fim_requests") {
+            config.max_concurrent_fim_requests = v as u32;
         }
         if let Some(v) = get_i64("show_info") {
             config.show_info = v as u8;
