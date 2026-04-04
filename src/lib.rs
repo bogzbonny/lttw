@@ -114,8 +114,8 @@ fn fim_is_hint_shown() -> LttwResult<bool> {
 pub struct FimState {
     hint_shown: bool,
     can_accept: bool,
-    /// Last cursor Y position where ring buffer chunks were picked
-    last_pick_pos_y: Option<usize>,
+    /// Last buffer id and cursor Y position where ring buffer chunks were picked
+    last_pick_buf_id_pos_y: Option<(u64, usize)>,
 
     pos_x: usize,
     pos_y: usize,
@@ -154,17 +154,17 @@ impl FimState {
         self.line_cur.clear();
         self.can_accept = false;
         self.content.clear();
-        self.last_pick_pos_y = None;
+        self.last_pick_buf_id_pos_y = None;
         self.timings = None;
     }
 
     /// Update the last pick position
-    fn set_last_pick_pos_y(&mut self, pos_y: usize) {
-        self.last_pick_pos_y = Some(pos_y);
+    fn set_last_pick_buf_id_pos_y(&mut self, buf_id: u64, pos_y: usize) {
+        self.last_pick_buf_id_pos_y = Some((buf_id, pos_y));
     }
     /// Get the last pick position
-    fn get_last_pick_pos_y(&self) -> Option<usize> {
-        self.last_pick_pos_y
+    fn get_last_pick_buf_id_pos_y(&self) -> Option<(u64, usize)> {
+        self.last_pick_buf_id_pos_y
     }
 }
 

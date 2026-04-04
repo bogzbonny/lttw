@@ -488,7 +488,7 @@ pub async fn fim_completion(
         return Ok(());
     };
 
-    let last_pick_pos_y = state.fim_state.read().get_last_pick_pos_y();
+    let last_pick = state.fim_state.read().get_last_pick_buf_id_pos_y();
     let state_ = state.clone();
     state.debug_manager.read().log("fim_completion", "8");
 
@@ -561,10 +561,10 @@ pub async fn fim_completion(
     });
     state.debug_manager.read().log("fim_completion", "9");
 
-    // Ring buffer pick logic - gather extra context when cursor moves significantly
-    // and process it in the background
-    let do_ring_buffer_pick = if let Some(last_y) = last_pick_pos_y {
-        (pos_y as i64 - last_y as i64).abs() > 32
+    // Ring buffer pick logic - gather extra context when cursor moves significantly or to a new
+    // buffer and process it in the background
+    let do_ring_buffer_pick = if let Some((last_buf_id, last_y)) = last_pick {
+        last_buf_id != buffer_id || (pos_y as i64 - last_y as i64).abs() > 32
     } else {
         true
     };
@@ -608,7 +608,10 @@ pub async fn fim_completion(
 
         state.debug_manager.read().log("fim_completion", "10.6");
         // Update the last pick position
-        state_.fim_state.write().set_last_pick_pos_y(pos_y);
+        state_
+            .fim_state
+            .write()
+            .set_last_pick_buf_id_pos_y(buffer_id, pos_y);
         state.debug_manager.read().log("fim_completion", "10.7");
     }
     state.debug_manager.read().log("fim_completion", "11");
