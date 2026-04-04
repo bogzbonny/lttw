@@ -20,27 +20,14 @@ pub struct LocalContext {
 /// TODO review translation in greater detail
 /// Compute local context at a specified position
 ///
-/// # Arguments
-/// * `lines` - All lines in the buffer
-/// * `pos_x` - X position (column) in the current line
-/// * `pos_y` - Y position (line number, 0-indexed)
-/// * `prev` - Optional previous completion for this position
-/// * `config` - Plugin configuration
+/// ### Arguments
+///  - `lines` - All lines in the buffer
+///  - `pos_x` - X position (column) in the current line
+///  - `pos_y` - Y position (line number, 0-indexed)
+///  - `prev` - Optional previous completion for this position if this is provided then a
+///  - speculative context will be generated as though prev was an accepted completion
+///  - `config` - Plugin configuration
 pub fn get_local_context(
-    lines: &[String],
-    pos_x: usize,
-    pos_y: usize,
-    prev: Option<Vec<String>>,
-    config: &LttwConfig,
-) -> LocalContext {
-    if let Some(prev_lines) = prev {
-        get_local_context_with_prev(lines, pos_x, pos_y, &prev_lines, config)
-    } else {
-        get_local_context_no_prev(lines, pos_x, pos_y, config)
-    }
-}
-
-fn get_local_context_no_prev(
     lines: &[String],
     pos_x: usize,
     pos_y: usize,
@@ -83,69 +70,6 @@ fn get_local_context_no_prev(
 
     let prefix = lines_prefix.join("\n") + "\n";
     let suffix = line_cur_suffix.clone() + "\n" + &lines_suffix.join("\n") + "\n";
-
-    LocalContext {
-        prefix,
-        middle: line_cur_prefix,
-        suffix,
-        indent,
-        line_cur_suffix,
-        line_cur,
-    }
-}
-
-fn get_local_context_with_prev(
-    lines: &[String],
-    pos_x: usize,
-    pos_y: usize,
-    prev: &[String],
-    config: &LttwConfig,
-) -> LocalContext {
-    let max_y = lines.len();
-
-    let line_cur = if prev.len() == 1 {
-        let current = if pos_y < max_y { &lines[pos_y] } else { "" };
-        format!("{}{}", current, prev[0])
-    } else {
-        prev[prev.len() - 1].clone()
-    };
-
-    let line_cur_prefix = line_cur.clone();
-    let line_cur_suffix = String::new();
-
-    let _pos_x = pos_x;
-
-    let lines_prefix_start = if pos_y > 0 {
-        pos_y.saturating_sub(config.n_prefix as usize) + prev.len() - 1
-    } else {
-        0
-    };
-
-    let mut lines_prefix: Vec<String> = if lines_prefix_start < pos_y {
-        lines[lines_prefix_start..pos_y].to_vec()
-    } else {
-        Vec::new()
-    };
-
-    if prev.len() > 1 {
-        lines_prefix.push(format!("{}{}", lines[pos_y], prev[0]));
-        for line in &prev[1..prev.len() - 1] {
-            lines_prefix.push(line.clone());
-        }
-    }
-
-    let lines_suffix_end = std::cmp::min(max_y, pos_y + 1 + config.n_suffix as usize);
-    let lines_suffix: Vec<String> = if pos_y + 1 < lines_suffix_end {
-        lines[pos_y + 1..lines_suffix_end].to_vec()
-    } else {
-        Vec::new()
-    };
-
-    // Note: indent_last should be cached from previous computation
-    let indent = get_indent(&line_cur);
-
-    let prefix = lines_prefix.join("\n") + "\n";
-    let suffix = "\n".to_string() + &lines_suffix.join("\n") + "\n";
 
     LocalContext {
         prefix,
@@ -257,7 +181,7 @@ mod tests {
         ];
 
         let config = LttwConfig::new();
-        let ctx = get_local_context(&lines, 5, 1, None, &config);
+        let ctx = get_local_context(&lines, 5, 1, &config);
 
         assert_eq!(ctx.line_cur_suffix, "rintln!(\"hello\");");
         assert_eq!(ctx.indent, 4);
@@ -275,7 +199,7 @@ mod tests {
         ];
 
         let config = LttwConfig::new();
-        let ctx = get_local_context(&lines, 5, 1, None, &config);
+        let ctx = get_local_context(&lines, 5, 1, &config);
 
         assert_eq!(ctx.line_cur_suffix, "rintln!(\"hello\");");
         assert_eq!(ctx.indent, 4);

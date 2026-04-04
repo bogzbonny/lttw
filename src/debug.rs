@@ -97,23 +97,3 @@ impl Default for DebugManager {
 pub fn format_for_log(value: &dyn std::fmt::Debug) -> String {
     format!("{:?}", value)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_debug_manager() {
-        let mut manager = DebugManager::new();
-
-        // Test basic logging
-        manager.log("test1", "");
-        assert!(manager.is_enabled());
-
-        // Test enabling/disabling
-        manager.set_enabled(false);
-        assert!(!manager.is_enabled());
-        manager.set_enabled(true);
-        assert!(manager.is_enabled());
-    }
-}

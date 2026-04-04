@@ -274,8 +274,43 @@ fn msg_is_valid_to_display(msg: &FimCompletionMessage) -> bool {
     true
 }
 
+/// FIM accept function - can be used to accept real changes or virtually accept changes in order
+/// to run speculative FIM for future rounds.
+///
+/// Returns new_x_pos, new_y_pos, combined content to write
+fn fim_accept_inner(
+    accept_type: FimAcceptType,
+    pos_x: usize,
+    pos_y: usize,
+    line_cur: String,
+    content: Vec<String>,
+) -> LttwResult<(usize, usize, Vec<String>)> {
+    // Use the accept_fim_suggestion function from fim module
+    let (new_line, rest, inline_loc) =
+        fim::accept_fim_suggestion(accept_type, pos_x, &line_cur, &content);
+
+    // Move the cursor to the end of the accepted text
+    let (new_x, new_y) = if let Some(rest_lines) = &rest {
+        let new_pos_y = pos_y + rest_lines.len();
+        let new_pos_x = rest_lines.last().map_or(0, |line| line.len());
+        (new_pos_x, new_pos_y)
+    } else if let Some(inline) = inline_loc {
+        (inline, pos_y)
+    } else {
+        let new_col = new_line.len();
+        (new_col, pos_y)
+    };
+
+    let mut combined = vec![new_line];
+    if let Some(rest_lines) = rest {
+        combined.extend(rest_lines);
+    }
+
+    Ok((new_x, new_y, combined))
+}
+
 /// FIM accept function - accepts the FIM suggestion
-fn fim_accept(accept_type: FimAcceptType) -> LttwResult<Option<String>> {
+fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
     // Log before releasing the lock
     let state = get_state();
     {
@@ -296,7 +331,7 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<Option<String>> {
     };
 
     if !hint_shown || !can_accept {
-        return Ok(None);
+        return Ok(());
     }
 
     state.debug_manager.read().log(
@@ -304,53 +339,14 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<Option<String>> {
         format!("Accepting {} suggestion", accept_type),
     );
 
-    // Use the accept_fim_suggestion function from fim module
-    let (new_line, rest, inline_loc) =
-        fim::accept_fim_suggestion(accept_type, pos_x, &line_cur, &content);
-
-    state.debug_manager.read().log(
-        "fim_accept",
-        format!("new_line {new_line}\n\t rest {rest:?}"),
-    );
-
-    // Set the buffer lines with the accepted content
-    // Get current lines and convert to owned strings
-    let all_lines: Vec<String> = get_buf_lines(..);
-
-    // Update the current line with the new content
-    let mut all_lines_modified = all_lines.clone();
-    if pos_y < all_lines_modified.len() {
-        all_lines_modified[pos_y] = new_line.clone();
-    }
-
-    // If there are rest lines (from 'full' or 'line' accept), insert them
-    if let Some(ref rest_lines) = rest {
-        for (i, line) in rest_lines.iter().enumerate() {
-            all_lines_modified.insert(pos_y + 1 + i, line.clone());
-        }
-    }
-
-    // Set the lines back to the buffer (replace from pos_y to end)
-    let end_line = if let Some(rest_lines) = &rest {
-        pos_y + rest_lines.len() + 1
-    } else {
-        pos_y + 1
-    };
+    let (new_x, new_y, final_content) =
+        fim_accept_inner(accept_type, pos_x, pos_y, line_cur, content)?;
 
     // replace the one line with all the new content (can be multiple lines)
-    set_buf_lines(pos_y..=pos_y, all_lines_modified[pos_y..end_line].to_vec())?;
+    set_buf_lines(pos_y..=pos_y, final_content)?;
 
     // Move the cursor to the end of the accepted text
-    if let Some(rest_lines) = &rest {
-        let new_pos_y = pos_y + rest_lines.len();
-        let new_pos_x = rest_lines.last().map_or(0, |line| line.len());
-        set_window_cursor(new_pos_x, new_pos_y)?;
-    } else if let Some(inline) = inline_loc {
-        set_window_cursor(inline, pos_y)?;
-    } else {
-        let new_col = new_line.len();
-        set_window_cursor(new_col, pos_y)?;
-    }
+    set_window_cursor(new_x, new_y)?;
 
     state.fim_state.write().clear();
 
@@ -362,7 +358,7 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<Option<String>> {
     // immediately start a new FIM request skipping the debounce
     fim_try_hint_skip_debounce()?;
 
-    Ok(Some(new_line))
+    Ok(())
 }
 
 /// FIM hide function - clears the FIM hint from display

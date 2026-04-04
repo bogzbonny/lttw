@@ -9,7 +9,7 @@ use {
         cache::compute_hashes,
         context::get_local_context,
         context::LocalContext,
-        get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
+        fim_accept_inner, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
         plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
         utils::{
@@ -43,10 +43,6 @@ pub struct FimRequest {
     pub t_max_prompt_ms: u32,
     pub t_max_predict_ms: u32,
     pub response_fields: Vec<String>,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub model: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub prev: Vec<String>,
 }
 
 /// FIM completion response (uses flat keys from server)
@@ -181,7 +177,7 @@ pub fn fim_try_hint_inner(
     let seq = state.increment_debounce_sequence();
 
     // Get local context
-    let ctx = get_local_context(&lines, pos_x, pos_y, None, &state.config.read());
+    let ctx = get_local_context(&lines, pos_x, pos_y, &state.config.read());
     state.debug_manager.read().log("fim_try_hint_inner", "");
 
     // Compute primary hash
@@ -255,6 +251,7 @@ pub fn fim_try_hint_inner(
     // recache the re-found response at the new position - this way the response can still be found
     // if it was longer than 128 characters and the user is accepting this line by line.
     if recache && let Some(resp) = &response {
+        // use the original ctx to compute the hashes
         let hashes = compute_hashes(&ctx);
         let mut cache_lock = state.cache.write();
         for hash in &hashes {
@@ -289,23 +286,55 @@ pub fn fim_try_hint_inner(
     }
     let filename = get_buf_filename()?;
 
-    // Spawn a FIM in the background
+    // Spawn a FIM in the background nomatter what
+    // either a speculative-fim as though the completion was accepted
+    // or a non-speculative fim because we need a fim!
     let rt = state.tokio_runtime.clone();
     rt.read().spawn(async move {
-        // TODO log error
-        let _ = spawn_fim_completion_worker(
-            state,
-            ctx,
-            seq,
-            pos_x,
-            pos_y,
-            buffer_id,
-            filename,
-            lines,
-            prev_for_next_fim,
-            skip_debounce,
-        )
-        .await;
+        if let Some(content) = prev_for_next_fim.clone() {
+            // regenerate the context to make a speculative FIM
+            let Ok((new_x, new_y, final_content)) =
+                fim_accept_inner(FimAcceptType::Full, pos_x, pos_y, ctx.line_cur, content)
+            else {
+                // TODO log error
+                return;
+            };
+
+            // overwrite pos_y with all the final_content
+            let mut virtual_lines = lines;
+            virtual_lines.splice(pos_y..=pos_y, final_content);
+
+            let virtual_ctx = get_local_context(&virtual_lines, new_x, new_y, &state.config.read());
+
+            let _ = spawn_fim_completion_worker(
+                state,
+                virtual_ctx,
+                seq,
+                new_x,
+                new_y,
+                buffer_id,
+                filename,
+                virtual_lines,
+                prev_for_next_fim,
+                skip_debounce,
+            )
+            .await;
+        } else {
+            // TODO log error
+            let _ = spawn_fim_completion_worker(
+                state,
+                ctx,
+                seq,
+                pos_x,
+                pos_y,
+                buffer_id,
+                filename,
+                lines,
+                prev_for_next_fim,
+                skip_debounce,
+            )
+            .await;
+        }
     });
     Ok(())
 }
@@ -511,8 +540,6 @@ pub async fn fim_completion(
             "truncated".to_string(),
             "tokens_cached".to_string(),
         ],
-        model: model.clone(),
-        prev: prev.map(|p| p.to_vec()).unwrap_or_default(),
     };
 
     let Ok(tx) = state.get_fim_completion_tx() else {
@@ -1158,8 +1185,6 @@ mod tests {
             t_max_prompt_ms: 500,
             t_max_predict_ms: 1000,
             response_fields: vec!["content".to_string()],
-            model: "".to_string(),
-            prev: vec![],
         };
 
         let json = serde_json::to_string(&request).expect("Request should serialize to JSON");
@@ -1315,8 +1340,6 @@ mod tests {
             t_max_prompt_ms: 500,
             t_max_predict_ms: 1000,
             response_fields: vec!["content".to_string()],
-            model: "".to_string(),
-            prev: vec![],
         };
 
         let json = serde_json::to_string(&request).expect("Request should serialize to JSON");
