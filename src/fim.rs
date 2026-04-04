@@ -377,7 +377,7 @@ pub async fn fim_completion(
         n_predict,
         stop,
         t_max_prompt_ms,
-        t_max_predict_ms,
+        mut t_max_predict_ms,
         model,
         endpoint_fim,
         api_key,
@@ -405,6 +405,11 @@ pub async fn fim_completion(
         return Ok(());
     }
     state.debug_manager.read().log("fim_completion", "3");
+
+    if prev.is_none() {
+        // the first request should be quick - we will launch a speculative request after this one is displayed
+        t_max_predict_ms = 250 // TODO parameterize this
+    }
 
     let hashes = compute_hashes(&ctx);
     state.debug_manager.read().log("fim_completion", "4");

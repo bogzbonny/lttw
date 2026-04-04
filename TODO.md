@@ -89,6 +89,11 @@ local query_string = [[
     function
 20. Option to ONLY accept single line inline suggestions if typing within a fully
     closed bracket system within a line example: "#[derive(Debug, Cl[CURSOR], Default)]"
+20. Iff there are only two lines and the second line is all whitespace (new
+    empty line) then discard that from the prediction... seems janky when it
+    shows up
+
 30. investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
+
 
 20. instruction system 
