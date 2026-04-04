@@ -1,8 +1,6 @@
 
 ^^^^^^^^^ DONE
 
-00. commented out XXXs for pick_chunk
-
 01. bizzare issue with re-rendering msgs as they come where the cursor gets
     slammed to the end of the queue message. 
      - probably something to do with inline extmarks or even improper placement 
@@ -72,6 +70,9 @@ local query_string = [[
     https://github.com/noib3/nvim-oxi/issues/231
 20. allow for a more regular setup by passing config params through the setup
     function
+20. Option to ONLY accept single line inline suggestions if typing within a fully
+    closed bracket system within a line example: "#[derive(Debug, Cl[CURSOR], Default)]"
+
 
  
 

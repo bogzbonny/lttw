@@ -1,8 +1,6 @@
 use {
     crate::{
-        context::chunk_similarity,
-        get_state,
-        utils::{buffer_active_and_readable, buffer_modified, random_range},
+        context::chunk_similarity, get_state, plugin_state::PluginState, utils::random_range,
         LttwResult,
     },
     std::sync::Arc,
@@ -130,35 +128,30 @@ impl RingBuffer {
 
     /// Pick a random chunk from the provided text and queue it for processing
     ///
-    /// # Arguments
-    /// * `text` - Text to pick a chunk from
-    /// * `no_mod` - If true, don't pick chunks from buffers with pending changes
-    /// * `do_evict` - If true, evict chunks that are very similar to the new one
+    /// ## Arguments
+    ///  - `text` - Text to pick a chunk from
+    ///  - `no_mod` - If true, don't pick chunks from buffers with pending changes
+    ///  - `do_evict` - If true, evict chunks that are very similar to the new one
     pub fn pick_chunk(
         &mut self,
+        state: &PluginState,
         text: &[String],
         filename: String,
         no_mod: bool,
         do_evict: bool,
     ) -> LttwResult<()> {
-        //if !buffer_active_and_readable()? {
-        //    // XXX must not call neovim
-        //    return Ok(());
-        //}
+        let info = state.get_cur_buffer_info();
+        if !(info.filepath == filename && info.is_loaded && info.is_readable) {
+            return Ok(());
+        }
 
-        //if no_mod && buffer_modified() {
-        //    // XXX must not call neovim
-        //    return Ok(());
-        //}
+        if no_mod && info.is_modified {
+            return Ok(());
+        }
 
         self.pick_chunk_inner(text, filename, do_evict)
     }
-    /// Pick a random chunk from the provided text and queue it for processing
-    ///
-    /// # Arguments
-    /// * `text` - Text to pick a chunk from
-    /// * `no_mod` - If true, don't pick chunks from buffers with pending changes
-    /// * `do_evict` - If true, evict chunks that are very similar to the new one
+
     pub fn pick_chunk_inner(
         &mut self,
         text: &[String],

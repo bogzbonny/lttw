@@ -49,6 +49,8 @@ pub struct PluginState {
     pub extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
     #[allow(dead_code)]
     pub inst_ns: Option<u32>, // Namespace for instruction extmarks
+    pub cur_buf_info: Arc<RwLock<CurrentBufferInfo>>, // the current buffer and whether its modified
+    // or not
     pub autocmd_ids: Arc<RwLock<Vec<u32>>>,
     pub autocmd_id_filetype_check: Arc<RwLock<Option<u32>>>,
     pub ring_buffer_timer_handle: Arc<RwLock<RingBufferTimerHandle>>,
@@ -58,6 +60,14 @@ pub struct PluginState {
     pub pending_display: Arc<RwLock<Vec<FimCompletionMessage>>>,
     // Persistent tokio runtime for async operations
     pub tokio_runtime: Arc<RwLock<Runtime>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CurrentBufferInfo {
+    pub filepath: String,
+    pub is_modified: bool,
+    pub is_loaded: bool,
+    pub is_readable: bool,
 }
 
 /// Type alias for ring buffer timer handle to simplify type declarations
@@ -99,6 +109,7 @@ impl Default for PluginState {
             last_move_time: Arc::new(RwLock::new(Instant::now())),
             instruction_requests: Arc::new(RwLock::new(HashMap::new())),
             inst_ns,
+            cur_buf_info: Arc::new(RwLock::new(CurrentBufferInfo::default())),
             next_inst_req_id: Arc::new(AtomicI64::new(0)),
             fim_state: Arc::new(RwLock::new(FimState::default())),
             fim_worker_debounce_seq: Arc::new(RwLock::new(0)),
@@ -148,5 +159,13 @@ impl PluginState {
             return Ok(false);
         };
         Ok(mode_char == &b'n')
+    }
+
+    pub fn set_cur_buffer_info(&self, info: CurrentBufferInfo) {
+        *self.cur_buf_info.write() = info;
+    }
+
+    pub fn get_cur_buffer_info(&self) -> CurrentBufferInfo {
+        self.cur_buf_info.read().clone()
     }
 }

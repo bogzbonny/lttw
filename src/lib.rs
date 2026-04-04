@@ -31,8 +31,8 @@ use {
     tokio::sync::mpsc,
     utils::{
         clear_buf_namespace_objects, del_autocmd, get_buf_filename, get_buf_lines,
-        get_current_buffer_id, get_current_filetype, get_mode_bz, get_pos, get_yanked_text,
-        in_insert_mode, set_buf_lines, set_window_cursor,
+        get_current_buffer_id, get_current_buffer_info, get_current_filetype, get_mode_bz, get_pos,
+        get_yanked_text, in_insert_mode, set_buf_lines, set_window_cursor,
     },
 };
 
@@ -522,6 +522,13 @@ fn set_mode_in_state() -> LttwResult<()> {
     Ok(())
 }
 
+/// Toggle auto_fim configuration
+fn set_cur_buffer_info_in_state() -> LttwResult<()> {
+    let info = get_current_buffer_info()?;
+    get_state().set_cur_buffer_info(info);
+    Ok(())
+}
+
 /// Handle TextYankPost event - gather chunks from yanked text
 fn on_text_yank_post() -> LttwResult<()> {
     let state = get_state();
@@ -543,7 +550,7 @@ fn on_text_yank_post() -> LttwResult<()> {
 
         // Pick chunk from yanked text
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&yanked, filename, false, true)?;
+        ring_buffer_lock.pick_chunk(&state, &yanked, filename, false, true)?;
     }
 
     Ok(())
@@ -565,7 +572,7 @@ fn on_buf_enter_gather_chunks() -> LttwResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&lines, filename, false, true)?;
+        ring_buffer_lock.pick_chunk(&state, &lines, filename, false, true)?;
     }
 
     Ok(())
@@ -587,7 +594,7 @@ fn on_buf_leave() -> LttwResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&lines, filename, false, true)?;
+        ring_buffer_lock.pick_chunk(&state, &lines, filename, false, true)?;
     }
 
     Ok(())
@@ -609,7 +616,7 @@ fn on_buf_write_post() -> LttwResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&lines, filename, false, true)?;
+        ring_buffer_lock.pick_chunk(&state, &lines, filename, false, true)?;
     }
 
     Ok(())

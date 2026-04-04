@@ -1,7 +1,7 @@
 use crate::{
     filetype::on_buf_enter_check_filetype,
     fim_hide, get_state, on_buf_enter_gather_chunks, on_buf_leave, on_buf_write_post, on_move,
-    on_text_yank_post, set_mode_in_state,
+    on_text_yank_post, set_cur_buffer_info_in_state, set_mode_in_state,
     utils::{create_autocmd, del_autocmd},
     LttwResult,
 };
@@ -68,6 +68,20 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         .unwrap_or(0);
         ids.push(id);
     }
+
+    // For keeping track of the active buffer and whether it is modified
+    // for the tokio threads
+    let id = create_autocmd(
+        ["BufModifiedSet", "BufEnter"],
+        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+            .callback(|_| {
+                let _ = set_cur_buffer_info_in_state();
+                false
+            })
+            .build(),
+    )
+    .unwrap_or(0);
+    ids.push(id);
 
     // Yank text for ring buffer (TextYankPost)
     let id = create_autocmd(

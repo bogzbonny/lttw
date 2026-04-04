@@ -13,6 +13,9 @@ pub enum Error {
     #[error("nvim_oxi error: {0}")]
     NvimOxi(#[from] nvim_oxi::Error),
 
+    #[error("TryFromInt error: {0}")]
+    TryFromInt(#[from] std::num::TryFromIntError),
+
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
 

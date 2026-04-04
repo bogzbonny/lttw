@@ -13,8 +13,8 @@ use {
         plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
         utils::{
-            clear_buf_namespace_objects, get_buf_filename, get_buf_line, random_range,
-            set_buf_extmark, hash_input,
+            clear_buf_namespace_objects, get_buf_filename, get_buf_line, hash_input,
+            set_buf_extmark,
         },
         Error, FimCompletionMessage, FimTimingsData, LttwResult,
     },
@@ -286,6 +286,7 @@ pub fn fim_try_hint_inner(
 /// Implementation of FIM worker with optional debounce sequence tracking
 ///
 /// NOTE this DOES NOT happens on the neovim main thread - don't call neovim functions
+#[allow(clippy::too_many_arguments)]
 async fn spawn_fim_completion_worker(
     state: Arc<PluginState>,
     ctx: LocalContext,
@@ -362,6 +363,7 @@ async fn spawn_fim_completion_worker(
 /// Returns the content and optionally timing info for display
 ///
 /// NOTE this DOES NOT happens on the neovim main thread - don't call neovim functions
+#[allow(clippy::too_many_arguments)]
 pub async fn fim_completion(
     state: Arc<PluginState>,
     ctx: LocalContext,
@@ -439,7 +441,7 @@ pub async fn fim_completion(
         let mut rb = state.ring_buffer.write();
         let chunk = rb.get_chunk_from_text(text);
         if !chunk.is_empty() {
-            rb.evict_similar(&chunk, 0.5);
+            rb.evict_similar(chunk, 0.5);
         }
     }
 
@@ -593,7 +595,7 @@ pub async fn fim_completion(
         state.debug_manager.read().log("fim_completion", "10.3");
         if !prefix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
-            ring_buffer_lock.pick_chunk(prefix_lines, filename.clone(), false, false)?;
+            ring_buffer_lock.pick_chunk(&state_, prefix_lines, filename.clone(), false, false)?;
         }
         state.debug_manager.read().log("fim_completion", "10.4");
 
@@ -603,7 +605,7 @@ pub async fn fim_completion(
         let suffix_lines = &lines[suffix_start..=suffix_end];
         if !suffix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
-            ring_buffer_lock.pick_chunk(suffix_lines, filename, false, false)?;
+            ring_buffer_lock.pick_chunk(&state_, suffix_lines, filename, false, false)?;
         }
 
         state.debug_manager.read().log("fim_completion", "10.6");

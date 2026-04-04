@@ -3,7 +3,7 @@
 // This module provides various utility functions used throughout the plugin.
 
 use {
-    crate::{get_state, LttwResult},
+    crate::{get_state, plugin_state::CurrentBufferInfo, LttwResult},
     ahash::AHasher,
     nvim_oxi::{
         api::{
@@ -169,12 +169,23 @@ pub fn get_yanked_text() -> LttwResult<String> {
 }
 
 /// Get buffer lines from Neovim
-pub fn buffer_modified() -> bool {
+// id, filename, is_modified, is_readable
+pub fn get_current_buffer_info() -> LttwResult<CurrentBufferInfo> {
     assert_not_tokio_worker();
     let buf = Buffer::current();
+    let buf_file_path = buf.get_name()?;
     // TODO test that this get_var is working
     let is_modified: bool = buf.get_var("modified").unwrap_or(false);
-    is_modified
+    let filepath = buf_file_path.to_string_lossy().to_string();
+    let is_loaded = buf.is_loaded(); // acts like buf_listed
+    let is_readable = is_readable(buf_file_path.as_path());
+    let out = CurrentBufferInfo {
+        filepath,
+        is_modified,
+        is_loaded,
+        is_readable,
+    };
+    Ok(out)
 }
 
 /// Get buffer lines from Neovim
@@ -185,15 +196,6 @@ pub fn get_buf_filename() -> LttwResult<String> {
     // convert to string
     let filename = buf_file_name.to_string_lossy().to_string();
     Ok(filename)
-}
-/// Get buffer lines from Neovim
-pub fn buffer_active_and_readable() -> LttwResult<bool> {
-    assert_not_tokio_worker();
-    let buf = Buffer::current();
-    let loaded = buf.is_loaded(); // acts like buf_listed
-    let buf_file_name = buf.get_name()?;
-    let is_readable = is_readable(buf_file_name.as_path());
-    Ok(loaded && is_readable)
 }
 
 /// Get buffer lines from Neovim
@@ -266,19 +268,4 @@ pub fn get_current_directory() -> String {
     std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| ".".to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_sha256() {
-        let hash = hash_input("hello");
-        assert_eq!(hash.len(), 64); // SHA256 produces 64 hex characters
-        assert_eq!(
-            hash,
-            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
-        );
-    }
 }
