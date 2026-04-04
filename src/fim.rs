@@ -130,7 +130,7 @@ pub fn build_info_string(
     }
 }
 
-pub fn fim_try_hint() -> LttwResult<()> {
+pub fn fim_try_hint(retry: Option<usize>) -> LttwResult<()> {
     if !in_insert_mode()? {
         return Ok(());
     }
@@ -138,7 +138,7 @@ pub fn fim_try_hint() -> LttwResult<()> {
     let state = get_state();
     let lines = get_buf_lines(..);
     let buffer_id = get_current_buffer_id();
-    fim_try_hint_inner(state, pos_x, pos_y, buffer_id, lines, false)
+    fim_try_hint_inner(state, pos_x, pos_y, buffer_id, lines, false, retry)
 }
 
 pub fn fim_try_hint_skip_debounce() -> LttwResult<()> {
@@ -149,7 +149,7 @@ pub fn fim_try_hint_skip_debounce() -> LttwResult<()> {
     let state = get_state();
     let lines = get_buf_lines(..);
     let buffer_id = get_current_buffer_id();
-    fim_try_hint_inner(state, pos_x, pos_y, buffer_id, lines, true)
+    fim_try_hint_inner(state, pos_x, pos_y, buffer_id, lines, true, None)
 }
 
 /// Try to generate a suggestion using the data in the cache
@@ -169,6 +169,7 @@ pub fn fim_try_hint_inner(
     buffer_id: u64,
     lines: Vec<String>,
     skip_debounce: bool,
+    retry: Option<usize>, // retry number
 ) -> LttwResult<()> {
     // first things first, increment the seq at the beginning to indicate to any waiting
     // fim_workers in the debounce period that there is a new show in town (so don't start!).
@@ -325,6 +326,7 @@ pub fn fim_try_hint_inner(
                 virtual_lines,
                 prev_for_next_fim,
                 skip_debounce,
+                retry,
             )
             .await;
         } else {
@@ -340,6 +342,7 @@ pub fn fim_try_hint_inner(
                 lines,
                 prev_for_next_fim,
                 skip_debounce,
+                retry,
             )
             .await;
         }
@@ -362,6 +365,7 @@ async fn spawn_fim_completion_worker(
     buffer_lines: Vec<String>,
     prev: Option<Vec<String>>, // speculative FIM content
     skip_debounce: bool,
+    retry: Option<usize>,
 ) -> LttwResult<()> {
     let semaphone = state.fim_worker_semaphore.clone();
     if !skip_debounce {
@@ -425,6 +429,7 @@ async fn spawn_fim_completion_worker(
         filename,
         buffer_lines,
         prev,
+        retry,
     )
     .await?;
 
@@ -446,6 +451,7 @@ pub async fn fim_completion(
     filename: String,
     lines: Vec<String>,
     prev: Option<Vec<String>>, // speculative FIM content
+    retry: Option<usize>,
 ) -> LttwResult<()> {
     state.debug_manager.read().log("fim_completion", "0");
     let (
@@ -648,6 +654,7 @@ pub async fn fim_completion(
             cursor_y: pos_y,
             content,
             timings,
+            retry,
         };
 
         if let Err(_e) = tx.send(msg).await {
@@ -808,7 +815,7 @@ pub fn render_fim_suggestion(
 
     // Check if only whitespace
     let joined = lines.join("\n");
-    let can_accept = !joined.trim().is_empty();
+    let hint_is_valid = !joined.trim().is_empty();
 
     state.debug_manager.read().log(
         "render_fim_suggestion",
@@ -817,17 +824,19 @@ pub fn render_fim_suggestion(
 
     // Update FIM state with timing data
     state.fim_state.write().update(
-        can_accept,
+        hint_is_valid,
         pos_x,
         pos_y,
         line_cur.to_string(),
-        can_accept,
         lines,
         timings,
     );
 
     // Display virtual text using extmarks
-    display_fim_text(&state)
+    if hint_is_valid {
+        display_fim_text(&state)?;
+    }
+    Ok(())
 }
 
 /// Display FIM hint as virtual text using extmarks with optional inline info
@@ -836,23 +845,12 @@ pub fn render_fim_suggestion(
 /// NOTE this happens on the neovim main thread
 fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
     // Lock the fim_state and config to get the data we need
-    let (
-        hint_shown,
-        content,
-        extmark_ns,
-        pos_y,
-        pos_x,
-        line_cur,
-        config,
-        debug_manager,
-        timing_data,
-    ) = {
+    let (content, extmark_ns, pos_y, pos_x, line_cur, config, debug_manager, timing_data) = {
         let fs = state.fim_state.read();
         let config = state.config.read().clone();
         let debug_manager = state.debug_manager.read().clone();
         let timing_data = fs.timings.clone();
         (
-            fs.hint_shown,
             fs.content.clone(),
             state.extmark_ns,
             fs.pos_y,
@@ -863,10 +861,6 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
             timing_data,
         )
     };
-
-    if !hint_shown || content.is_empty() {
-        return Ok(());
-    }
 
     // Clear any existing extmarks in the namespace before setting new ones
     if let Some(ns_id) = extmark_ns {

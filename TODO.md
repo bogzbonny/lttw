@@ -11,17 +11,17 @@
 05. info disappears once completion is done (should only disappear once leaving
     insert mode, or next completion displayed) 
       - should also appear as the FIM is displayed not when FIM is accepted
-
-^^^^^^^^^ DONE
-
-01. debug to see if rerender-fim suggestion is causing infinite loops (see
-    process_pending_display)
-
 05. track the number of llm calls currently running. 
      - if the max number of concurrent llm calls is reached then the debounce 
        should simply wait until this goes down before launching.. ALSO all
        waiting debounced llm calls should abort unless they are the top of the
        seq after waiting for the llm calls to go down.
+     - used a semaphore, no tracking required clearly works great
+
+^^^^^^^^^ DONE
+
+01. debug to see if rerender-fim suggestion is causing infinite loops (see
+    process_pending_display)
 
 05. integrate git diff system into extra_inputs 
      - definitely should integrate with extra_input ring_buffer system -

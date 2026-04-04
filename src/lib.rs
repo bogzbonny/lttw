@@ -76,6 +76,7 @@ pub struct FimCompletionMessage {
     cursor_y: usize,                 // Cursor position Y
     content: String,                 // FIM response content
     timings: Option<FimTimingsData>, // Timing information from server response
+    retry: Option<usize>,            // the retry count for this completion
 }
 
 /// Initialize the plugin with configuration
@@ -123,7 +124,6 @@ fn lttw_setup() {
 #[derive(Debug, Clone, Default)]
 pub struct FimState {
     hint_shown: bool,
-    can_accept: bool,
     /// Last buffer id and cursor Y position where ring buffer chunks were picked
     last_pick_buf_id_pos_y: Option<(u64, usize)>,
 
@@ -143,7 +143,6 @@ impl FimState {
         pos_x: usize,
         pos_y: usize,
         line_cur: String,
-        can_accept: bool,
         content: Vec<String>,
         timings: Option<FimTimingsData>,
     ) {
@@ -151,7 +150,6 @@ impl FimState {
         self.pos_x = pos_x;
         self.pos_y = pos_y;
         self.line_cur = line_cur;
-        self.can_accept = can_accept;
         self.content.clear();
         self.content = content;
         self.timings = timings;
@@ -162,7 +160,6 @@ impl FimState {
         self.pos_x = 0;
         self.pos_y = 0;
         self.line_cur.clear();
-        self.can_accept = false;
         self.content.clear();
         self.last_pick_buf_id_pos_y = None;
         self.timings = None;
@@ -245,6 +242,7 @@ fn process_pending_display() -> LttwResult<()> {
         }
     }
 
+    let mut retry = 0;
     if let Some(msg) = msg {
         state.debug_manager.read().log(
             "process_pending_display",
@@ -258,15 +256,21 @@ fn process_pending_display() -> LttwResult<()> {
             msg.ctx.line_cur,
             msg.timings,
         )?;
+        retry = msg.retry.unwrap_or(0);
+    }
 
-        // if either the hint isn't shown OR it's only whitespace then trigger another fim
-        if !state.fim_state.read().hint_shown || !state.fim_state.read().can_accept {
-            state
-                .debug_manager
-                .read()
-                .log("process_pending_display", "rerendering fim suggestion");
-            fim_try_hint()?;
-        }
+    // NOTE there were messages nomatter what at this point in the function (even if none were
+    // valid to display)
+    //
+    // if either the hint isn't shown OR it's only whitespace then trigger another fim
+    // only retry a llm call 3 times before giving up
+    if !state.fim_state.read().hint_shown && retry <= 3 {
+        retry += 1;
+        state
+            .debug_manager
+            .read()
+            .log("process_pending_display", "rerendering fim suggestion");
+        fim_try_hint(Some(retry))?;
     }
 
     Ok(())
@@ -339,11 +343,10 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
         debug_manager.log("fim_accept_triggered", "");
     }
 
-    let (hint_shown, can_accept, pos_x, pos_y, line_cur, content) = {
+    let (hint_shown, pos_x, pos_y, line_cur, content) = {
         let fim_state_lock = state.fim_state.read();
         (
             fim_state_lock.hint_shown,
-            fim_state_lock.can_accept,
             fim_state_lock.pos_x,
             fim_state_lock.pos_y,
             fim_state_lock.line_cur.clone(),
@@ -351,7 +354,7 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
         )
     };
 
-    if !hint_shown || !can_accept {
+    if !hint_shown {
         return Ok(());
     }
 
@@ -520,7 +523,7 @@ fn on_move() -> LttwResult<()> {
     *state.last_move_time.write() = Instant::now();
     state.debug_manager.read().log("on_move", "Cursor moved");
     fim_hide()?;
-    fim_try_hint()?;
+    fim_try_hint(None)?;
     Ok(())
 }
 
