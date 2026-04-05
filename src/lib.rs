@@ -22,7 +22,7 @@ pub use error::{Error, LttwResult};
 use {
     context::LocalContext,
     fim::{
-        fim_try_hint, fim_try_hint_skip_debounce, render_fim_suggestion, FimAcceptType, FimTimings,
+        FimAcceptType, FimTimings, fim_try_hint, fim_try_hint_skip_debounce, render_fim_suggestion,
     },
     nvim_oxi::{Dictionary, Function},
     plugin_state::{get_state, init_state},

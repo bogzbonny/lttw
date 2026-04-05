@@ -4,7 +4,7 @@
 // configuration into a strongly-typed Rust struct.
 
 use {
-    crate::{utils::get_var, LttwResult},
+    crate::{LttwResult, utils::get_var},
     nvim_oxi::conversion::FromObject,
     serde::{Deserialize, Serialize},
     serde_json::Value,

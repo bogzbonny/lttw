@@ -1,21 +1,21 @@
 use {
     crate::{
-        cache, config, debug, instruction::InstructionRequestState, ring_buffer, Error,
-        FimCompletionMessage, FimState, LttwResult,
+        Error, FimCompletionMessage, FimState, LttwResult, cache, config, debug,
+        instruction::InstructionRequestState, ring_buffer,
     },
     ahash::{HashMap, HashMapExt},
     nvim_oxi::api::create_namespace,
     parking_lot::RwLock,
     std::{
         sync::{
-            atomic::{AtomicBool, AtomicI64},
             Arc, OnceLock,
+            atomic::{AtomicBool, AtomicI64},
         },
         time::Instant,
     },
     tokio::{
         runtime::Runtime,
-        sync::{mpsc, Semaphore},
+        sync::{Semaphore, mpsc},
     },
 };
 
@@ -58,6 +58,7 @@ pub struct PluginState {
     pub autocmd_ids: Arc<RwLock<Vec<u32>>>,
     pub autocmd_id_filetype_check: Arc<RwLock<Option<u32>>>,
     pub ring_buffer_timer_handle: Arc<RwLock<RingBufferTimerHandle>>,
+    pub ring_updating_active: Arc<AtomicBool>,
     // FIM completion channel for async worker communication
     pub fim_completion_tx: Arc<RwLock<Option<mpsc::Sender<FimCompletionMessage>>>>,
     // Pending display queue - holds messages waiting to be rendered on main thread
@@ -125,6 +126,7 @@ impl Default for PluginState {
             autocmd_ids: Arc::new(RwLock::new(Vec::new())),
             autocmd_id_filetype_check: Arc::new(RwLock::new(None)),
             ring_buffer_timer_handle: Arc::new(RwLock::new(None)),
+            ring_updating_active: Arc::new(AtomicBool::new(false)),
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(RwLock::new(None)),
             pending_display: Arc::new(RwLock::new(Vec::new())),

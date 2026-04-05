@@ -10,12 +10,17 @@
      - should be a part of the same ring buffer 
 
 03. option to not predict while in comments
+     - should ALLOW comment predictions immediately after 
+       accepting a code completion, because the code completion 
+       may end in a comment, and if that's the case then we want to allow for 
+       further code completions
 Use the synID() and synIDattr() functions to check the syntax ID under the cursor:
 function! IsInComment()
   let l:syn_id = synID(line('.'), col('.'), 1)
   let l:syn_name = synIDattr(l:syn_id, 'name')
   return l:syn_name =~? '^comment$'
 endfunction
+
 
 05. integrate in LSP diagnostics into input_prefix (?)
      - because the diagnostics are per-line and are likely not to get reused

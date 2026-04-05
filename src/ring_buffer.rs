@@ -12,7 +12,7 @@ use {
         context::chunk_similarity, get_state, plugin_state::PluginState, utils::random_range,
         LttwResult,
     },
-    std::sync::Arc,
+    std::sync::{atomic::Ordering, Arc},
     std::time::{Duration, Instant},
 };
 
@@ -25,6 +25,8 @@ pub fn setup_ring_buffer_timer() -> LttwResult<()> {
     // Create a new tokio runtime and spawn the timer task
     // This follows the same pattern used elsewhere in the codebase
     let rt = state.tokio_runtime.clone();
+    let state_ = state.clone();
+
     let timer_handle = rt.read().spawn(async move {
         let mut interval = tokio::time::interval(dur);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -32,8 +34,12 @@ pub fn setup_ring_buffer_timer() -> LttwResult<()> {
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    // TODO handle error
-                    let _ = ring_update().await;
+                    if !state_.ring_updating_active.load(Ordering::SeqCst)
+                        && let Ok(nm) = state_.in_normal_mode()
+                        && (nm || (*state_.last_move_time.read()).elapsed() < Duration::from_secs(3))
+                    {
+                        start_processing_ring_updates().await;
+                    }
                 }
                 // TODO add shutdown signal
                 // _ = state.shutdown_notify.notified() => break,
@@ -52,19 +58,52 @@ pub fn setup_ring_buffer_timer() -> LttwResult<()> {
     Ok(())
 }
 
+/// The mode has changed, maybe start processing ring updates
+pub fn mode_change_maybe_start_processing_ring_updates() -> LttwResult<()> {
+    let state = get_state();
+    if !state.ring_updating_active.load(Ordering::SeqCst)
+        && let Ok(nm) = state.in_normal_mode()
+        && (nm || (*state.last_move_time.read()).elapsed() < Duration::from_secs(3))
+    {
+        let rt = state.tokio_runtime.clone();
+        rt.read().spawn(async move {
+            start_processing_ring_updates().await;
+        });
+    }
+    Ok(())
+}
+
+/// start processing ring updates until none are left of the mode changes and we have to stop
+pub async fn start_processing_ring_updates() {
+    let state = get_state();
+    state.ring_updating_active.store(true, Ordering::SeqCst);
+    let _ = tokio::spawn(async move {
+        loop {
+            let Ok(stop) = ring_update().await else {
+                break;
+            };
+            if stop {
+                break;
+            }
+        }
+    })
+    .await;
+    state.ring_updating_active.store(false, Ordering::SeqCst);
+}
+
 /// Process ring buffer updates - moves queued chunks to active ring and sends to server
 ///  
-async fn ring_update() -> LttwResult<()> {
+async fn ring_update() -> LttwResult<bool> {
     let state = get_state();
 
-    // update only if in normal mode or if the cursor hasn't moved for a while
-    if state.in_normal_mode()? || (*state.last_move_time.read()).elapsed() < Duration::from_secs(3)
+    // skip update if we're not in normal mode and cursor movement is recent
+    if !state.in_normal_mode()? && (*state.last_move_time.read()).elapsed() < Duration::from_secs(3)
     {
-        return Ok(());
+        return Ok(true);
     }
 
     if state.ring_buffer.read().queued.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
 
     // Check if we have chunks before logging
@@ -99,7 +138,7 @@ async fn ring_update() -> LttwResult<()> {
             .await;
     }
 
-    Ok(())
+    Ok(false)
 }
 
 // -----------------------------
@@ -221,7 +260,10 @@ impl RingBuffer {
             self.chunks.remove(0);
         }
 
-        self.chunks.push(self.queued.remove(0));
+        // take from the tail of the queue (most recently added / relevant) and add to the ring buffer
+        if let Some(chunk) = self.queued.pop() {
+            self.chunks.push(chunk);
+        }
     }
 
     /// Get extra context from the ring buffer

@@ -6,16 +6,16 @@
 
 use {
     crate::{
+        Error, FimCompletionMessage, FimTimingsData, LttwResult,
         cache::compute_hashes,
-        context::get_local_context,
         context::LocalContext,
+        context::get_local_context,
         fim_accept_inner, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
-        plugin_state::{get_state, PluginState},
+        plugin_state::{PluginState, get_state},
         ring_buffer::ExtraContext,
         utils::{
             clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input, set_buf_extmark,
         },
-        Error, FimCompletionMessage, FimTimingsData, LttwResult,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition},
     serde::{Deserialize, Serialize},
@@ -35,10 +35,6 @@ pub struct FimRequest {
     pub stop: Vec<String>,
     pub n_indent: usize,
     pub top_k: u32,
-    pub temperature: f32,
-    pub repeat_penalty: f32,
-    pub repeat_last_n: u32,
-    pub penalty_last_n: u32,
     pub top_p: f32,
     pub samplers: Vec<String>,
     pub stream: bool,
@@ -126,12 +122,18 @@ pub fn build_info_string(
         format!(
             " | c: {}, r: {}/{}, e: {}, q: {}/16, C: {}/{} | p: {} ({:.2} ms, {:.2} t/s) | g: {} ({:.2} ms, {:.2} t/s)",
             tokens_cached,
-            ring_chunks, ring_n_chunks,
+            ring_chunks,
+            ring_n_chunks,
             ring_n_evict,
             ring_queued,
-            cache_size, max_cache_keys,
-            n_prompt, t_prompt_ms, s_prompt,
-            n_predict, t_predict_ms, s_predict
+            cache_size,
+            max_cache_keys,
+            n_prompt,
+            t_prompt_ms,
+            s_prompt,
+            n_predict,
+            t_predict_ms,
+            s_predict
         )
     }
 }
@@ -210,7 +212,7 @@ pub fn fim_try_hint_inner(
         //
         let mut char_indices = pm.char_indices().collect::<Vec<_>>();
         char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
-                                             // its never used
+        // its never used
         let char_len = char_indices.len() - 1;
 
         let max_iters = 128; // TODO parameterize this

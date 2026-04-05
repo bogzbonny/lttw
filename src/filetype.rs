@@ -1,5 +1,5 @@
 use {
-    crate::{disable_plugin, enable_plugin, get_state, utils::get_current_filetype, LttwResult},
+    crate::{LttwResult, disable_plugin, enable_plugin, get_state, utils::get_current_filetype},
     std::sync::atomic::Ordering,
 };
 

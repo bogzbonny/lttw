@@ -3,13 +3,12 @@
 // This module provides various utility functions used throughout the plugin.
 
 use {
-    crate::{get_state, plugin_state::CurrentBufferInfo, LttwResult},
+    crate::{LttwResult, get_state, plugin_state::CurrentBufferInfo},
     ahash::AHasher,
     nvim_oxi::{
         api::{
-            self, get_option_value,
+            self, Buffer, Window, get_option_value,
             opts::{CreateAutocmdOpts, OptionOpts, SetExtmarkOpts},
-            Buffer, Window,
         },
         conversion::FromObject,
     },

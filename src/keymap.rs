@@ -1,5 +1,5 @@
 use {
-    crate::{fim::FimAcceptType, fim_accept, get_state, LttwResult},
+    crate::{LttwResult, fim::FimAcceptType, fim_accept, get_state},
     nvim_oxi::api::{del_keymap, opts::SetKeymapOptsBuilder, set_keymap, types::Mode},
 };
 
