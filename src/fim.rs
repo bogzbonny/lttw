@@ -35,6 +35,10 @@ pub struct FimRequest {
     pub stop: Vec<String>,
     pub n_indent: usize,
     pub top_k: u32,
+    pub temperature: f32,
+    pub repeat_penalty: f32,
+    pub repeat_last_n: u32,
+    pub penalty_last_n: u32,
     pub top_p: f32,
     pub samplers: Vec<String>,
     pub stream: bool,
@@ -117,6 +121,8 @@ pub fn build_info_string(
             tokens_cached
         )
     } else {
+        // NOTE that the hardcoded 16 is related to
+        // the hard-coded queue length in ring_buffer.rs (TODO update)
         format!(
             " | c: {}, r: {}/{}, e: {}, q: {}/16, C: {}/{} | p: {} ({:.2} ms, {:.2} t/s) | g: {} ({:.2} ms, {:.2} t/s)",
             tokens_cached,

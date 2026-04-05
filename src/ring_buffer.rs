@@ -1,3 +1,12 @@
+/// The ring buffer passively accumulates and processes chunks of data
+/// provided by the pick process. NOTE that the ring buffer will not
+/// update the queue until the the passive update timer fires.
+/// This actually restricts the amount of additional context generated.
+///
+/// Currently:
+///  - queued chunks are taken from the front of the queue (older chunks are processed first).
+///     - Maybe this doesn't actually make sense? newer chunks are more relavent to what's
+///       currently happening.
 use {
     crate::{
         context::chunk_similarity, get_state, plugin_state::PluginState, utils::random_range,
@@ -187,6 +196,7 @@ impl RingBuffer {
 
         // Keep only the last 16 queued chunks
         // TODO parametrize this 16
+        // TODO when updating this also update the build_info_string
         while self.queued.len() >= 16 {
             self.queued.remove(0);
         }

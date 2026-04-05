@@ -178,3 +178,26 @@ like in the llama#fim
      - streamlined the debounce system a bit. 
 01. Add (info) stats as lsp progress messages 
      - send this information through LSP progress messages. 
+
+
+01. Remove trailing prediction lines if they match 
+     - go through one by one
+     - NOTE this could use the stop_strings, however that seems problematic if
+       the actual completion DOES really have a duplication of the stop string
+       which its meant to generate. 
+     - changes in fim.rs accept_fim_suggestion
+       - ACTUALLY I think this one will be a bit easier given the information
+         available to us to filter out directly in fim_completion once we get
+         the response (line 600) 
+05. info disappears once completion is done (should only disappear once leaving
+    insert mode, or next completion displayed) 
+      - should also appear as the FIM is displayed not when FIM is accepted
+05. track the number of llm calls currently running. 
+     - if the max number of concurrent llm calls is reached then the debounce 
+       should simply wait until this goes down before launching.. ALSO all
+       waiting debounced llm calls should abort unless they are the top of the
+       seq after waiting for the llm calls to go down.
+     - used a semaphore, no tracking required clearly works great
+01. debug to see if rerender-fim suggestion is causing infinite loops (see
+    process_pending_display)
+     - added retry count to explicitly prevent this

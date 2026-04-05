@@ -1,32 +1,21 @@
 
-01. Remove trailing prediction lines if they match 
-     - go through one by one
-     - NOTE this could use the stop_strings, however that seems problematic if
-       the actual completion DOES really have a duplication of the stop string
-       which its meant to generate. 
-     - changes in fim.rs accept_fim_suggestion
-       - ACTUALLY I think this one will be a bit easier given the information
-         available to us to filter out directly in fim_completion once we get
-         the response (line 600) 
-05. info disappears once completion is done (should only disappear once leaving
-    insert mode, or next completion displayed) 
-      - should also appear as the FIM is displayed not when FIM is accepted
-05. track the number of llm calls currently running. 
-     - if the max number of concurrent llm calls is reached then the debounce 
-       should simply wait until this goes down before launching.. ALSO all
-       waiting debounced llm calls should abort unless they are the top of the
-       seq after waiting for the llm calls to go down.
-     - used a semaphore, no tracking required clearly works great
-
 ^^^^^^^^^ DONE
 
-01. debug to see if rerender-fim suggestion is causing infinite loops (see
-    process_pending_display)
+03. continious ring_buffer processing rather than just 1 per second while in
+    normal/mode or nothing is happening
 
-05. integrate git diff system into extra_inputs 
+03. integrate git diff system into extra_inputs 
      - definitely should integrate with extra_input ring_buffer system -
        ordering is important
      - should be a part of the same ring buffer 
+
+03. option to not predict while in comments
+Use the synID() and synIDattr() functions to check the syntax ID under the cursor:
+function! IsInComment()
+  let l:syn_id = synID(line('.'), col('.'), 1)
+  let l:syn_name = synIDattr(l:syn_id, 'name')
+  return l:syn_name =~? '^comment$'
+endfunction
 
 05. integrate in LSP diagnostics into input_prefix (?)
      - because the diagnostics are per-line and are likely not to get reused
@@ -52,12 +41,6 @@
      - Use autocmd and keep our own map 
      - https://neovim.io/doc/user/diagnostic/#diagnostic-events
 
-05. integrate in LSP Completions into input_prefix (?)
-     - suppliment the llm completions with suggestions from the LSP completions
-     - MAYBE also just provide the LSP completion as an option immediately until
-       the LLM response comes in. I noticed with ALE (from insert mode go C-X
-       then C-O) it gives a suggestion with a `...` in it which is probably
-       where the cursor should just be inserted if the completion is accepted.
 
 05. Use TAB from normal mode to fix lines with diagnostic errors (THEN I can
     simply jump using [[ / ]] and then tab to fix those lines! yay) 
@@ -69,6 +52,12 @@
 
 10. track the amount of llm calls make sure we're not goin crzy
 
+05. integrate in LSP Completions into input_prefix (?)
+     - suppliment the llm completions with suggestions from the LSP completions
+     - MAYBE also just provide the LSP completion as an option immediately until
+       the LLM response comes in. I noticed with ALE (from insert mode go C-X
+       then C-O) it gives a suggestion with a `...` in it which is probably
+       where the cursor should just be inserted if the completion is accepted.
 
 10. integrate definitions of all nearby objects 
      - Iterate through all the nearby words and to go-to-definition
@@ -94,9 +83,10 @@ local query_string = [[
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
 
+10. option to automatically launch llama.cpp with nohup rather than depending on
+    a server already being running. 
 
 10. easier to use debugging system (like debug! macro)
-20. option to not predict while in comments
 20. better global error printing 
     https://github.com/noib3/nvim-oxi/issues/231
 20. allow for a more regular setup by passing config params through the setup

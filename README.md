@@ -1,14 +1,20 @@
-# lttw
+# Llama Take The Wheel
 
-A Neovim plugin for code completion using llama.cpp, written in Rust and Lua.
+A Neovim plugin for code completion using llama.cpp, written in Rust.
 
-## Features
+## CREDIT WHERE CREDIT IS DUE
 
-- **Fill-in-Middle (FIM) completion**: Get code suggestions between prefix and suffix context
-- **Instruction-based editing**: Apply natural language instructions to selected text
-- **Ring buffer context**: Automatically gather and reuse relevant code chunks
-- **Caching**: Cache completions to avoid redundant API calls
-- **Debug logging**: Track plugin activity and troubleshooting
+Originally this codebase was translated from
+[llama.vim](https://github.com/ggml-org/llama.vim) which is an excellent
+lightweight code-completion system with lots of great systems. I've drawn lots
+of inspiration from this, and I would def recommend ALSO checking out it out! At
+the time of making this plugin this was def the best option, however code
+completion is too important for me not to get my mits more grubby.
+
+Key Differences: 
+ - process ring buffer from most recent to oldest
+ - adaptive debounce strategy for fast typing
+ - explicit ability to limit number of concurrent FIM calls 
 
 ## Requirements
 
@@ -39,67 +45,6 @@ lua require('llama').setup()
 }
 ```
 
-## Configuration
-
-```lua
-require('llama').setup({
-  -- Server endpoints
-  endpoint_fim = 'http://127.0.0.1:8012/infill',
-  endpoint_inst = 'http://127.0.0.1:8012/v1/chat/completions',
-  
-  -- Model names (optional, for multi-model servers)
-  model_fim = '',  -- e.g., 'Qwen3 Coder 30B'
-  model_inst = '', -- e.g., 'gpt-oss-120b'
-  
-  -- API key (optional)
-  api_key = '',
-  
-  -- Context window sizes
-  n_prefix = 256,  -- Lines before cursor
-  n_suffix = 64,   -- Lines after cursor
-  n_predict = 128, -- Max tokens to predict
-  
-  -- Stop strings
-  stop_strings = {},
-  
-  -- Timing limits (ms)
-  t_max_prompt_ms = 500,
-  t_max_predict_ms = 1000,
-  
-  -- Show info (0=disabled, 1=statusline, 2=inline)
-  show_info = 2,
-  
-  -- Auto FIM settings
-  auto_fim = true,
-  max_line_suffix = 8, -- Max chars to right of cursor for auto FIM
-  
-  -- Cache settings
-  max_cache_keys = 250,
-  
-  -- Ring buffer settings
-  ring_n_chunks = 16,
-  ring_chunk_size = 64,
-  ring_scope = 1024,
-  ring_update_ms = 1000,
-  
-  -- Keymaps (empty string to disable)
-  keymap_fim_trigger = '<leader>llf',
-  keymap_fim_accept_full = '<Tab>',
-  keymap_fim_accept_line = '<S-Tab>',
-  keymap_fim_accept_word = '<leader>ll]',
-  keymap_debug_toggle = '<leader>lld',
-  keymap_inst_trigger = '<leader>lli',
-  keymap_inst_rerun = '<leader>llr',
-  keymap_inst_continue = '<leader>llc',
-  keymap_inst_accept = '<Tab>',
-  keymap_inst_cancel = '<Esc>',
-  
-  -- Filetype filtering
-  enable_at_startup = true,
-  disabled_filetypes = {},
-  enabled_filetypes = {}, -- Overrides disabled_filetypes
-})
-```
 
 ## Usage
 
@@ -112,19 +57,8 @@ require('llama').setup({
    - `<S-Tab>` - Accept line suggestion
    - `<leader>ll]` - Accept word suggestion
 
-### Instruction-based Editing
 
-1. **Select text** in visual mode
-2. **Trigger instruction**: `<leader>lli`
-3. **Enter instruction** (e.g., "make it shorter", "fix typos")
-4. **Accept result**: `<Tab>`
-5. **Cancel**: `<Esc>`
+## Others
+ - llama.vim
+ - tabby
 
-## License
-
-MIT License
-
-## Acknowledgments
-
-- Original project: [llama.vim](https://github.com/ggml-org/llama.vim)
-- Built with [llama.cpp](https://github.com/ggerganov/llama.cpp)
