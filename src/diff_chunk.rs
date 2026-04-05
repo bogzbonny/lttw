@@ -87,8 +87,11 @@ pub fn calculate_all_repo_diffs() -> LttwResult<Vec<DiffChunk>> {
     };
 
     // Run git diff to get all changes
+    // Use --no-ext-diff to override any user-configured external diff tool
+    // that might change the output format
     let diff_output = std::process::Command::new("git")
         .arg("diff")
+        .arg("--no-ext-diff")
         .arg("HEAD")
         .current_dir(&repo_root)
         .output();
