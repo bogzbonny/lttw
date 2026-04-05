@@ -108,3 +108,7 @@ local query_string = [[
        useful anyways
 
 40. instruction system LOW priority can use CodeCompanion for now
+
+40. reduce cognitive offloading allowing for llm calls to be ignored a % of the
+    time (hence you don't know if you're waiting for an llm or waiting for
+    nothing!).
