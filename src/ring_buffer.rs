@@ -261,6 +261,9 @@ impl RingBuffer {
         }
 
         // take from the tail of the queue (most recently added / relevant) and add to the ring buffer
+        // NOTE it may make sense to actually take it from the front.. less relevant things will be
+        // added first however the more relavent things (added last) will be in the ring buffer for
+        // longer (get evicted last). I DONT KNOW - should do trial and error TODO
         if let Some(chunk) = self.queued.pop() {
             self.chunks.push(chunk);
         }
