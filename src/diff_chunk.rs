@@ -5,7 +5,9 @@
 // On each recalculation, it compares new vs old diff chunks and updates the ring buffer.
 
 use crate::{ring_buffer::Chunk, LttwResult};
-use gix_diff::blob::{unified_diff::ContextSize, v2};
+use gix_diff::blob::intern::InternedInput;
+use gix_diff::blob::unified_diff::{ConsumeBinaryHunk, ContextSize};
+use gix_diff::blob::{Algorithm, UnifiedDiff};
 use std::time::Instant;
 
 /// Represents a single diff chunk with metadata
@@ -64,146 +66,59 @@ impl DiffChunk {
     }
 }
 
-/// Calculate all diffs in the repository's working directory using gix
+/// Calculate diffs between two file contents and return diff chunks
 ///
-/// This function uses the gix crate to calculate all changed files in the repository.
-/// It returns diff chunks for all changed files.
-pub fn calculate_all_repo_diffs() -> LttwResult<Vec<DiffChunk>> {
-    // Try to open the git repository
-    let repo = match gix::open(".").ok() {
-        Some(repo) => repo,
-        None => return Ok(Vec::new()), // Not in a git repo
-    };
-
-    // Get the current HEAD tree
-    let head_tree = match repo.head_tree() {
-        Ok(tree) => tree,
-        Err(_) => return Ok(Vec::new()), // No head tree available
-    };
-
-    // Get the index
-    let index = match repo.index() {
-        Ok(index) => index,
-        Err(_) => return Ok(Vec::new()), // No index available
-    };
-
-    // Get the index tree
-    let index_tree = match index.tree() {
-        Some(tree) => tree,
-        None => return Ok(Vec::new()), // No index tree
-    };
-
-    // Use gix_diff::tree::Changes to calculate changes between trees
-    let changes = gix_diff::tree::Changes::new(head_tree.iter(), index_tree.iter());
+/// This function uses gix-diff to calculate line-based diffs between the old and new content.
+/// It returns diff chunks for all differences found.
+pub fn calculate_diff_between_contents(
+    filepath: &str,
+    old_content: &str,
+    new_content: &str,
+) -> LttwResult<Vec<DiffChunk>> {
+    if old_content == new_content {
+        return Ok(Vec::new());
+    }
 
     let mut chunks = Vec::new();
 
-    // Iterate over all changes
-    for change_result in changes {
-        let change = match change_result {
-            Ok(change) => change,
-            Err(_) => continue,
-        };
+    // Use gix_diff::blob::diff with simple unified diff output
+    let interner = InternedInput::new(old_content, new_content);
+    let unified = UnifiedDiff::new(
+        &interner,
+        ConsumeBinaryHunk::new(String::new(), "\n"),
+        ContextSize::symmetrical(0),
+    );
 
-        // Get filepath
-        let filepath_str = change.location().to_string_lossy();
+    let diff_output = gix_diff::blob::diff(Algorithm::Myers, &interner, unified)?;
 
-        if filepath_str.is_empty() {
-            continue;
-        }
+    // Parse the diff output to extract hunks
+    // The output is a unified diff string
+    if !diff_output.is_empty() {
+        // Parse hunk information from the unified diff
+        let diff_lines: Vec<&str> = diff_output.lines().collect();
+        let (old_start, old_lines, new_start, new_lines) = parse_hunk_info_from_diff(&diff_lines);
 
-        // Generate diff content based on change type
-        let diff_content = match &change {
-            gix_diff::tree::visit::Change::Modification {
-                previous_oid,
-                oid,
-                previous_entry_mode,
-                entry_mode,
-                ..
-            } => {
-                // File was modified
-                let old_blob = match get_blob(&repo, previous_oid) {
-                    Some(b) => b,
-                    None => continue,
-                };
-
-                let new_blob = match get_blob(&repo, oid) {
-                    Some(b) => b,
-                    None => continue,
-                };
-
-                // Use gix_diff to generate unified diff
-                let old_text = String::from_utf8_lossy(&old_blob.data);
-                let new_text = String::from_utf8_lossy(&new_blob.data);
-
-                let interner = InternedInput::new(&old_text, &new_text);
-                let output = String::new();
-                let unified = UnifiedDiff::new(&interner, output, ContextSize::default());
-
-                // The diff function from imara_diff
-                let result = gix_diff::blob::diff_with_slider_heuristics(
-                    gix_diff::v2::Algorithm::Myers,
-                    &interner,
-                );
-
-                // Convert the diff to unified diff format
-                use imara_diff::unified_diff::UnifiedDiffConfig;
-                Ok(result
-                    .unified_diff(&unified, UnifiedDiffConfig::default(), &interner)
-                    .to_string())
-            }
-            _ => Ok(String::new()), // Skip additions and deletions for now
-        };
-
-        if let Ok(diff_content) = diff_content {
-            if !diff_content.is_empty() {
-                // Parse the hunk info from the diff content
-                let file_lines: Vec<String> = diff_content.lines().map(|s| s.to_string()).collect();
-                let (old_start, old_lines, new_start, new_lines) = parse_hunk_info(&file_lines);
-
-                chunks.push(DiffChunk::from_hunk_data(
-                    &filepath_str,
-                    old_start,
-                    old_lines,
-                    new_start,
-                    new_lines,
-                    &diff_content,
-                ));
-            }
-        }
+        chunks.push(DiffChunk::from_hunk_data(
+            filepath,
+            old_start,
+            old_lines,
+            new_start,
+            new_lines,
+            &diff_output,
+        ));
     }
 
     Ok(chunks)
 }
 
-/// Get blob from object ID
-fn get_blob(repo: &gix::Repository, oid: &gix_hash::oid) -> Option<gix::Blob> {
-    let bytes: [u8; 20] = oid.as_bytes().try_into().ok()?;
-    let object_id = gix::ObjectId::from_bytes_or_panic(&bytes);
-    repo.find_object(object_id).ok()?.try_into_blob().ok()
-}
-
-/// Extract file path from a diff header line
-fn extract_file_path(line: &str) -> String {
-    // Format: "diff --git a/file b/file"
-    let parts: Vec<&str> = line.split(" ").collect();
-    if parts.len() >= 3 {
-        // Get the b/ path (new file) and strip any prefixes
-        let b_path = parts[2].strip_prefix("b/").unwrap_or(parts[2]);
-        let cleaned = b_path.strip_prefix("a/").unwrap_or(b_path);
-        return cleaned.to_string();
-    }
-    String::new()
-}
-
-/// Parse hunk header to extract line numbers
-fn parse_hunk_info(file_lines: &[String]) -> (u32, u32, u32, u32) {
+/// Parse hunk header to extract line numbers from a unified diff string
+fn parse_hunk_info_from_diff(diff_lines: &[&str]) -> (u32, u32, u32, u32) {
     let mut old_start: u32 = 1;
     let mut old_lines: u32 = 0;
     let mut new_start: u32 = 1;
     let mut new_lines: u32 = 0;
 
-    for line in file_lines {
+    for line in diff_lines {
         if line.starts_with("@@") {
             // Parse hunk header: "@@ -old_start,old_lines +new_start,new_lines @@"
             if let Some(hunk_part) = line.strip_prefix("@@ ") {
@@ -212,7 +127,7 @@ fn parse_hunk_info(file_lines: &[String]) -> (u32, u32, u32, u32) {
                     // Parse -old_start,old_lines
                     if let Some(old_part) = parts[0].strip_prefix("-") {
                         let old_nums: Vec<&str> = old_part.split(',').collect();
-                        if old_nums.len() >= 1 {
+                        if !old_nums.is_empty() {
                             old_start = old_nums[0].parse().unwrap_or(1);
                             old_lines = if old_nums.len() > 1 {
                                 old_nums[1].parse().unwrap_or(0)
@@ -224,7 +139,7 @@ fn parse_hunk_info(file_lines: &[String]) -> (u32, u32, u32, u32) {
                     // Parse +new_start,new_lines
                     if let Some(new_part) = parts[1].strip_prefix("+") {
                         let new_nums: Vec<&str> = new_part.split(',').collect();
-                        if new_nums.len() >= 1 {
+                        if !new_nums.is_empty() {
                             new_start = new_nums[0].parse().unwrap_or(1);
                             new_lines = if new_nums.len() > 1 {
                                 new_nums[1].parse().unwrap_or(0)
@@ -255,25 +170,20 @@ pub fn evaluate_diff_changes(
     new_chunks: &[DiffChunk],
     old_chunks: &[DiffChunk],
 ) -> (Vec<DiffChunk>, Vec<DiffChunk>) {
-    // Create sets based on filepath and id for comparison
-    // This ensures we compare by the actual diff content via its unique id
-    let old_keyed: std::collections::HashMap<String, usize> = old_chunks
-        .iter()
-        .map(|c| (c.filepath.clone(), c.id))
-        .collect();
+    // Create maps based on filepath for comparison
+    let old_by_filepath: std::collections::HashMap<String, &DiffChunk> =
+        old_chunks.iter().map(|c| (c.filepath.clone(), c)).collect();
 
-    let new_keyed: std::collections::HashMap<String, usize> = new_chunks
-        .iter()
-        .map(|c| (c.filepath.clone(), c.id))
-        .collect();
+    let new_by_filepath: std::collections::HashMap<String, &DiffChunk> =
+        new_chunks.iter().map(|c| (c.filepath.clone(), c)).collect();
 
     // Additions: in new but not in old (by filepath)
     let additions: Vec<DiffChunk> = new_chunks
         .iter()
         .filter(|c| {
-            let old_id = old_keyed.get(&c.filepath);
-            // New if filepath is new OR id has changed
-            old_id.is_none() || old_id != Some(&c.id)
+            let old_chunk = old_by_filepath.get(&c.filepath);
+            // New if filepath is new OR content has changed
+            old_chunk.is_none() || old_chunk.map(|oc| oc.content != c.content).unwrap_or(false)
         })
         .cloned()
         .collect();
@@ -282,9 +192,9 @@ pub fn evaluate_diff_changes(
     let removals: Vec<DiffChunk> = old_chunks
         .iter()
         .filter(|c| {
-            let new_id = new_keyed.get(&c.filepath);
-            // Removed if filepath no longer exists OR id has changed
-            new_id.is_none() || new_id != Some(&c.id)
+            let new_chunk = new_by_filepath.get(&c.filepath);
+            // Removed if filepath no longer exists
+            new_chunk.is_none()
         })
         .cloned()
         .collect();
@@ -383,19 +293,25 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_file_path() {
-        // Test extracting file path from diff header
-        let line = "diff --git a/src/lib.rs b/src/lib.rs";
-        let filepath = extract_file_path(line);
-        assert_eq!(filepath, "src/lib.rs");
+    fn test_parse_hunk_info_from_diff() {
+        let diff_lines = vec!["@@ -1,10 +1,11 @@", " line1", " line2"];
+
+        let (old_start, old_lines, new_start, new_lines) = parse_hunk_info_from_diff(&diff_lines);
+
+        assert_eq!(old_start, 1);
+        assert_eq!(old_lines, 10);
+        assert_eq!(new_start, 1);
+        assert_eq!(new_lines, 11);
     }
 
     #[test]
-    fn test_calculate_repo_diffs() {
-        // This test verifies that calculate_all_repo_diffs works
-        // It may return empty if no changes are present
-        let chunks = calculate_all_repo_diffs();
-        // We just verify it doesn't panic and returns a result
+    fn test_diff_between_contents() {
+        let old = "line1\nline2\nline3\n";
+        let new = "line1\nmodified\nline3\n";
+
+        let chunks = calculate_diff_between_contents("test.rs", old, new);
         assert!(chunks.is_ok());
+        // Should have at least one chunk
+        assert!(chunks.unwrap().len() >= 1);
     }
 }

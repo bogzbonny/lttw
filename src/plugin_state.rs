@@ -64,6 +64,9 @@ pub struct PluginState {
     pub next_diff_chunk_id: Arc<AtomicUsize>,
     // Diff chunks storage - stores all diff chunks from file saves
     pub diff_chunks: Arc<RwLock<Vec<diff_chunk::DiffChunk>>>,
+    // File content storage - stores the most recent content of each open buffer
+    // Used for calculating diffs on file save
+    pub file_contents: Arc<RwLock<HashMap<String, String>>>,
     // FIM completion channel for async worker communication
     pub fim_completion_tx: Arc<RwLock<Option<mpsc::Sender<FimCompletionMessage>>>>,
     // Pending display queue - holds messages waiting to be rendered on main thread
@@ -138,6 +141,7 @@ impl PluginState {
             ring_updating_active: Arc::new(AtomicBool::new(false)),
             next_diff_chunk_id: Arc::new(AtomicUsize::new(0)),
             diff_chunks: Arc::new(RwLock::new(Vec::new())),
+            file_contents: Arc::new(RwLock::new(HashMap::new())),
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(RwLock::new(None)),
             pending_display: Arc::new(RwLock::new(Vec::new())),

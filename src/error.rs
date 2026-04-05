@@ -27,6 +27,9 @@ pub enum Error {
 
     #[error("tokio JoinError error: {0}")]
     JoinError(#[from] tokio::task::JoinError),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 impl From<nvim_oxi::api::Error> for Error {
