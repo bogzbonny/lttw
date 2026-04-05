@@ -20,6 +20,21 @@
        complicated, I suppose it depends on your programming style -I think this
        is fine for me as I save whenever its important
 
+     - use autocmd BufWritePost 
+     - use gix diff for calculating diffs
+
+integrate a new system which keeps track of diff chunks each time there is a
+filesave. the diff of a single file may contain several small diff chunks if
+there are disconnect edits. trigger diff evaluation in autoccmd.rs with
+bufwritepost. use the gix-diff crate for calculating the diffs on the codebase
+in the working directory (all in pure rust). save an array of all the diff
+chunks in the pluginstate. each time the diff is recalculated compare it to the
+previously saved diff chunks and add compile the diff-chunk-changes. for
+diff-chunk-changes additions add the diff chunks to the ringbuffer.queued, for
+removals evict the diff from ringbuffer.queued and ringbuffer.chunks (note those
+chunks may have already been evicted for other reasons by the time we go to
+evict those chunks). perform the removals before the additions and add debug
+output for these operations
 
 03. option to not predict while in comments
      - should ALLOW comment predictions immediately after 
