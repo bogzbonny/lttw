@@ -20,7 +20,6 @@ once_cell = "1.21"
 rand = {version = "0.10", features = ["thread_rng"]}
 parking_lot = "0.12"
 ahash = "0.8.12"
-gix-diff = "0.42"
+gix-diff = { version = "0.61", features = ["blob-experimental"] }
 gix = { version = "0.81", features = ["blob-diff", "index"] }
-imara-diff = "0.1.8"
 gix-hash = "0.14"

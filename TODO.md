@@ -31,7 +31,7 @@ integrate a new system which keeps track of diff chunks each time there is a
 filesave. the diff of a single file may contain several small diff chunks if
 there are disconnect edits. trigger diff evaluation in autoccmd.rs with
 bufwritepost. use the gix-diff crate for calculating the diffs on the codebase
-in the working directory (all in pure rust). save an array of all the diff
+for all buffers which we have open. save an array of all the diff
 chunks in the pluginstate. each time the diff is recalculated compare it to the
 previously saved diff chunks and add compile the diff-chunk-changes. for
 diff-chunk-changes additions add the diff chunks to the ringbuffer.queued, for
@@ -39,6 +39,26 @@ removals evict the diff from ringbuffer.queued and ringbuffer.chunks (note those
 chunks may have already been evicted for other reasons by the time we go to
 evict those chunks). perform the removals before the additions and add debug
 output for these operations
+
+
+DO NOT revert to using CLI git, that is forbidden. Review
+https://github.com/GitoxideLabs/gitoxide/blob/main/gix-diff/tests/diff/blob/unified_diff.rs
+to see a basic example of how to diff between two strings, this is very simple!
+Use no context like this:
+
+let actual = gix_diff::blob::diff(
+        Algorithm::Myers,
+        &interner,
+        UnifiedDiff::new(
+            &interner,
+            ConsumeBinaryHunk::new(String::new(), "\n"),
+            ContextSize::symmetrical(0),
+        ),
+    )?; 
+Our approach should be to simply save the most recent buffers we encounter by
+filename in the PluginState and then everytime BufWritePost is executed we
+compare all the files we have to what we've previously saved and calculate the
+diff based on that
 
 03. option to not predict while in comments
      - should ALLOW comment predictions immediately after 

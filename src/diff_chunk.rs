@@ -5,9 +5,7 @@
 // On each recalculation, it compares new vs old diff chunks and updates the ring buffer.
 
 use crate::{ring_buffer::Chunk, LttwResult};
-use gix::bstr::ByteSlice;
-use gix_diff::tree::Changes;
-use gix_hash::oid;
+use gix_diff::blob::{unified_diff::ContextSize, v2};
 use std::time::Instant;
 
 /// Represents a single diff chunk with metadata
@@ -96,10 +94,7 @@ pub fn calculate_all_repo_diffs() -> LttwResult<Vec<DiffChunk>> {
     };
 
     // Use gix_diff::tree::Changes to calculate changes between trees
-    let changes = match Changes::needed_to_obtain(&head_tree, &index_tree, &repo.objects) {
-        Ok(changes) => changes,
-        Err(_) => return Ok(Vec::new()),
-    };
+    let changes = gix_diff::tree::Changes::new(head_tree.iter(), index_tree.iter());
 
     let mut chunks = Vec::new();
 
@@ -118,7 +113,7 @@ pub fn calculate_all_repo_diffs() -> LttwResult<Vec<DiffChunk>> {
         }
 
         // Generate diff content based on change type
-        let diff_content = match change {
+        let diff_content = match &change {
             gix_diff::tree::visit::Change::Modification {
                 previous_oid,
                 oid,
@@ -137,27 +132,25 @@ pub fn calculate_all_repo_diffs() -> LttwResult<Vec<DiffChunk>> {
                     None => continue,
                 };
 
-                let old_lines: Vec<String> = old_blob
-                    .data
-                    .as_bstr()
-                    .lines()
-                    .map(|line| String::from_utf8_lossy(line.as_bytes()).to_string())
-                    .collect();
-                let new_lines: Vec<String> = new_blob
-                    .data
-                    .as_bstr()
-                    .lines()
-                    .map(|line| String::from_utf8_lossy(line.as_bytes()).to_string())
-                    .collect();
+                // Use gix_diff to generate unified diff
+                let old_text = String::from_utf8_lossy(&old_blob.data);
+                let new_text = String::from_utf8_lossy(&new_blob.data);
 
-                generate_unified_diff(
-                    &old_lines,
-                    &new_lines,
-                    &filepath_str,
-                    &filepath_str,
-                    previous_entry_mode.0,
-                    entry_mode.0,
-                )
+                let interner = InternedInput::new(&old_text, &new_text);
+                let output = String::new();
+                let unified = UnifiedDiff::new(&interner, output, ContextSize::default());
+
+                // The diff function from imara_diff
+                let result = gix_diff::blob::diff_with_slider_heuristics(
+                    gix_diff::v2::Algorithm::Myers,
+                    &interner,
+                );
+
+                // Convert the diff to unified diff format
+                use imara_diff::unified_diff::UnifiedDiffConfig;
+                Ok(result
+                    .unified_diff(&unified, UnifiedDiffConfig::default(), &interner)
+                    .to_string())
             }
             _ => Ok(String::new()), // Skip additions and deletions for now
         };
@@ -184,51 +177,10 @@ pub fn calculate_all_repo_diffs() -> LttwResult<Vec<DiffChunk>> {
 }
 
 /// Get blob from object ID
-fn get_blob(repo: &gix::Repository, oid: &oid) -> Option<gix::Blob> {
+fn get_blob(repo: &gix::Repository, oid: &gix_hash::oid) -> Option<gix::Blob> {
     let bytes: [u8; 20] = oid.as_bytes().try_into().ok()?;
     let object_id = gix::ObjectId::from_bytes_or_panic(&bytes);
     repo.find_object(object_id).ok()?.try_into_blob().ok()
-}
-
-/// Generate unified diff between two sets of lines using imara_diff
-fn generate_unified_diff(
-    old_lines: &[String],
-    new_lines: &[String],
-    old_path: &str,
-    new_path: &str,
-    old_mode: u32,
-    new_mode: u32,
-) -> Result<String, String> {
-    // Use imara_diff v0.1.8 API with UnifiedDiffBuilder
-    use imara_diff::unified_diff::UnifiedDiffBuilder;
-    use imara_diff::Sink;
-
-    // Create a simple sink that collects the output
-    struct Collector(Vec<String>);
-    impl Sink for Collector {
-        type Out = String;
-        fn start(&mut self) {}
-        fn header(&mut self, _before_start: u32, _after_start: u32) {}
-        fn context(&mut self, line: &str) {
-            self.0.push(format!(" {}", line));
-        }
-        fn add(&mut self, line: &str) {
-            self.0.push(format!("+{}", line));
-        }
-        fn remove(&mut self, line: &str) {
-            self.0.push(format!("-{}", line));
-        }
-        fn end(&mut self) -> String {
-            self.0.join("\n")
-        }
-    }
-
-    // Create a simple sink for unified diff
-    let mut collector = Collector(Vec::new());
-    let unified = UnifiedDiffBuilder::new(&collector);
-
-    // This is a placeholder - the actual diff generation is complex
-    Ok(String::new())
 }
 
 /// Extract file path from a diff header line
