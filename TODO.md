@@ -7,6 +7,10 @@
     right at the beginning even though markdown is disabled.
       - probably should add a simple failsafe check right before actually
         sending prompts
+20. Iff there are only two lines and the second line is all whitespace (new
+    empty line) then discard that from the prediction... seems janky when it
+    shows up
+     - I think the tail reduction already trims the final whitespace
 
 ^^^^^^^^^ DONE
 
@@ -73,11 +77,19 @@ endfunction
      - https://neovim.io/doc/user/diagnostic/#diagnostic-events
 
 
-05. Use TAB from normal mode to fix lines with diagnostic errors (THEN I can
-    simply jump using [[ / ]] and then tab to fix those lines! yay) 
+05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
      - I'm not sure if it'll be a pain to still use FIM for this or not
-     - Kinda thinking that it should maybe be TAB-TAB from normal mode to
-       activate the FIM completion?
+        - probably use a regular completion 
+     - afterwords this will generate a replacement line(s) for which will be
+       displayed using extmarks
+     - then a 3rd TAB can accept this
+     - then a 4th TAB should take the cursor to the next line which has
+       diagnostic errors
+     - use this entire system in reverse as well with SHIFT-TAB to move up
+     - CTRL-TAB to regenerate a TAB-TAB if the user doesn't like the provided
+       response
+     - OPTION ONCE no more errors - save file to regenerate diagnostics
+     - OPTION ONCE no more errors, go to the next file with errors in a new tab
 
 ------------------------
 
@@ -122,18 +134,17 @@ local query_string = [[
 
 20. Option to ONLY accept single line inline suggestions if typing within a fully
     closed bracket system within a line example: "#[derive(Debug, Cl[CURSOR], Default)]"
-    
-20. Iff there are only two lines and the second line is all whitespace (new
-    empty line) then discard that from the prediction... seems janky when it
-    shows up
 
 30. investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
      - I think would require a implementing my own FIM system, which would be
        useful anyways
-
 
 40. instruction system LOW priority can use CodeCompanion for now
 
 40. reduce cognitive offloading allowing for llm calls to be ignored a % of the
     time (hence you don't know if you're waiting for an llm or waiting for
     nothing!).
+     - reduce_cognitive_offloading_ratio = 25%
+
+40. README gif of homer with the bird
+     - link it to https://www.youtube.com/watch?v=R_rF4kcqLkI
