@@ -9,6 +9,7 @@ use {
         cache::compute_hashes,
         context::get_local_context,
         context::LocalContext,
+        filetype::should_be_enabled,
         fim_accept_inner, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
         plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
@@ -143,22 +144,14 @@ pub fn fim_try_hint(retry: Option<usize>) -> LttwResult<()> {
     if !in_insert_mode()? {
         return Ok(());
     }
-    let (pos_x, pos_y) = get_pos();
-    let state = get_state();
-    let lines = get_buf_lines(..);
-    let buffer_id = get_current_buffer_id();
-    fim_try_hint_inner(state, pos_x, pos_y, buffer_id, lines, false, retry)
+    fim_try_hint_inner(false, retry)
 }
 
 pub fn fim_try_hint_skip_debounce() -> LttwResult<()> {
     if !in_insert_mode()? {
         return Ok(());
     }
-    let (pos_x, pos_y) = get_pos();
-    let state = get_state();
-    let lines = get_buf_lines(..);
-    let buffer_id = get_current_buffer_id();
-    fim_try_hint_inner(state, pos_x, pos_y, buffer_id, lines, true, None)
+    fim_try_hint_inner(true, None)
 }
 
 /// Try to generate a suggestion using the data in the cache
@@ -172,14 +165,21 @@ pub fn fim_try_hint_skip_debounce() -> LttwResult<()> {
 ///
 /// NOTE this happens on the neovim main thread
 pub fn fim_try_hint_inner(
-    state: Arc<PluginState>,
-    pos_x: usize,
-    pos_y: usize,
-    buffer_id: u64,
-    lines: Vec<String>,
     skip_debounce: bool,
     retry: Option<usize>, // retry number
 ) -> LttwResult<()> {
+    // filetype failsafe
+    if !should_be_enabled() {
+        // This can happen sometimes a request on the wrong filetype can squeeze through the cracks
+        // on retry requests (but then the buffer changes)
+        return Ok(());
+    }
+
+    let (pos_x, pos_y) = get_pos();
+    let state = get_state();
+    let lines = get_buf_lines(..);
+    let buffer_id = get_current_buffer_id();
+
     // first things first, increment the seq at the beginning to indicate to any waiting
     // fim_workers in the debounce period that there is a new show in town (so don't start!).
     // We do this first because the following cache checking may take a bit of time.

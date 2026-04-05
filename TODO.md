@@ -3,6 +3,10 @@
 20. add config option for debugging (default false)
 20. allow for a more regular setup by passing config params through the setup
     function
+20. strange error where sometimes there are code completions in a markdown file
+    right at the beginning even though markdown is disabled.
+      - probably should add a simple failsafe check right before actually
+        sending prompts
 
 ^^^^^^^^^ DONE
 
@@ -16,10 +20,6 @@
        complicated, I suppose it depends on your programming style -I think this
        is fine for me as I save whenever its important
 
-20. strange error where sometimes there are code completions in a markdown file
-    right at the beginning even though markdown is disabled.
-      - probably should add a simple failsafe check right before actually
-        sending prompts
 
 03. option to not predict while in comments
      - should ALLOW comment predictions immediately after 

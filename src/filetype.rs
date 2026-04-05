@@ -1,5 +1,5 @@
 use {
-    crate::{LttwResult, disable_plugin, enable_plugin, get_state, utils::get_current_filetype},
+    crate::{disable_plugin, enable_plugin, get_state, utils::get_current_filetype, LttwResult},
     std::sync::atomic::Ordering,
 };
 
@@ -11,18 +11,7 @@ pub fn on_buf_enter_check_filetype() -> LttwResult<()> {
     };
 
     // Check if current filetype should enable/disable the plugin
-    let should_be_enabled = {
-        let state = get_state();
-        let filetype = get_current_filetype().unwrap_or_default();
-        let config = state.config.read();
-        let out = config.is_filetype_enabled(&filetype);
-
-        state.debug_manager.read().log(
-            "on_buf_enter_check_filetype",
-            format!("filetype {filetype}, should_be_enabled {out}",),
-        );
-        out
-    };
+    let should_be_enabled = should_be_enabled();
 
     if should_be_enabled && !is_enabled {
         enable_plugin()?;
@@ -30,4 +19,18 @@ pub fn on_buf_enter_check_filetype() -> LttwResult<()> {
         disable_plugin()?;
     }
     Ok(())
+}
+
+// Check if current filetype should enable/disable the plugin
+pub fn should_be_enabled() -> bool {
+    let state = get_state();
+    let filetype = get_current_filetype().unwrap_or_default();
+    let config = state.config.read();
+    let out = config.is_filetype_enabled(&filetype);
+
+    state.debug_manager.read().log(
+        "on_buf_enter_check_filetype",
+        format!("filetype {filetype}, should_be_enabled {out}",),
+    );
+    out
 }
