@@ -359,6 +359,28 @@ impl RingBuffer {
             }
         }
     }
+
+    /// Evict chunks from the ring buffer by filename
+    /// 
+    /// # Arguments
+    /// * `filename` - Filename to match for eviction
+    pub fn evict_by_filename(&mut self, filename: &str) {
+        // Evict from queued chunks
+        for i in (0..self.queued.len()).rev() {
+            if self.queued[i].filename == filename {
+                self.queued.remove(i);
+            }
+        }
+
+        // Evict from ring chunks (internal method to access private field)
+        self.chunks.retain(|c| c.filename != filename);
+    }
+
+    /// Get the number of chunks in the ring buffer (for testing)
+    #[cfg(test)]
+    pub fn get_chunks_count(&self) -> usize {
+        self.chunks.len()
+    }
 }
 
 /// Extra context for the server request

@@ -8,6 +8,7 @@ pub mod commands;
 pub mod config;
 pub mod context;
 pub mod debug;
+pub mod diff_chunk;
 pub mod error;
 pub mod filetype;
 pub mod fim;
@@ -21,6 +22,7 @@ pub use error::{Error, LttwResult};
 
 use {
     context::LocalContext,
+    diff_chunk::{calculate_all_repo_diffs, evaluate_diff_changes, log_diff_operations},
     fim::{
         fim_try_hint, fim_try_hint_skip_debounce, render_fim_suggestion, FimAcceptType, FimTimings,
     },
@@ -626,7 +628,7 @@ fn on_buf_leave() -> LttwResult<()> {
     Ok(())
 }
 
-/// Handle BufWritePost event - gather chunks after saving buffer
+/// Handle BufWritePost event - gather chunks and evaluate diff chunks after saving buffer
 fn on_buf_write_post() -> LttwResult<()> {
     let state = get_state();
 
@@ -642,8 +644,93 @@ fn on_buf_write_post() -> LttwResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&state, &lines, filename, false, true)?;
+        ring_buffer_lock.pick_chunk(&state, &lines, filename.clone(), false, true)?;
     }
 
+    // Evaluate all repo diffs (separate operation to avoid lock contention)
+    // Note: We don't pick_chunk here, we let the file save pick_chunk handle that
+    // This function calculates ALL diffs in the repo and compares with previous state
+    let _ = evaluate_all_repo_diffs();
+    
+    Ok(())
+}
+
+/// Evaluate all repository diffs and update ring buffer
+///
+/// This function:
+/// 1. Calculates all diff chunks in the repository using gix
+/// 2. Compares with previously stored chunks
+/// 3. Adds new chunks to ringbuffer.queued (additions)
+/// 4. Removes chunks from ringbuffer (removals)
+/// 5. Updates stored chunks in PluginState
+///
+/// NOTE: This function avoids holding multiple locks simultaneously to prevent deadlocks.
+/// It performs calculations first, then applies changes in separate locked sections.
+fn evaluate_all_repo_diffs() -> LttwResult<()> {
+    // Phase 1: Calculate new chunks (outside of any locks)
+    let new_chunks = match calculate_all_repo_diffs() {
+        Ok(chunks) => chunks,
+        Err(e) => {
+            let state = get_state();
+            state.debug_manager.read().log(
+                "evaluate_all_repo_diffs_error",
+                format!("Failed to calculate repo diffs: {}", e),
+            );
+            return Ok(()); // Don't fail the entire operation
+        }
+    };
+
+    let state = get_state();
+    
+    // Phase 2: Get old chunks and evaluate changes (separate locked section)
+    let (additions, removals) = {
+        let mut old_chunks_lock = state.diff_chunks.write();
+        let old_chunks: Vec<diff_chunk::DiffChunk> = old_chunks_lock.clone();
+        
+        // Evaluate changes
+        let (additions, removals) = evaluate_diff_changes(&new_chunks, &old_chunks);
+        
+        // Log operations for debugging
+        log_diff_operations(&state.debug_manager.read(), &additions, &removals);
+        
+        // Update stored chunks (at end of this scope, lock is released)
+        *old_chunks_lock = new_chunks;
+        
+        (additions, removals)
+    };
+
+    // Phase 3: Apply changes to ring buffer (separate locked section)
+    {
+        let mut ring_buffer_lock = state.ring_buffer.write();
+        
+        // Perform removals first (as per requirements)
+        for chunk in &removals {
+            // Evict chunks by filename from both queued and ring
+            ring_buffer_lock.evict_by_filename(&chunk.filepath);
+            state.debug_manager.read().log(
+                "diff_chunk_evicted",
+                format!("Evicted from buffer: {} (id: {})", chunk.filepath, chunk.id),
+            );
+        }
+
+        // Perform additions (after removals)
+        for chunk in &additions {
+            let ring_chunk = chunk.to_ring_chunk();
+            ring_buffer_lock.queued.push(ring_chunk);
+            state.debug_manager.read().log(
+                "diff_chunk_added",
+                format!("Added to queued: {} (id: {})", chunk.filepath, chunk.id),
+            );
+        }
+    }
+
+    // Log summary
+    let chunk_count = state.diff_chunks.read().len();
+    state.debug_manager.read().log(
+        "evaluate_all_repo_diffs",
+        format!("Evaluated {} chunks ({} additions, {} removals)", 
+            chunk_count, additions.len(), removals.len()),
+    );
+    
     Ok(())
 }
