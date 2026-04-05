@@ -15,6 +15,11 @@ pub struct DebugManager {
 impl DebugManager {
     /// Create a new debug manager
     pub fn new() -> Self {
+        Self::new_with_enabled(false)
+    }
+
+    /// Create a new debug manager with specified enabled state
+    pub fn new_with_enabled(enabled: bool) -> Self {
         let log_file_path = Self::get_log_file_path();
 
         // Clear the log file on startup
@@ -22,7 +27,7 @@ impl DebugManager {
 
         Self {
             log_file_path,
-            enabled: false,
+            enabled,
         }
     }
 

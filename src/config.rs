@@ -4,7 +4,7 @@
 // configuration into a strongly-typed Rust struct.
 
 use {
-    crate::{LttwResult, utils::get_var},
+    crate::{utils::get_var, LttwResult},
     nvim_oxi::conversion::FromObject,
     serde::{Deserialize, Serialize},
     serde_json::Value,
@@ -64,6 +64,7 @@ pub struct LttwConfig {
 
     // Startup configuration
     pub enable_at_startup: bool,
+    pub debug_enabled_at_startup: bool,
     pub disabled_filetypes: Vec<String>,
     pub enabled_filetypes: Vec<String>,
 }
@@ -104,6 +105,7 @@ impl Default for LttwConfig {
             keymap_inst_accept: "<Tab>".to_string(),
             keymap_inst_cancel: "<Esc>".to_string(),
             enable_at_startup: true,
+            debug_enabled_at_startup: false,
             disabled_filetypes: Vec::new(),
             enabled_filetypes: Vec::new(),
         }
@@ -243,6 +245,9 @@ impl LttwConfig {
         }
         if let Some(v) = get_bool("enable_at_startup") {
             config.enable_at_startup = v;
+        }
+        if let Some(v) = get_bool("debug_enabled_at_startup") {
+            config.debug_enabled_at_startup = v;
         }
 
         // Override array fields

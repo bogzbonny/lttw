@@ -1,21 +1,21 @@
 use {
     crate::{
-        Error, FimCompletionMessage, FimState, LttwResult, cache, config, debug,
-        instruction::InstructionRequestState, ring_buffer,
+        cache, config, debug, instruction::InstructionRequestState, ring_buffer, Error,
+        FimCompletionMessage, FimState, LttwResult,
     },
     ahash::{HashMap, HashMapExt},
     nvim_oxi::api::create_namespace,
     parking_lot::RwLock,
     std::{
         sync::{
-            Arc, OnceLock,
             atomic::{AtomicBool, AtomicI64},
+            Arc, OnceLock,
         },
         time::Instant,
     },
     tokio::{
         runtime::Runtime,
-        sync::{Semaphore, mpsc},
+        sync::{mpsc, Semaphore},
     },
 };
 
@@ -82,6 +82,7 @@ impl Default for PluginState {
     fn default() -> Self {
         let config = config::LttwConfig::from_nvim_globals();
         let enable_at_startup = config.enable_at_startup;
+        let debug_enabled_at_startup = config.debug_enabled_at_startup;
         let max_cache_keys = config.max_cache_keys as usize;
         let ring_n_chunks = config.ring_n_chunks as usize;
         let chunk_size = config.ring_chunk_size as usize;
@@ -110,7 +111,9 @@ impl Default for PluginState {
                 ring_n_chunks,
                 chunk_size,
             ))),
-            debug_manager: Arc::new(RwLock::new(debug::DebugManager::new())),
+            debug_manager: Arc::new(RwLock::new(debug::DebugManager::new_with_enabled(
+                debug_enabled_at_startup,
+            ))),
             nvim_mode: Arc::new(RwLock::new(Vec::new())),
             last_move_time: Arc::new(RwLock::new(Instant::now())),
             instruction_requests: Arc::new(RwLock::new(HashMap::new())),

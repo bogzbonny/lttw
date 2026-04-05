@@ -3,6 +3,10 @@
 
 ^^^^^^^^^ DONE
 
+20. allow for a more regular setup by passing config params through the setup
+    function
+20. add config option for debugging (default false)
+
 03. integrate git diff system into extra_inputs 
      - definitely should integrate with extra_input ring_buffer system -
        ordering is important
@@ -53,8 +57,6 @@ endfunction
 
 ------------------------
 
-10. track the amount of llm calls make sure we're not goin crzy
-
 05. integrate in LSP Completions into input_prefix (?)
      - suppliment the llm completions with suggestions from the LSP completions
      - MAYBE also just provide the LSP completion as an option immediately until
@@ -89,14 +91,14 @@ local query_string = [[
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
 
-10. easier to use debugging system (like debug! macro)
+20. easier to use debugging system (like debug! macro)
+
 20. better global error printing 
     https://github.com/noib3/nvim-oxi/issues/231
-20. allow for a more regular setup by passing config params through the setup
-    function
-20. add config option for debugging (default false)
+
 20. Option to ONLY accept single line inline suggestions if typing within a fully
     closed bracket system within a line example: "#[derive(Debug, Cl[CURSOR], Default)]"
+    
 20. Iff there are only two lines and the second line is all whitespace (new
     empty line) then discard that from the prediction... seems janky when it
     shows up
