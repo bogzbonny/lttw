@@ -135,6 +135,7 @@ pub fn calculate_all_repo_diffs() -> LttwResult<Vec<DiffChunk>> {
             if !file_content.is_empty() {
                 // Parse hunks to get line numbers
                 let (old_start, old_lines, new_start, new_lines) = parse_hunk_info(&file_lines);
+                eprintln!("DEBUG: Parsed hunk info: old_start={}, old_lines={}, new_start={}, new_lines={}", old_start, old_lines, new_start, new_lines);
 
                 chunks.push(DiffChunk::from_hunk_data(
                     &filepath,
@@ -158,9 +159,10 @@ fn extract_file_path(line: &str) -> String {
     // Format: "diff --git a/file b/file"
     let parts: Vec<&str> = line.split(" ").collect();
     if parts.len() >= 3 {
-        // Get the b/ path (new file)
+        // Get the b/ path (new file) and strip any prefixes
         let b_path = parts[2].strip_prefix("b/").unwrap_or(parts[2]);
-        return b_path.to_string();
+        let cleaned = b_path.strip_prefix("a/").unwrap_or(b_path);
+        return cleaned.to_string();
     }
     String::new()
 }
@@ -349,5 +351,22 @@ mod tests {
 
         assert_eq!(removals.len(), 1);
         assert_eq!(removals[0].filepath, "file2.rs");
+    }
+
+    #[test]
+    fn test_extract_file_path() {
+        // Test extracting file path from diff header
+        let line = "diff --git a/src/lib.rs b/src/lib.rs";
+        let filepath = extract_file_path(line);
+        assert_eq!(filepath, "src/lib.rs");
+    }
+
+    #[test]
+    fn test_calculate_repo_diffs() {
+        // This test verifies that calculate_all_repo_diffs works
+        // It may return empty if no changes are present
+        let chunks = calculate_all_repo_diffs();
+        // We just verify it doesn't panic and returns a result
+        assert!(chunks.is_ok());
     }
 }

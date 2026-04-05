@@ -39,8 +39,6 @@ pub struct FimRequest {
     pub top_k: u32,
     pub top_p: f32,
     pub samplers: Vec<String>,
-    pub stream: bool,
-    pub cache_prompt: bool,
     pub t_max_prompt_ms: u32,
     pub t_max_predict_ms: u32,
     pub response_fields: Vec<String>,
