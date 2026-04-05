@@ -660,15 +660,16 @@ fn on_buf_write_post() -> LttwResult<()> {
 /// This function:
 /// 1. Calculates all diff chunks in the repository using gix
 /// 2. Compares with previously stored chunks
-/// 3. Adds new chunks to ringbuffer.queued (additions)
-/// 4. Removes chunks from ringbuffer (removals)
-/// 5. Updates stored chunks in PluginState
+/// 3. Assigns unique sequential IDs to new chunks
+/// 4. Adds new chunks to ringbuffer.queued (additions)
+/// 5. Removes chunks from ringbuffer by id (removals)
+/// 6. Updates stored chunks in PluginState
 ///
 /// NOTE: This function avoids holding multiple locks simultaneously to prevent deadlocks.
 /// It performs calculations first, then applies changes in separate locked sections.
 fn evaluate_all_repo_diffs() -> LttwResult<()> {
     // Phase 1: Calculate new chunks (outside of any locks)
-    let new_chunks = match calculate_all_repo_diffs() {
+    let mut new_chunks = match calculate_all_repo_diffs() {
         Ok(chunks) => chunks,
         Err(e) => {
             let state = get_state();
@@ -682,10 +683,41 @@ fn evaluate_all_repo_diffs() -> LttwResult<()> {
 
     let state = get_state();
     
-    // Phase 2: Get old chunks and evaluate changes (separate locked section)
+    // Phase 2: Assign IDs and evaluate changes
     let (additions, removals) = {
         let mut old_chunks_lock = state.diff_chunks.write();
         let old_chunks: Vec<diff_chunk::DiffChunk> = old_chunks_lock.clone();
+        
+        // Assign sequential IDs to new chunks
+        // For new chunks (filepath not in old), assign new id
+        // For changed chunks (filepath exists but diff content changed), assign new id
+        {
+            let mut next_id = state.next_diff_chunk_id.load(std::sync::atomic::Ordering::SeqCst);
+            for chunk in &mut new_chunks {
+                // Check if this filepath was in old chunks
+                let was_in_old = old_chunks.iter().any(|c| c.filepath == chunk.filepath);
+                if was_in_old {
+                    // Find the old chunk for this filepath and reuse its id if unchanged
+                    for old_chunk in &old_chunks {
+                        if old_chunk.filepath == chunk.filepath && old_chunk.content == chunk.content {
+                            // Content unchanged - reuse old id
+                            chunk.id = old_chunk.id;
+                            break;
+                        }
+                    }
+                    if chunk.id == 0 {
+                        // Content changed or not found - assign new id
+                        chunk.id = next_id;
+                        next_id += 1;
+                    }
+                } else {
+                    // New filepath - assign new id
+                    chunk.id = next_id;
+                    next_id += 1;
+                }
+            }
+            state.next_diff_chunk_id.store(next_id, std::sync::atomic::Ordering::SeqCst);
+        }
         
         // Evaluate changes
         let (additions, removals) = evaluate_diff_changes(&new_chunks, &old_chunks);
@@ -705,8 +737,8 @@ fn evaluate_all_repo_diffs() -> LttwResult<()> {
         
         // Perform removals first (as per requirements)
         for chunk in &removals {
-            // Evict chunks by filename from both queued and ring
-            ring_buffer_lock.evict_by_filename(&chunk.filepath);
+            // Evict chunks by id from both queued and ring
+            ring_buffer_lock.evict_by_id(chunk.id);
             state.debug_manager.read().log(
                 "diff_chunk_evicted",
                 format!("Evicted from buffer: {} (id: {})", chunk.filepath, chunk.id),

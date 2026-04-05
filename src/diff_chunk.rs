@@ -5,7 +5,6 @@
 // On each recalculation, it compares new vs old diff chunks and updates the ring buffer.
 
 use crate::{ring_buffer::Chunk, LttwResult};
-use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
 /// Represents a single diff chunk with metadata
@@ -25,8 +24,8 @@ pub struct DiffChunk {
     pub content: String,
     /// Timestamp when this diff was created
     pub time: Instant,
-    /// Unique identifier for this chunk (based on content hash)
-    pub id: String,
+    /// Unique identifier for this chunk (assigned by PluginState)
+    pub id: usize,
 }
 
 impl DiffChunk {
@@ -39,10 +38,6 @@ impl DiffChunk {
         new_lines: u32,
         content: &str,
     ) -> Self {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        content.hash(&mut hasher);
-        let id = format!("{:x}", hasher.finish());
-
         Self {
             filepath: filepath.to_string(),
             old_start,
@@ -51,7 +46,7 @@ impl DiffChunk {
             new_lines,
             content: content.to_string(),
             time: Instant::now(),
-            id,
+            id: 0, // Will be assigned by PluginState
         }
     }
 
@@ -63,6 +58,7 @@ impl DiffChunk {
             chunk_str: self.content.clone(),
             time: self.time,
             filename: self.filepath.clone(),
+            id: self.id,
         }
     }
 }
@@ -225,34 +221,36 @@ pub fn evaluate_diff_changes(
     new_chunks: &[DiffChunk],
     old_chunks: &[DiffChunk],
 ) -> (Vec<DiffChunk>, Vec<DiffChunk>) {
-    // Create sets based on filepath and content hash for comparison
-    // This ensures we compare by the actual diff content, not by timestamp
-    let old_ids: std::collections::HashSet<String> = old_chunks
+    // Create sets based on filepath and id for comparison
+    // This ensures we compare by the actual diff content via its unique id
+    let old_keyed: std::collections::HashMap<String, usize> = old_chunks
         .iter()
-        .map(|c| format!("{}:{}", c.filepath, c.id))
+        .map(|c| (c.filepath.clone(), c.id))
         .collect();
 
-    let new_ids: std::collections::HashSet<String> = new_chunks
+    let new_keyed: std::collections::HashMap<String, usize> = new_chunks
         .iter()
-        .map(|c| format!("{}:{}", c.filepath, c.id))
+        .map(|c| (c.filepath.clone(), c.id))
         .collect();
 
-    // Additions: in new but not in old
+    // Additions: in new but not in old (by filepath)
     let additions: Vec<DiffChunk> = new_chunks
         .iter()
         .filter(|c| {
-            let key = format!("{}:{}", c.filepath, c.id);
-            !old_ids.contains(&key)
+            let old_id = old_keyed.get(&c.filepath);
+            // New if filepath is new OR id has changed
+            old_id.is_none() || old_id != Some(&c.id)
         })
         .cloned()
         .collect();
 
-    // Removals: in old but not in new
+    // Removals: in old but not in new (by filepath)
     let removals: Vec<DiffChunk> = old_chunks
         .iter()
         .filter(|c| {
-            let key = format!("{}:{}", c.filepath, c.id);
-            !new_ids.contains(&key)
+            let new_id = new_keyed.get(&c.filepath);
+            // Removed if filepath no longer exists OR id has changed
+            new_id.is_none() || new_id != Some(&c.id)
         })
         .cloned()
         .collect();
@@ -278,11 +276,12 @@ pub fn log_diff_operations(
         debug_manager.log(
             "diff_chunk_added",
             format!(
-                "{}:{}-{} ({} lines)",
+                "{}:{}-{} ({} lines) id:{}",
                 chunk.filepath,
                 chunk.new_start,
                 chunk.new_start + chunk.new_lines,
-                chunk.new_lines
+                chunk.new_lines,
+                chunk.id
             ),
         );
     }
@@ -291,11 +290,12 @@ pub fn log_diff_operations(
         debug_manager.log(
             "diff_chunk_removed",
             format!(
-                "{}:{}-{} ({} lines)",
+                "{}:{}-{} ({} lines) id:{}",
                 chunk.filepath,
                 chunk.old_start,
                 chunk.old_start + chunk.old_lines,
-                chunk.old_lines
+                chunk.old_lines,
+                chunk.id
             ),
         );
     }
@@ -315,7 +315,7 @@ mod tests {
             new_lines: 7,
             content: "@@ -10,5 +12,7 @@\n+line1\n+line2\n-context\n".to_string(),
             time: Instant::now(),
-            id: "test_hash".to_string(),
+            id: 123,
         };
 
         assert_eq!(chunk.filepath, "test.rs");
@@ -323,6 +323,7 @@ mod tests {
         assert_eq!(chunk.old_lines, 5);
         assert_eq!(chunk.new_start, 12);
         assert_eq!(chunk.new_lines, 7);
+        assert_eq!(chunk.id, 123);
     }
 
     #[test]

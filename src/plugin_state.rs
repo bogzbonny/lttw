@@ -8,7 +8,7 @@ use {
     parking_lot::RwLock,
     std::{
         sync::{
-            atomic::{AtomicBool, AtomicI64},
+            atomic::{AtomicBool, AtomicI64, AtomicUsize},
             Arc, OnceLock,
         },
         time::Instant,
@@ -59,6 +59,9 @@ pub struct PluginState {
     pub autocmd_id_filetype_check: Arc<RwLock<Option<u32>>>,
     pub ring_buffer_timer_handle: Arc<RwLock<RingBufferTimerHandle>>,
     pub ring_updating_active: Arc<AtomicBool>,
+    // Next sequential id for diff chunks
+    #[allow(dead_code)]
+    pub next_diff_chunk_id: Arc<AtomicUsize>,
     // Diff chunks storage - stores all diff chunks from file saves
     pub diff_chunks: Arc<RwLock<Vec<diff_chunk::DiffChunk>>>,
     // FIM completion channel for async worker communication
@@ -133,6 +136,7 @@ impl PluginState {
             autocmd_id_filetype_check: Arc::new(RwLock::new(None)),
             ring_buffer_timer_handle: Arc::new(RwLock::new(None)),
             ring_updating_active: Arc::new(AtomicBool::new(false)),
+            next_diff_chunk_id: Arc::new(AtomicUsize::new(0)),
             diff_chunks: Arc::new(RwLock::new(Vec::new())),
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(RwLock::new(None)),

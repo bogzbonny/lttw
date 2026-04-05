@@ -150,6 +150,8 @@ pub struct Chunk {
     pub chunk_str: String,
     pub time: Instant,
     pub filename: String,
+    /// Unique identifier for this chunk (nonce assigned by PluginState)
+    pub id: usize,
 }
 
 /// Ring buffer for extra context chunks
@@ -245,6 +247,7 @@ impl RingBuffer {
             chunk_str,
             time: Instant::now(),
             filename, // Will be set by caller
+            id: 0,    // Will be set by caller
         });
         Ok(())
     }
@@ -374,6 +377,22 @@ impl RingBuffer {
 
         // Evict from ring chunks (internal method to access private field)
         self.chunks.retain(|c| c.filename != filename);
+    }
+
+    /// Evict chunks from the ring buffer by unique id
+    /// 
+    /// # Arguments
+    /// * `chunk_id` - Unique id to match for eviction
+    pub fn evict_by_id(&mut self, chunk_id: usize) {
+        // Evict from queued chunks
+        for i in (0..self.queued.len()).rev() {
+            if self.queued[i].id == chunk_id {
+                self.queued.remove(i);
+            }
+        }
+
+        // Evict from ring chunks
+        self.chunks.retain(|c| c.id != chunk_id);
     }
 
     /// Get the number of chunks in the ring buffer (for testing)
