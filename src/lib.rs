@@ -421,6 +421,20 @@ fn debug_clear() -> LttwResult<()> {
     Ok(())
 }
 
+/// Enable info display (set show_info = 2)
+fn enable_info() -> LttwResult<()> {
+    let state = get_state();
+    state.config.write().show_info = 2;
+    Ok(())
+}
+
+/// Disable info display (set show_info = 0)
+fn disable_info() -> LttwResult<()> {
+    let state = get_state();
+    state.config.write().show_info = 0;
+    Ok(())
+}
+
 fn is_enabled() -> bool {
     let state = get_state();
     if state.enabled.load(Ordering::SeqCst) {

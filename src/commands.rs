@@ -1,7 +1,8 @@
 use {
     crate::{
-        LttwResult, autocmd::clear_filetype_autocommand, debug_clear, debug_disable, debug_enable,
-        disable_plugin, enable_plugin, instruction, is_enabled, toggle_auto_fim,
+        autocmd::clear_filetype_autocommand, debug_clear, debug_disable, debug_enable,
+        disable_info, disable_plugin, enable_info, enable_plugin, instruction, is_enabled,
+        toggle_auto_fim, LttwResult,
     },
     nvim_oxi::api::create_user_command,
 };
@@ -104,6 +105,26 @@ pub fn register_commands() -> LttwResult<()> {
         "LttwDebugClear",
         |_| -> LttwResult<()> {
             debug_clear()?;
+            Ok(())
+        },
+        &Default::default(),
+    );
+
+    let _ = create_user_command(
+        "LttwEnableInfo",
+        |_| -> LttwResult<()> {
+            enable_info()?;
+            nvim_oxi::api::command("echo 'info display enabled'")?;
+            Ok(())
+        },
+        &Default::default(),
+    );
+
+    let _ = create_user_command(
+        "LttwDisableInfo",
+        |_| -> LttwResult<()> {
+            disable_info()?;
+            nvim_oxi::api::command("echo 'info display disabled'")?;
             Ok(())
         },
         &Default::default(),
