@@ -10,6 +10,16 @@
      - definitely should integrate with extra_input ring_buffer system -
        ordering is important
      - should be a part of the same ring buffer 
+     - PROBABLY should just integrate in diff only on file saves just to be a
+       bit more conservative - otherwise what would be the time when we'd be
+       making the diffs? after each insert? - possible but a bit more
+       complicated, I suppose it depends on your programming style -I think this
+       is fine for me as I save whenever its important
+
+20. strange error where sometimes there are code completions in a markdown file
+    right at the beginning even though markdown is disabled.
+      - probably should add a simple failsafe check right before actually
+        sending prompts
 
 03. option to not predict while in comments
      - should ALLOW comment predictions immediately after 
@@ -105,6 +115,7 @@ local query_string = [[
 30. investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
      - I think would require a implementing my own FIM system, which would be
        useful anyways
+
 
 40. instruction system LOW priority can use CodeCompanion for now
 

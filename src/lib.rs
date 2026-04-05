@@ -25,7 +25,7 @@ use {
         fim_try_hint, fim_try_hint_skip_debounce, render_fim_suggestion, FimAcceptType, FimTimings,
     },
     nvim_oxi::{Dictionary, Function},
-    plugin_state::{get_state, init_config, init_state},
+    plugin_state::{get_state, init_state},
     std::{
         sync::atomic::Ordering,
         time::{Duration, Instant},
@@ -91,8 +91,7 @@ pub struct FimCompletionMessage {
 pub fn lttw() -> LttwResult<Dictionary> {
     let mut functions = Dictionary::new();
 
-    functions
-        .insert::<&str, Function<nvim_oxi::Object, ()>>("setup", Function::from(|c| lttw_setup(c)));
+    functions.insert::<&str, Function<nvim_oxi::Object, ()>>("setup", Function::from(lttw_setup));
 
     Ok(functions)
 }
@@ -100,9 +99,7 @@ pub fn lttw() -> LttwResult<Dictionary> {
 // TODO process errors in this function
 fn lttw_setup(c: nvim_oxi::Object) {
     // Initialize plugin state
-    init_state();
-
-    init_config(c);
+    init_state(c);
 
     // Initialize persistent tokio runtime and completion channel
     init_completion_processing_thread();

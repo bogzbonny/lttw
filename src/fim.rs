@@ -527,7 +527,8 @@ pub async fn fim_completion(
         let mut rb = state.ring_buffer.write();
         let chunk = rb.get_chunk_from_text(text);
         if !chunk.is_empty() {
-            rb.evict_similar(chunk, 0.5);
+            //rb.evict_similar(chunk, 0.5); // XXX
+            rb.evict_similar(chunk, 0.9); // XXX
         }
     }
 

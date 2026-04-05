@@ -23,20 +23,14 @@ use {
 static PLUGIN_STATE: OnceLock<Arc<PluginState>> = OnceLock::new();
 
 /// Initialize the plugin state
-pub fn init_state() {
-    PLUGIN_STATE.get_or_init(|| Arc::new(PluginState::default()));
+pub fn init_state(obj: nvim_oxi::Object) {
+    PLUGIN_STATE.get_or_init(move || Arc::new(PluginState::new(obj)));
 }
 
 /// Get the plugin state (returns a clone of the Arc, no locking)
 pub fn get_state() -> Arc<PluginState> {
-    init_state();
+    //init_state();
     PLUGIN_STATE.get().unwrap().clone()
-}
-
-/// Initialize the plugin state
-pub fn init_config(obj: nvim_oxi::Object) {
-    let state = get_state();
-    *state.config.write() = config::LttwConfig::from_object(obj);
 }
 
 // State management
@@ -84,10 +78,10 @@ pub struct CurrentBufferInfo {
 /// Type alias for ring buffer timer handle to simplify type declarations
 type RingBufferTimerHandle = Option<Arc<parking_lot::Mutex<tokio::task::JoinHandle<()>>>>;
 
-impl Default for PluginState {
-    fn default() -> Self {
+impl PluginState {
+    fn new(obj: nvim_oxi::Object) -> Self {
         //let config = config::LttwConfig::from_nvim_globals();
-        let config = config::LttwConfig::default();
+        let config = config::LttwConfig::from_object(obj);
         let enable_at_startup = config.enable_at_startup;
         let debug_enabled_at_startup = config.debug_enabled_at_startup;
         let max_cache_keys = config.max_cache_keys as usize;
@@ -143,9 +137,6 @@ impl Default for PluginState {
             tokio_runtime: Arc::new(RwLock::new(runtime)),
         }
     }
-}
-
-impl PluginState {
     pub fn get_fim_completion_tx(&self) -> LttwResult<mpsc::Sender<FimCompletionMessage>> {
         let fim_completion_tx_lock = self.fim_completion_tx.read();
         fim_completion_tx_lock
