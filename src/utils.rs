@@ -3,12 +3,14 @@
 // This module provides various utility functions used throughout the plugin.
 
 use {
-    crate::{LttwResult, get_state, plugin_state::CurrentBufferInfo},
+    crate::{get_state, plugin_state::CurrentBufferInfo, LttwResult},
     ahash::AHasher,
     nvim_oxi::{
         api::{
-            self, Buffer, Window, get_option_value,
-            opts::{CreateAutocmdOpts, OptionOpts, SetExtmarkOpts},
+            self, get_option_value,
+            opts::{CreateAutocmdOpts, OptionOpts, SetExtmarkOpts, SetExtmarkOptsBuilder},
+            types::ExtmarkVirtTextPosition,
+            Buffer, Window,
         },
         conversion::FromObject,
     },
@@ -120,6 +122,25 @@ pub fn set_buf_extmark(
 
     let mut buf = Buffer::current();
     Ok(buf.set_extmark(ns_id, line, col, opts)?)
+}
+
+pub fn set_buf_extmark_top_right(ns_id: u32, message: String) -> LttwResult<u32> {
+    assert_not_tokio_worker();
+
+    let mut info_opts = SetExtmarkOptsBuilder::default();
+    let info_virt_text = vec![(message, "Comment")];
+    info_opts.virt_text(info_virt_text);
+
+    // Use RightAlign positioning for the info string
+    // This displays the info at the right side of the window
+    info_opts.virt_text_pos(ExtmarkVirtTextPosition::RightAlign);
+
+    info_opts.virt_text_pos(ExtmarkVirtTextPosition::RightAlign);
+    let top_line: usize = api::call_function("line", ("w0",)).unwrap_or(0);
+    let top_line = top_line.saturating_sub(1); // Adjust for 0-based indexing in Neovim API
+
+    let mut buf = Buffer::current();
+    Ok(buf.set_extmark(ns_id, top_line, 0, &info_opts.build())?)
 }
 
 pub fn del_buf_extmark(ns_id: u32, extmark_id: u32) -> LttwResult<()> {

@@ -1,8 +1,7 @@
-
-^^^^^^^^^ DONE
-
 03. continious ring_buffer processing rather than just 1 per second while in
     normal/mode or nothing is happening
+
+^^^^^^^^^ DONE
 
 03. integrate git diff system into extra_inputs 
      - definitely should integrate with extra_input ring_buffer system -
@@ -20,7 +19,6 @@ function! IsInComment()
   let l:syn_name = synIDattr(l:syn_id, 'name')
   return l:syn_name =~? '^comment$'
 endfunction
-
 
 05. integrate in LSP diagnostics into input_prefix (?)
      - because the diagnostics are per-line and are likely not to get reused

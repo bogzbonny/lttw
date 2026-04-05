@@ -13,7 +13,8 @@ use {
         plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
         utils::{
-            clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input, set_buf_extmark,
+            clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input,
+            set_buf_extmark, set_buf_extmark_top_right,
         },
         Error, FimCompletionMessage, FimTimingsData, LttwResult,
     },
@@ -967,31 +968,13 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
                 String::new()
             };
 
-            if !info_string.is_empty() {
-                // Create a separate extmark for the info string with RightAlign positioning
-                let info_text = info_string.clone();
-                let mut info_opts = SetExtmarkOptsBuilder::default();
-                let info_virt_text = vec![(info_string, "llama_hl_fim_info".to_string())];
-                info_opts.virt_text(info_virt_text);
-
-                // Use RightAlign positioning for the info string
-                // This displays the info at the right side of the window
-                info_opts.virt_text_pos(ExtmarkVirtTextPosition::RightAlign);
-
+            if !info_string.is_empty()
+                && let Err(e) = set_buf_extmark_top_right(ns_id, info_string)
+            {
                 debug_manager.log(
                     "display_fim_text",
-                    format!(
-                        "Setting info extmark with RightAlign at line {pos_y}, Info: '{info_text}'",
-                    ),
+                    format!("Error setting info extmark: {:?}", e),
                 );
-
-                // x pos not used as right align (set to 0)
-                if let Err(e) = set_buf_extmark(ns_id, pos_y, 0, &info_opts.build()) {
-                    debug_manager.log(
-                        "display_fim_text",
-                        format!("Error setting info extmark: {:?}", e),
-                    );
-                }
             }
         }
     }
