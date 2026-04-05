@@ -1,11 +1,10 @@
 03. continious ring_buffer processing rather than just 1 per second while in
     normal/mode or nothing is happening
 20. add config option for debugging (default false)
-
-^^^^^^^^^ DONE
-
 20. allow for a more regular setup by passing config params through the setup
     function
+
+^^^^^^^^^ DONE
 
 03. integrate git diff system into extra_inputs 
      - definitely should integrate with extra_input ring_buffer system -

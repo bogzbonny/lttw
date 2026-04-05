@@ -33,6 +33,12 @@ pub fn get_state() -> Arc<PluginState> {
     PLUGIN_STATE.get().unwrap().clone()
 }
 
+/// Initialize the plugin state
+pub fn init_config(obj: nvim_oxi::Object) {
+    let state = get_state();
+    *state.config.write() = config::LttwConfig::from_object(obj);
+}
+
 // State management
 #[derive(Clone)]
 pub struct PluginState {
@@ -80,7 +86,8 @@ type RingBufferTimerHandle = Option<Arc<parking_lot::Mutex<tokio::task::JoinHand
 
 impl Default for PluginState {
     fn default() -> Self {
-        let config = config::LttwConfig::from_nvim_globals();
+        //let config = config::LttwConfig::from_nvim_globals();
+        let config = config::LttwConfig::default();
         let enable_at_startup = config.enable_at_startup;
         let debug_enabled_at_startup = config.debug_enabled_at_startup;
         let max_cache_keys = config.max_cache_keys as usize;

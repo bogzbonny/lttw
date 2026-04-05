@@ -4,10 +4,8 @@
 // configuration into a strongly-typed Rust struct.
 
 use {
-    crate::{utils::get_var, LttwResult},
     nvim_oxi::conversion::FromObject,
     serde::{Deserialize, Serialize},
-    serde_json::Value,
 };
 
 /// Configuration options for the lttw plugin
@@ -120,15 +118,9 @@ impl LttwConfig {
 
     /// Load configuration from Neovim global variable vim.g.lttw_config
     /// This merges user config with defaults - only handles basic types supported by nvim_oxi
-    pub fn from_nvim_globals() -> Self {
+    pub fn from_object(obj: nvim_oxi::Object) -> Self {
         // Start with defaults
         let mut config = Self::default();
-
-        // Try to get vim.g.lttw_config
-        let obj: nvim_oxi::Object = match get_var("lttw_config") {
-            Ok(o) => o,
-            Err(_) => return config, // Return defaults on error
-        };
 
         // Convert Object to Dictionary
         let dict: nvim_oxi::Dictionary = match obj.try_into() {
@@ -285,11 +277,6 @@ impl LttwConfig {
         }
 
         config
-    }
-
-    /// Create configuration from serde_json::Value
-    pub fn from_value(value: &Value) -> LttwResult<Self> {
-        Ok(serde_json::from_value(value.clone())?)
     }
 
     /// Check if a filetype is enabled
