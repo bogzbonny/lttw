@@ -1,21 +1,21 @@
 use {
     crate::{
-        cache, config, debug, instruction::InstructionRequestState, ring_buffer, Error,
-        FimCompletionMessage, FimState, LttwResult,
+        Error, FimCompletionMessage, FimState, LttwResult, cache, config, debug,
+        instruction::InstructionRequestState, ring_buffer,
     },
     ahash::{HashMap, HashMapExt},
     nvim_oxi::api::create_namespace,
     parking_lot::RwLock,
     std::{
         sync::{
-            atomic::{AtomicBool, AtomicI64, AtomicU64},
             Arc, OnceLock,
+            atomic::{AtomicBool, AtomicI64, AtomicU64},
         },
         time::Instant,
     },
     tokio::{
         runtime::Runtime,
-        sync::{mpsc, Semaphore},
+        sync::{Semaphore, mpsc},
     },
 };
 

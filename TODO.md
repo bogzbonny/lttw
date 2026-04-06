@@ -15,9 +15,6 @@ Add an new feature which prevents FIM prediction while in comments
    this value is set. Everytime the on_move function is triggered, check the
    cursor pos, if the cursor pos is different from allow_comment_fim_cur_pos
    then set allow_comment_fim_cur_pos to None.
-
-^^^^^^^^^ DONE
-
 10. n_predict changes
 dynamically change n_predict during each FIM call (number of tokens to predict)
  - replaces existing n_predict config option
@@ -25,6 +22,8 @@ dynamically change n_predict during each FIM call (number of tokens to predict)
    cursor set to n_predict_inner (default value 16)
  - for at the end of a line or where there's only whitespace left to the right
    of the cursor set to a new config param n_prefict_end (default value 256)
+
+^^^^^^^^^ DONE
 
 05. completion cycling
 New keymaps; use CTRL-j and CTRL-k from insert mode to cycle through the

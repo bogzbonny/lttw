@@ -70,6 +70,7 @@ lua require('llama').setup()
  - adaptive debounce strategy for fast typing
  - ability to explicitly cap the limit number of concurrent FIM calls 
  - don't autocomplete while in code comments (option to turn that on)
+ - dynamic n_predict for reduce prediction tokens while inside a line
 
 ## Alternatives Local Code Completion 
 

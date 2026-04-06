@@ -26,7 +26,13 @@ pub struct LttwConfig {
     // single batch (`--batch-size` flag)
     pub n_prefix: u32, // number of prefix lines fed into the inline endpoint
     pub n_suffix: u32, // number of suffix lines fed into the inline endpoint
-    pub n_predict: u32,
+
+    // Dynamic n_predict configuration
+    // n_predict_inner: tokens to predict when there are non-whitespace chars to the right of cursor
+    // n_predict_end: tokens to predict when at end of line or only whitespace to the right
+    pub n_predict_inner: u32,
+    pub n_predict_end: u32,
+
     pub stop_strings: Vec<String>,
     pub t_max_prompt_ms: u32,
     pub t_max_predict_ms: u32,
@@ -90,7 +96,8 @@ impl Default for LttwConfig {
             api_key: String::new(),
             n_prefix: 256,
             n_suffix: 64,
-            n_predict: 128,
+            n_predict_inner: 16,
+            n_predict_end: 256,
             stop_strings: Vec::new(),
             t_max_prompt_ms: 500,
             t_max_predict_ms: 1000,
@@ -190,8 +197,11 @@ impl LttwConfig {
         if let Some(v) = get_i64("n_suffix") {
             config.n_suffix = v as u32;
         }
-        if let Some(v) = get_i64("n_predict") {
-            config.n_predict = v as u32;
+        if let Some(v) = get_i64("n_predict_inner") {
+            config.n_predict_inner = v as u32;
+        }
+        if let Some(v) = get_i64("n_predict_end") {
+            config.n_predict_end = v as u32;
         }
         if let Some(v) = get_i64("t_max_prompt_ms") {
             config.t_max_prompt_ms = v as u32;
@@ -343,6 +353,8 @@ mod tests {
         );
         assert_eq!(config.n_prefix, 256);
         assert_eq!(config.n_suffix, 64);
+        assert_eq!(config.n_predict_inner, 16);
+        assert_eq!(config.n_predict_end, 256);
     }
 
     #[test]
@@ -379,7 +391,8 @@ mod tests {
         );
         assert_eq!(config.n_prefix, 256);
         assert_eq!(config.n_suffix, 64);
-        assert_eq!(config.n_predict, 128);
+        assert_eq!(config.n_predict_inner, 16);
+        assert_eq!(config.n_predict_end, 256);
         assert!(config.auto_fim);
         assert!(!config.diff_tracking_enabled);
     }

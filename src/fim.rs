@@ -6,24 +6,48 @@
 
 use {
     crate::{
+        Error, FimCompletionMessage, FimTimingsData, LttwResult,
         cache::compute_hashes,
-        context::get_local_context,
         context::LocalContext,
+        context::get_local_context,
         filetype::should_be_enabled,
         fim_accept_inner, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
-        plugin_state::{get_state, PluginState},
+        plugin_state::{PluginState, get_state},
         ring_buffer::ExtraContext,
         utils::{
             clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input, is_in_comment,
             set_buf_extmark, set_buf_extmark_top_right,
         },
-        Error, FimCompletionMessage, FimTimingsData, LttwResult,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition},
     serde::{Deserialize, Serialize},
     std::sync::Arc,
     std::time::{Duration, Instant},
 };
+
+/// Determine n_predict based on cursor position
+/// Returns n_predict_inner if there are non-whitespace characters to the right of the cursor
+/// Returns n_predict_end if at end of line or only whitespace to the right
+pub fn get_dynamic_n_predict(
+    line: &str,
+    pos_x: usize,
+    n_predict_inner: u32,
+    n_predict_end: u32,
+) -> u32 {
+    // Check if pos_x is at or beyond the line length (end of line)
+    if pos_x >= line.len() {
+        return n_predict_end;
+    }
+
+    // Check if there are only whitespace characters to the right of the cursor
+    let suffix = &line[pos_x..];
+    if suffix.trim().is_empty() {
+        return n_predict_end;
+    }
+
+    // There are non-whitespace characters to the right of the cursor
+    n_predict_inner
+}
 
 /// FIM completion request
 #[derive(Debug, Clone, Serialize)]
@@ -114,27 +138,27 @@ pub fn build_info_string(
     // Build info string
     if truncated {
         format!(
-                " | WARNING: the context is full: {}, increase the server context size or reduce g:lttw_config.ring_n_chunks",
-                tokens_cached
-            )
+            " | WARNING: the context is full: {}, increase the server context size or reduce g:lttw_config.ring_n_chunks",
+            tokens_cached
+        )
     } else {
         format!(
-                " | c: {}, r: {}/{}, e: {}, q: {}/{}, C: {}/{} | p: {} ({:.2} ms, {:.2} t/s) | g: {} ({:.2} ms, {:.2} t/s)",
-                tokens_cached,
-                ring_chunks,
-                ring_n_chunks,
-                ring_n_evict,
-                ring_queued,
-                ring_queue_length,
-                cache_size,
-                max_cache_keys,
-                n_prompt,
-                t_prompt_ms,
-                s_prompt,
-                n_predict,
-                t_predict_ms,
-                s_predict
-            )
+            " | c: {}, r: {}/{}, e: {}, q: {}/{}, C: {}/{} | p: {} ({:.2} ms, {:.2} t/s) | g: {} ({:.2} ms, {:.2} t/s)",
+            tokens_cached,
+            ring_chunks,
+            ring_n_chunks,
+            ring_n_evict,
+            ring_queued,
+            ring_queue_length,
+            cache_size,
+            max_cache_keys,
+            n_prompt,
+            t_prompt_ms,
+            s_prompt,
+            n_predict,
+            t_predict_ms,
+            s_predict
+        )
     }
 }
 
@@ -237,7 +261,7 @@ pub fn fim_try_hint_inner(
         //
         let mut char_indices = pm.char_indices().collect::<Vec<_>>();
         char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
-                                             // its never used
+        // its never used
         let char_len = char_indices.len() - 1;
 
         let max_iters = 128; // TODO parameterize this
@@ -498,7 +522,8 @@ pub async fn fim_completion(
 ) -> LttwResult<()> {
     state.debug_manager.read().log("fim_completion", "0");
     let (
-        n_predict,
+        n_predict_inner,
+        n_predict_end,
         stop,
         t_max_prompt_ms,
         mut t_max_predict_ms,
@@ -509,7 +534,8 @@ pub async fn fim_completion(
     ) = {
         let config = state.config.read();
         (
-            config.n_predict,
+            config.n_predict_inner,
+            config.n_predict_end,
             config.stop_strings.clone(),
             config.t_max_prompt_ms,
             config.t_max_predict_ms,
@@ -519,6 +545,16 @@ pub async fn fim_completion(
             config.ring_chunk_size,
         )
     };
+
+    // Determine n_predict dynamically based on cursor position
+    let n_predict = get_dynamic_n_predict(&ctx.line_cur, pos_x, n_predict_inner, n_predict_end);
+    state.debug_manager.read().log(
+        "fim_completion",
+        format!(
+            "dynamic n_predict: {} (inner: {}, end: {})",
+            n_predict, n_predict_inner, n_predict_end
+        ),
+    );
 
     // Get local context
 
