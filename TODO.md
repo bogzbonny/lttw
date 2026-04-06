@@ -1,68 +1,5 @@
-03. continious ring_buffer processing rather than just 1 per second while in
-    normal/mode or nothing is happening
-20. add config option for debugging (default false)
-20. allow for a more regular setup by passing config params through the setup
-    function
-20. strange error where sometimes there are code completions in a markdown file
-    right at the beginning even though markdown is disabled.
-      - probably should add a simple failsafe check right before actually
-        sending prompts
-20. Iff there are only two lines and the second line is all whitespace (new
-    empty line) then discard that from the prediction... seems janky when it
-    shows up
-     - I think the tail reduction already trims the final whitespace
-03. optionize the git diff functionality
 
 ^^^^^^^^^ DONE
-
-03. RING BUFFER UPDATES
-     - pick_chunk_inner: 
-            // TODO probably only actually evict from the ring_buffer once
-            // the chunk enters the buffer. So here we should only be evicting from
-            // the similar from the queue.
-            self.evict_similar(chunk, 0.9);
-     - allow for multiple chunks to be picked once insert mode is entered. 
-       - do not evict similar chunks to the text on fim_completion?
-          -> this acts only to slow down completions, chunks should be evicted
-          passively when ring_buffer processing is active once each chunk is
-          added to the queue. 
-           - fim completion: 
-               // TODO strange that we only evict a single chunk here I imagine that we could evict more if the
-               // text.len > chunk_size. ALSO it seems like this eviction process is going to slow down
-               // code completions,
-               // TODO OPTIONALY queue up the chunk deletions rather than deleting them at FIM time
-               //       -> they should still be evicted from the ring_buffer queue at this moment however
-        DO -> just (as an option) just don't remove this chunk and
-           don't even actually queue it up for deletion, just wait for the ring
-           buffer pick function which occurs at the end of the fim_completion
-           section to add new chunks which may end up bumping existing chunks
-           out.
-
-     - fim_completion: 
-          // TODO option to allow picking more than one chunk from the scope here
-     - parameterize the queue length! 
-     - IF we are removing from the main ring buffer chunk once we actually put
-       it in the queue, we should batch buffer the queue because everytime there
-       is an earlier removal 
-        - new parameter of the max amount of queue entries to batch process
-        - OKAY WAIT COULD still dynamically process the queue ASSUMING that
-          there isn't any removals right? SO maybe the thing to do, is to
-          process all the removals in batch right as the first batch process
-          THEN process the remainder of the queue entries in order one by one
-          (were we know we're not adding anything) 
-            - the removals-processing moment should NOT add any of the queue
-              entries which removed them, those should still be processed one by
-              one in the post-removal ring-buffer updating.
-        - NOTE important - We need to take a snapshot of all the queued chunks
-          which are being processed for the removal processing and subsiquent
-          additions processing SO THAT if a new chunk gets picked somehow during
-          these proceedings it doesn't get processed until the NEXT
-          removal-round. A new queue'd chunk which gets added post-removal
-          during the updating SHOULD HOWEVER be allowed to remove chunks from
-          the list of actively processing chunks.  
-        - Keep an BTreeMap of all the chunks-ids that have already been compared
-          similarity between (for eviction) which we can quickly check before
-          each process in order to reduce recomputations of similarity
 
 03. integrate git diff system into extra_inputs 
      - git diff --no-ext-diff --unified=0
@@ -126,8 +63,6 @@ compare all the files we have to what we've previously saved and calculate the
 diff based on that
 
 
-
-
 03. option to not predict while in comments
      - should ALLOW comment predictions immediately after 
        accepting a code completion, because the code completion 
@@ -188,6 +123,9 @@ endfunction
        then C-O) it gives a suggestion with a `...` in it which is probably
        where the cursor should just be inserted if the completion is accepted.
 
+10. fim_completion, option to pick more
+       // TODO option to allow picking more than one chunk from the scope here
+
 10. integrate definitions of all nearby objects 
      - Iterate through all the nearby words and to go-to-definition
      - use this vim command: https://neovim.io/doc/user/lsp/#lsp-buf
@@ -212,6 +150,15 @@ local query_string = [[
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
 
+10. Minimize predicted tokens
+     - dynamically change n_predict during each rest call (number of tokens to
+       predict)
+        - for in a middle of a word this should be really small 8?
+        - for outside of a word but in the middle of a line this could be larger 16? 
+        - for at the end of a line or where there's only whitespace left in the
+          line this could be much larger like for generating function calls
+          (256?)
+
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
 
@@ -226,6 +173,8 @@ local query_string = [[
 30. investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
      - I think would require a implementing my own FIM system, which would be
        useful anyways
+
+40. Bring the entire FIM system into LTTW for customization
 
 40. instruction system LOW priority can use CodeCompanion for now
 

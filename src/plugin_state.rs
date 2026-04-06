@@ -8,7 +8,7 @@ use {
     parking_lot::RwLock,
     std::{
         sync::{
-            atomic::{AtomicBool, AtomicI64},
+            atomic::{AtomicBool, AtomicI64, AtomicU64},
             Arc, OnceLock,
         },
         time::Instant,
@@ -47,7 +47,7 @@ pub struct PluginState {
     #[allow(dead_code)]
     pub next_inst_req_id: Arc<AtomicI64>,
     pub fim_state: Arc<RwLock<FimState>>,
-    pub fim_worker_debounce_seq: Arc<RwLock<u64>>,
+    pub fim_worker_debounce_seq: Arc<AtomicU64>,
     pub fim_worker_debounce_last_spawn: Arc<RwLock<Instant>>,
     pub fim_worker_semaphore: Arc<tokio::sync::Semaphore>,
     pub extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
@@ -93,6 +93,7 @@ impl PluginState {
         let ring_n_chunks = config.ring_n_chunks as usize;
         let chunk_size = config.ring_chunk_size as usize;
         let max_req = config.max_concurrent_fim_requests as usize;
+        let ring_queue_length = config.ring_queue_length;
 
         // Create namespaces for extmarks
         let extmark_ns = Some(create_namespace("lttw_fim"));
@@ -116,6 +117,7 @@ impl PluginState {
             ring_buffer: Arc::new(RwLock::new(ring_buffer::RingBuffer::new(
                 ring_n_chunks,
                 chunk_size,
+                ring_queue_length,
             ))),
             debug_manager: Arc::new(RwLock::new(debug::DebugManager::new_with_enabled(
                 debug_enabled_at_startup,
@@ -127,7 +129,7 @@ impl PluginState {
             cur_buf_info: Arc::new(RwLock::new(CurrentBufferInfo::default())),
             next_inst_req_id: Arc::new(AtomicI64::new(0)),
             fim_state: Arc::new(RwLock::new(FimState::default())),
-            fim_worker_debounce_seq: Arc::new(RwLock::new(0)),
+            fim_worker_debounce_seq: Arc::new(AtomicU64::new(0)),
             fim_worker_debounce_last_spawn: Arc::new(RwLock::new(Instant::now())),
             fim_worker_semaphore: Arc::new(Semaphore::new(max_req)),
             extmark_ns,
@@ -151,9 +153,9 @@ impl PluginState {
     }
     /// Increment the debounce sequence and return the current sequence number
     pub fn increment_debounce_sequence(&self) -> u64 {
-        let mut seq = self.fim_worker_debounce_seq.write();
-        *seq += 1;
-        *seq
+        self.fim_worker_debounce_seq
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1
     }
 
     /// Record that a worker was spawned (update last_spawn timestamp)

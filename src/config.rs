@@ -47,6 +47,9 @@ pub struct LttwConfig {
     pub ring_chunk_size: u32,
     pub ring_scope: u32,
     pub ring_update_ms: u64,
+    pub ring_queue_length: usize,
+
+    // Keymap configuration
 
     // Keymap configuration
     pub keymap_fim_trigger: String,
@@ -95,6 +98,7 @@ impl Default for LttwConfig {
             ring_chunk_size: 64,
             ring_scope: 1024,
             ring_update_ms: 1000,
+            ring_queue_length: 16,
             keymap_fim_trigger: "<leader>llf".to_string(),
             keymap_fim_accept_full: "<Tab>".to_string(),
             keymap_fim_accept_line: "<S-Tab>".to_string(),
@@ -215,6 +219,9 @@ impl LttwConfig {
         }
         if let Some(v) = get_i64("ring_update_ms") {
             config.ring_update_ms = v as u64;
+        }
+        if let Some(v) = get_i64("ring_queue_length") {
+            config.ring_queue_length = v as usize;
         }
 
         // Helper to get bool field from dictionary

@@ -578,7 +578,7 @@ fn on_text_yank_post() -> LttwResult<()> {
 
         // Pick chunk from yanked text
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&state, &yanked, filename, false, true)?;
+        ring_buffer_lock.pick_chunk(&state, &yanked, filename)?;
     }
 
     Ok(())
@@ -600,7 +600,7 @@ fn on_buf_enter_gather_chunks() -> LttwResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&state, &lines, filename.clone(), false, true)?;
+        ring_buffer_lock.pick_chunk(&state, &lines, filename.clone())?;
 
         // Track file content for future diff comparison if diff tracking is enabled
         if state.config.read().diff_tracking_enabled {
@@ -640,7 +640,7 @@ fn on_buf_leave() -> LttwResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&state, &lines, filename, false, true)?;
+        ring_buffer_lock.pick_chunk(&state, &lines, filename)?;
     }
 
     Ok(())
@@ -662,7 +662,7 @@ fn on_buf_write_post() -> LttwResult<()> {
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&state, &lines, filename.clone(), false, true)?;
+        ring_buffer_lock.pick_chunk(&state, &lines, filename.clone())?;
 
         // Track file content for future diff comparison if diff tracking is enabled
         if state.config.read().diff_tracking_enabled {

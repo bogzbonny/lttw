@@ -161,17 +161,19 @@ pub struct RingBuffer {
     pub queued: Vec<Chunk>,
     n_evict: usize,
     ring_n_chunks: usize,
+    ring_queue_length: usize,
     chunk_size: usize,
 }
 
 impl RingBuffer {
     /// Create a new ring buffer with the given parameters
-    pub fn new(ring_n_chunks: usize, chunk_size: usize) -> Self {
+    pub fn new(ring_n_chunks: usize, chunk_size: usize, ring_queue_length: usize) -> Self {
         Self {
             chunks: Vec::new(),
             queued: Vec::new(),
             n_evict: 0,
             ring_n_chunks,
+            ring_queue_length,
             chunk_size,
         }
     }
@@ -187,27 +189,16 @@ impl RingBuffer {
         state: &PluginState,
         text: &[String],
         filename: String,
-        no_mod: bool,
-        do_evict: bool,
     ) -> LttwResult<()> {
         let info = state.get_cur_buffer_info();
         if !(info.filepath == filename && info.is_loaded && info.is_readable) {
             return Ok(());
         }
 
-        if no_mod && info.is_modified {
-            return Ok(());
-        }
-
-        self.pick_chunk_inner(text, filename, do_evict)
+        self.pick_chunk_inner(text, filename)
     }
 
-    pub fn pick_chunk_inner(
-        &mut self,
-        text: &[String],
-        filename: String,
-        do_evict: bool,
-    ) -> LttwResult<()> {
+    pub fn pick_chunk_inner(&mut self, text: &[String], filename: String) -> LttwResult<()> {
         // Skip if extra context is disabled
         if self.ring_n_chunks == 0 {
             return Ok(());
@@ -231,17 +222,12 @@ impl RingBuffer {
         }
 
         // Evict queued chunks that are very similar
-        if do_evict {
-            // TODO probably only actually evict from the ring_buffer once
-            // the chunk enters the buffer. So here we should only be evicting from
-            // the similar from the queue.
-            self.evict_similar(chunk, 0.9);
-        }
+        // Only evict from the live ring_buffer once the chunk enters the buffer. But evicting
+        // from the similar from the queue immediately
+        self.evict_similar_from_queue(chunk, 0.9);
 
-        // Keep only the last 16 queued chunks
-        // TODO parametrize this 16
-        // TODO when updating this also update the build_info_string
-        while self.queued.len() >= 16 {
+        // Keep only the last N queued chunks (configurable via ring_queue_length)
+        while self.queued.len() >= self.ring_queue_length {
             self.queued.remove(0);
         }
 
@@ -261,17 +247,20 @@ impl RingBuffer {
             return;
         }
 
-        // Remove oldest chunk if buffer is full
-        while self.chunks.len() >= self.ring_n_chunks {
-            self.chunks.remove(0);
-        }
-
         // take from the tail of the queue (most recently added / relevant) and add to the ring buffer
         // NOTE it may make sense to actually take it from the front.. less relevant things will be
         // added first however the more relavent things (added last) will be in the ring buffer for
         // longer (get evicted last). I DONT KNOW - should do trial and error TODO
         if let Some(chunk) = self.queued.pop() {
             self.chunks.push(chunk);
+        }
+
+        // evict similar from the live buffer
+        self.evict_similar_from_live(chunk, 0.9);
+
+        // Remove oldest chunk if buffer is full
+        while self.chunks.len() > self.ring_n_chunks {
+            self.chunks.remove(0);
         }
     }
 
@@ -342,7 +331,26 @@ impl RingBuffer {
     /// # Arguments
     /// * `text` - Text to compare against
     /// * `threshold` - Similarity threshold (0.0-1.0). Chunks with similarity > threshold are evicted
-    pub fn evict_similar(&mut self, text: &[String], threshold: f64) {
+    pub fn evict_similar_from_live(&mut self, text: &[String], threshold: f64) {
+        if text.is_empty() {
+            return;
+        }
+
+        // Evict from ring chunks
+        for i in (0..self.chunks.len()).rev() {
+            let sim = chunk_similarity(&self.chunks[i].data, text);
+            if sim > threshold {
+                self.chunks.remove(i);
+                self.n_evict += 1;
+            }
+        }
+    }
+    /// Evict chunks from the ring buffer that are very similar to the given text
+    ///
+    /// # Arguments
+    /// * `text` - Text to compare against
+    /// * `threshold` - Similarity threshold (0.0-1.0). Chunks with similarity > threshold are evicted
+    pub fn evict_similar_from_queue(&mut self, text: &[String], threshold: f64) {
         if text.is_empty() {
             return;
         }
@@ -352,15 +360,6 @@ impl RingBuffer {
             let sim = chunk_similarity(&self.queued[i].data, text);
             if sim > threshold {
                 self.queued.remove(i);
-                self.n_evict += 1;
-            }
-        }
-
-        // Evict from ring chunks
-        for i in (0..self.chunks.len()).rev() {
-            let sim = chunk_similarity(&self.chunks[i].data, text);
-            if sim > threshold {
-                self.chunks.remove(i);
                 self.n_evict += 1;
             }
         }
@@ -419,7 +418,7 @@ mod tests {
 
     #[test]
     fn test_ring_buffer_basic() {
-        let mut ring = RingBuffer::new(3, 64);
+        let mut ring = RingBuffer::new(3, 64, 16);
 
         ring.pick_chunk_inner(
             &[
@@ -428,7 +427,6 @@ mod tests {
                 "line3".to_string(),
             ],
             String::new(),
-            true,
         )
         .unwrap();
         ring.pick_chunk_inner(
@@ -438,7 +436,6 @@ mod tests {
                 "line6".to_string(),
             ],
             String::new(),
-            true,
         )
         .unwrap();
 
@@ -452,7 +449,7 @@ mod tests {
 
     #[test]
     fn test_ring_buffer_eviction() {
-        let mut ring = RingBuffer::new(2, 64);
+        let mut ring = RingBuffer::new(2, 64, 16);
 
         // Add chunks
         ring.pick_chunk_inner(
@@ -462,7 +459,6 @@ mod tests {
                 "line3".to_string(),
             ],
             String::new(),
-            true,
         )
         .unwrap();
         ring.pick_chunk_inner(
@@ -472,7 +468,6 @@ mod tests {
                 "line6".to_string(),
             ],
             String::new(),
-            true,
         )
         .unwrap();
         ring.pick_chunk_inner(
@@ -482,7 +477,6 @@ mod tests {
                 "line9".to_string(),
             ],
             String::new(),
-            true,
         )
         .unwrap();
 
@@ -498,7 +492,7 @@ mod tests {
 
     #[test]
     fn test_ring_buffer_update() {
-        let mut ring = RingBuffer::new(2, 64);
+        let mut ring = RingBuffer::new(2, 64, 16);
 
         ring.pick_chunk_inner(
             &[
@@ -507,7 +501,6 @@ mod tests {
                 "line3".to_string(),
             ],
             String::new(),
-            true,
         )
         .unwrap();
         ring.pick_chunk_inner(
@@ -517,7 +510,6 @@ mod tests {
                 "line6".to_string(),
             ],
             String::new(),
-            true,
         )
         .unwrap();
 
@@ -536,7 +528,7 @@ mod tests {
 
     #[test]
     fn test_ring_buffer_max_chunks() {
-        let mut ring = RingBuffer::new(3, 64);
+        let mut ring = RingBuffer::new(3, 64, 16);
 
         for _i in 0..10 {
             ring.pick_chunk_inner(
@@ -546,7 +538,6 @@ mod tests {
                     "line3".to_string(),
                 ],
                 String::new(),
-                true,
             )
             .unwrap();
             ring.update();
@@ -557,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_ring_buffer_get_extra() {
-        let mut ring = RingBuffer::new(2, 64);
+        let mut ring = RingBuffer::new(2, 64, 16);
 
         ring.pick_chunk_inner(
             &[
@@ -566,7 +557,6 @@ mod tests {
                 "line3".to_string(),
             ],
             String::new(),
-            true,
         )
         .unwrap();
         ring.pick_chunk_inner(
@@ -576,7 +566,6 @@ mod tests {
                 "line6".to_string(),
             ],
             String::new(),
-            true,
         )
         .unwrap();
 
@@ -589,7 +578,7 @@ mod tests {
 
     #[test]
     fn test_ring_buffer_n_evict() {
-        let mut ring = RingBuffer::new(2, 64);
+        let mut ring = RingBuffer::new(2, 64, 16);
 
         ring.pick_chunk_inner(
             &[
@@ -598,7 +587,6 @@ mod tests {
                 "line3".to_string(),
             ],
             String::new(),
-            true,
         )
         .unwrap();
         ring.pick_chunk_inner(
@@ -608,7 +596,6 @@ mod tests {
                 "line6".to_string(),
             ],
             String::new(),
-            true,
         )
         .unwrap();
         ring.pick_chunk_inner(
@@ -618,7 +605,6 @@ mod tests {
                 "line9".to_string(),
             ],
             String::new(),
-            true,
         )
         .unwrap();
 

@@ -201,3 +201,41 @@ like in the llama#fim
 01. debug to see if rerender-fim suggestion is causing infinite loops (see
     process_pending_display)
      - added retry count to explicitly prevent this
+
+03. continious ring_buffer processing rather than just 1 per second while in
+    normal/mode or nothing is happening
+20. add config option for debugging (default false)
+20. allow for a more regular setup by passing config params through the setup
+    function
+20. strange error where sometimes there are code completions in a markdown file
+    right at the beginning even though markdown is disabled.
+      - probably should add a simple failsafe check right before actually
+        sending prompts
+20. Iff there are only two lines and the second line is all whitespace (new
+    empty line) then discard that from the prediction... seems janky when it
+    shows up
+     - I think the tail reduction already trims the final whitespace
+03. optionize the git diff functionality
+03. RING BUFFER UPDATES
+     - DONE parameterize the queue length! 
+     - DONE pick_chunk_inner: 
+            // TODO probably only actually evict from the ring_buffer once
+            // the chunk enters the buffer. So here we should only be evicting from
+            // the similar from the queue.
+            self.evict_similar(chunk, 0.9);
+        - SO according to https://github.com/ggml-org/llama.cpp/pull/9787 the
+          eviction doesn't actually increase the computation time significantly!
+     - DON"T DO ALL THIS COMPLEXITY - just evict the queue chunks as we process
+       them.
+       IF we are removing from the main ring buffer chunk once we actually put
+       it in the queue, we should batch buffer the queue because everytime there
+       is an earlier removal 
+        - new parameter of the max amount of queue entries to batch process
+        - OKAY WAIT COULD still dynamically process the queue ASSUMING that
+          there isn't any removals right? SO maybe the thing to do, is to
+          process all the removals in batch right as the first batch process
+          THEN process the remainder of the queue entries in order one by one
+          (were we know we're not adding anything) 
+            - the removals-processing moment should NOT add any of the queue
+              entries which removed them, those should still be processed one by
+              one in the post-removal ring-buffer updating.

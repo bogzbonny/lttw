@@ -98,6 +98,7 @@ pub fn build_info_string(
     ring_n_chunks: usize,
     ring_n_evict: usize,
     ring_queued: usize,
+    ring_queue_length: usize,
     cache_size: usize,
     max_cache_keys: usize,
 ) -> String {
@@ -113,28 +114,27 @@ pub fn build_info_string(
     // Build info string
     if truncated {
         format!(
-            " | WARNING: the context is full: {}, increase the server context size or reduce g:lttw_config.ring_n_chunks",
-            tokens_cached
-        )
+                " | WARNING: the context is full: {}, increase the server context size or reduce g:lttw_config.ring_n_chunks",
+                tokens_cached
+            )
     } else {
-        // NOTE that the hardcoded 16 is related to
-        // the hard-coded queue length in ring_buffer.rs (TODO update)
         format!(
-            " | c: {}, r: {}/{}, e: {}, q: {}/16, C: {}/{} | p: {} ({:.2} ms, {:.2} t/s) | g: {} ({:.2} ms, {:.2} t/s)",
-            tokens_cached,
-            ring_chunks,
-            ring_n_chunks,
-            ring_n_evict,
-            ring_queued,
-            cache_size,
-            max_cache_keys,
-            n_prompt,
-            t_prompt_ms,
-            s_prompt,
-            n_predict,
-            t_predict_ms,
-            s_predict
-        )
+                " | c: {}, r: {}/{}, e: {}, q: {}/{}, C: {}/{} | p: {} ({:.2} ms, {:.2} t/s) | g: {} ({:.2} ms, {:.2} t/s)",
+                tokens_cached,
+                ring_chunks,
+                ring_n_chunks,
+                ring_n_evict,
+                ring_queued,
+                ring_queue_length,
+                cache_size,
+                max_cache_keys,
+                n_prompt,
+                t_prompt_ms,
+                s_prompt,
+                n_predict,
+                t_predict_ms,
+                s_predict
+            )
     }
 }
 
@@ -409,7 +409,9 @@ async fn spawn_fim_completion_worker(
     let permit = semaphone.acquire().await;
 
     // Re-check if we're still the most recent request
-    let latest_sequence = *state.fim_worker_debounce_seq.read();
+    let latest_sequence = state
+        .fim_worker_debounce_seq
+        .load(std::sync::atomic::Ordering::SeqCst);
     if seq < latest_sequence {
         // A newer request has come in, discard this one
         state.debug_manager.read().log(
@@ -524,15 +526,9 @@ pub async fn fim_completion(
     {
         let mut rb = state.ring_buffer.write();
 
-        // TODO strange that we only evict a single chunk here I imagine that we could evict more if the
-        // text.len > chunk_size. ALSO it seems like this eviction process is going to slow down
-        // code completions,
-        // TODO OPTIONALY queue up the chunk deletions rather than deleting them at FIM time
-        //       -> they should still be evicted from the ring_buffer queue at this moment however
         let chunk = rb.get_chunk_from_text(text);
-
         if !chunk.is_empty() {
-            rb.evict_similar(chunk, 0.5); // TODO parameterize this
+            rb.evict_similar_from_live(chunk, 0.5); // TODO parameterize this
         }
     }
 
@@ -710,7 +706,7 @@ pub async fn fim_completion(
         let prefix_lines = &lines[prefix_start..=prefix_end];
         if !prefix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
-            ring_buffer_lock.pick_chunk(&state_, prefix_lines, filename.clone(), false, false)?;
+            ring_buffer_lock.pick_chunk(&state_, prefix_lines, filename.clone())?;
         }
 
         let suffix_start = (pos_y + n_suffix).min(max_y);
@@ -718,7 +714,7 @@ pub async fn fim_completion(
         let suffix_lines = &lines[suffix_start..=suffix_end];
         if !suffix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
-            ring_buffer_lock.pick_chunk(&state_, suffix_lines, filename, false, false)?;
+            ring_buffer_lock.pick_chunk(&state_, suffix_lines, filename)?;
         }
 
         // Update the last pick position
@@ -969,6 +965,7 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
                     config.ring_n_chunks as usize,
                     ring_n_evict,
                     ring_queued,
+                    config.ring_queue_length,
                     cache_size,
                     max_cache_keys,
                 )
@@ -1144,7 +1141,7 @@ mod tests {
     #[test]
     fn test_fim_request_with_ring_buffer_extra() {
         // Test that FIM request properly includes extra context from ring buffer
-        let ring_buffer = RingBuffer::new(2, 64);
+        let ring_buffer = RingBuffer::new(2, 64, 16);
 
         let request = FimRequest {
             id_slot: 0,
@@ -1174,7 +1171,7 @@ mod tests {
     #[test]
     fn test_ring_buffer_integration_with_cache() {
         // Test that ring buffer chunks are properly tracked and cached
-        let mut ring_buffer = RingBuffer::new(3, 64);
+        let mut ring_buffer = RingBuffer::new(3, 64, 16);
 
         // Add first chunk
         ring_buffer
@@ -1185,7 +1182,6 @@ mod tests {
                     "}".to_string(),
                 ],
                 String::new(),
-                true,
             )
             .unwrap();
         ring_buffer.update();
@@ -1202,7 +1198,6 @@ mod tests {
                     "    let mut s = String::new();".to_string(),
                 ],
                 String::new(),
-                true,
             )
             .unwrap();
         ring_buffer.update();
@@ -1218,7 +1213,6 @@ mod tests {
                     "    assert_eq!(1, 1);".to_string(),
                 ],
                 String::new(),
-                true,
             )
             .unwrap();
         ring_buffer.update();
@@ -1234,7 +1228,6 @@ mod tests {
                     "}".to_string(),
                 ],
                 String::new(),
-                true,
             )
             .unwrap();
         ring_buffer.update();
@@ -1246,7 +1239,7 @@ mod tests {
     #[test]
     fn test_ring_buffer_eviction_with_similarity() {
         // Test that similar chunks are evicted based on similarity threshold
-        let mut ring_buffer = RingBuffer::new(5, 64);
+        let mut ring_buffer = RingBuffer::new(5, 64, 16);
 
         let chunk1 = vec![
             "fn function_one() {".to_string(),
@@ -1258,7 +1251,7 @@ mod tests {
 
         // Add first chunk
         ring_buffer
-            .pick_chunk_inner(&chunk1, String::new(), true)
+            .pick_chunk_inner(&chunk1, String::new())
             .unwrap();
         ring_buffer.update();
 
@@ -1269,7 +1262,7 @@ mod tests {
         chunk2[1] = "    let x = 100;".to_string(); // Slightly different
 
         ring_buffer
-            .pick_chunk_inner(&chunk2, String::new(), true)
+            .pick_chunk_inner(&chunk2, String::new())
             .unwrap();
         ring_buffer.update();
 
@@ -1281,7 +1274,7 @@ mod tests {
     #[test]
     fn test_fim_request_serialization_with_extra() {
         // Test that FIM request properly serializes with extra context
-        let mut ring_buffer = RingBuffer::new(2, 64);
+        let mut ring_buffer = RingBuffer::new(2, 64, 16);
 
         // Add some chunks to the ring buffer
         ring_buffer
@@ -1292,7 +1285,6 @@ mod tests {
                     "mod module3;".to_string(),
                 ],
                 String::new(),
-                true,
             )
             .unwrap();
         ring_buffer.update();
@@ -1330,7 +1322,7 @@ mod tests {
     fn test_cache_with_ring_buffer_chunks() {
         // Test that cache properly handles entries with ring buffer context
         let mut cache = Cache::new(10);
-        let mut ring_buffer = RingBuffer::new(3, 64);
+        let mut ring_buffer = RingBuffer::new(3, 64, 16);
 
         // Add chunks to ring buffer
         ring_buffer
@@ -1341,7 +1333,6 @@ mod tests {
                     "}".to_string(),
                 ],
                 String::new(),
-                true,
             )
             .unwrap();
         ring_buffer.update();
@@ -1389,7 +1380,7 @@ mod tests {
     #[test]
     fn test_ring_buffer_n_evict_counter() {
         // Test that n_evict counter tracks evicted chunks correctly
-        let mut ring_buffer = RingBuffer::new(2, 64);
+        let mut ring_buffer = RingBuffer::new(2, 64, 16);
 
         ring_buffer
             .pick_chunk_inner(
@@ -1399,7 +1390,6 @@ mod tests {
                     "}".to_string(),
                 ],
                 String::new(),
-                true,
             )
             .unwrap();
         ring_buffer.update();
@@ -1415,7 +1405,7 @@ mod tests {
             ];
 
             ring_buffer
-                .pick_chunk_inner(&similar_chunk, String::new(), true)
+                .pick_chunk_inner(&similar_chunk, String::new())
                 .unwrap();
             ring_buffer.update();
         }
@@ -1429,7 +1419,7 @@ mod tests {
     #[test]
     fn test_ring_buffer_get_extra_returns_correct_data() {
         // Test that get_extra returns properly formatted extra context
-        let mut ring_buffer = RingBuffer::new(2, 64);
+        let mut ring_buffer = RingBuffer::new(2, 64, 16);
 
         let chunk_data = vec![
             "fn test_function() {".to_string(),
@@ -1439,7 +1429,7 @@ mod tests {
         ];
 
         ring_buffer
-            .pick_chunk_inner(&chunk_data, String::new(), true)
+            .pick_chunk_inner(&chunk_data, String::new())
             .unwrap();
         ring_buffer.update();
 
@@ -1452,7 +1442,7 @@ mod tests {
     #[test]
     fn test_multiple_ring_buffer_updates() {
         // Test multiple sequential updates to ring buffer
-        let mut ring_buffer = RingBuffer::new(3, 64);
+        let mut ring_buffer = RingBuffer::new(3, 64, 16);
 
         // Pick multiple chunks without updating
         for i in 0..5 {
@@ -1464,7 +1454,6 @@ mod tests {
                         "}".to_string(),
                     ],
                     String::new(),
-                    true,
                 )
                 .unwrap();
         }
@@ -1494,7 +1483,7 @@ mod tests {
     #[test]
     fn test_ring_buffer_chunk_duplicate_prevention() {
         // Test that duplicate chunks are not added to the buffer
-        let mut ring_buffer = RingBuffer::new(5, 64);
+        let mut ring_buffer = RingBuffer::new(5, 64, 16);
 
         let chunk = vec![
             "fn duplicate_test() {".to_string(),
@@ -1503,25 +1492,19 @@ mod tests {
         ];
 
         // Add chunk first time
-        ring_buffer
-            .pick_chunk_inner(&chunk, String::new(), true)
-            .unwrap();
+        ring_buffer.pick_chunk_inner(&chunk, String::new()).unwrap();
         ring_buffer.update();
 
         assert_eq!(ring_buffer.len(), 1);
 
         // Try to add exact same chunk again (should be ignored)
-        ring_buffer
-            .pick_chunk_inner(&chunk, String::new(), true)
-            .unwrap();
+        ring_buffer.pick_chunk_inner(&chunk, String::new()).unwrap();
 
         // Should still be 1 (no duplicate added)
         assert_eq!(ring_buffer.len(), 1);
 
         // Try to add same chunk via queued (should also be ignored)
-        ring_buffer
-            .pick_chunk_inner(&chunk, String::new(), true)
-            .unwrap();
+        ring_buffer.pick_chunk_inner(&chunk, String::new()).unwrap();
 
         // Should still have same queued count
         assert_eq!(ring_buffer.queued_len(), 0);
