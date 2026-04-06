@@ -1,8 +1,5 @@
 10. fim_completion, option to pick more
        // TODO option to allow picking more than one chunk from the scope here
-
-^^^^^^^^^ DONE
-
 03. option to not predict while in comments
 Add an new feature which prevents FIM prediction while in comments 
  - new config option no_fim_in_comments (default true)
@@ -18,6 +15,8 @@ Add an new feature which prevents FIM prediction while in comments
    this value is set. Everytime the on_move function is triggered, check the
    cursor pos, if the cursor pos is different from allow_comment_fim_cur_pos
    then set allow_comment_fim_cur_pos to None.
+
+^^^^^^^^^ DONE
 
 10. n_predict changes
 dynamically change n_predict during each FIM call (number of tokens to predict)
