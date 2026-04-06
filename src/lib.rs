@@ -135,6 +135,10 @@ pub struct FimState {
     content: Vec<String>,
     /// Timing data from the last completion for display in info string
     timings: Option<FimTimingsData>,
+    /// Collection of completions for cycling (longest to shortest)
+    completion_cycle: Vec<String>,
+    /// Index of currently displayed completion in the cycle
+    completion_index: usize,
 }
 
 impl FimState {

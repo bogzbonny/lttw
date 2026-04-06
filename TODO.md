@@ -22,11 +22,10 @@ dynamically change n_predict during each FIM call (number of tokens to predict)
    cursor set to n_predict_inner (default value 16)
  - for at the end of a line or where there's only whitespace left to the right
    of the cursor set to a new config param n_prefict_end (default value 256)
-
-^^^^^^^^^ DONE
-
 01. when debugging is disabled the lttw.log file is still created/cleared, this
     shouldn't happen
+
+^^^^^^^^^ DONE
 
 05. completion cycling
 New keymaps; use CTRL-j and CTRL-k from insert mode to cycle through the
@@ -112,6 +111,8 @@ diff based on that
           the list from whatever the users current position is in the
           completions list
      - supplement the llm completions with suggestions from the LSP completions
+     - order the suggested completions randomly as to no constantly get it wrong
+       if the first option is typically wrong for some letters
      - MAYBE also just provide the LSP completion as an option immediately until
        the LLM response comes in. I noticed with ALE (from insert mode go C-X
        then C-O) it gives a suggestion with a `...` in it which is probably
