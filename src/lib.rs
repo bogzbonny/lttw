@@ -204,7 +204,10 @@ impl FimState {
             return None;
         }
         self.completion_index = (self.completion_index + 1) % self.completion_cycle.len();
-        Some(&self.completion_cycle[self.completion_index])
+        // Update content to match the current completion
+        let current = &self.completion_cycle[self.completion_index];
+        self.content = current.lines().map(|s| s.to_string()).collect();
+        Some(current)
     }
     /// Cycle to previous completion
     fn cycle_prev(&mut self) -> Option<&String> {
@@ -216,7 +219,10 @@ impl FimState {
         } else {
             self.completion_index - 1
         };
-        Some(&self.completion_cycle[self.completion_index])
+        // Update content to match the current completion
+        let current = &self.completion_cycle[self.completion_index];
+        self.content = current.lines().map(|s| s.to_string()).collect();
+        Some(current)
     }
     /// Get completion cycle length
     #[allow(dead_code)]

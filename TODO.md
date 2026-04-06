@@ -174,6 +174,9 @@ local query_string = [[
 20. better global error printing 
     https://github.com/noib3/nvim-oxi/issues/231
 
+20. Option to ONLY show the first line of code completions unless you're in an empty line
+     -> could still predict more, but just dont show it
+
 20. Option to ONLY accept single line inline suggestions if typing within a fully
     closed bracket system within a line example: "#[derive(Debug, Cl[CURSOR], Default)]"
 

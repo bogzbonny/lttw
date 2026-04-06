@@ -6,18 +6,18 @@
 
 use {
     crate::{
-        Error, FimCompletionMessage, FimTimingsData, LttwResult,
         cache::compute_hashes,
-        context::LocalContext,
         context::get_local_context,
+        context::LocalContext,
         filetype::should_be_enabled,
-        fim_accept_inner, get_buf_line, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
-        plugin_state::{PluginState, get_state},
+        fim_accept_inner, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
+        plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
         utils::{
             clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input, is_in_comment,
             set_buf_extmark, set_buf_extmark_top_right,
         },
+        Error, FimCompletionMessage, FimTimingsData, LttwResult,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition},
     serde::{Deserialize, Serialize},
@@ -261,7 +261,7 @@ pub fn fim_try_hint_inner(
         //
         let mut char_indices = pm.char_indices().collect::<Vec<_>>();
         char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
-        // its never used
+                                             // its never used
         let char_len = char_indices.len() - 1;
 
         let max_iters = 128; // TODO parameterize this
@@ -1620,12 +1620,17 @@ mod tests {
 
 /// Gather completions from cache for the current position
 /// Returns a list of completions sorted by length (longest to shortest)
-fn gather_completions_for_cycle(state: &PluginState, lines: &[String], pos_x: usize, pos_y: usize) -> LttwResult<Vec<String>> {
+fn gather_completions_for_cycle(
+    state: &PluginState,
+    lines: &[String],
+    pos_x: usize,
+    pos_y: usize,
+) -> LttwResult<Vec<String>> {
     let mut completions: Vec<String> = Vec::new();
-    
+
     // Get local context
     let ctx = get_local_context(lines, pos_x, pos_y, &state.config.read());
-    
+
     // Add current completion first (if any)
     {
         let fim_state = state.fim_state.read();
@@ -1636,7 +1641,7 @@ fn gather_completions_for_cycle(state: &PluginState, lines: &[String], pos_x: us
             }
         }
     }
-    
+
     // Search for similar completions in cache
     // Look for completions with partial prefix matches
     let pm = format!("{}{}", ctx.prefix, ctx.middle);
@@ -1644,14 +1649,14 @@ fn gather_completions_for_cycle(state: &PluginState, lines: &[String], pos_x: us
         let max_iters = 128;
         let char_indices = pm.char_indices().collect::<Vec<_>>();
         let char_len = char_indices.len();
-        
+
         for i in 1..=max_iters.min(char_len.saturating_sub(1)) {
             let split_byte_idx = char_indices[char_len - i].0;
             let (pm_with_less_tail, _removed) = pm.split_at(split_byte_idx);
-            
+
             let new_prefix_middle = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
             let hash_new = hash_input(&new_prefix_middle);
-            
+
             // Use get_fim which doesn't require mutable access
             if let Some(response) = state.cache.read().get_fim(&hash_new) {
                 let content = response.content.clone();
@@ -1661,77 +1666,84 @@ fn gather_completions_for_cycle(state: &PluginState, lines: &[String], pos_x: us
             }
         }
     }
-    
+
     // Sort by length (longest to shortest)
     if completions.len() > 1 {
         completions.sort_by(|a, b| b.len().cmp(&a.len()));
     }
-    
+
     Ok(completions)
 }
 
 /// Cycle to next completion
 pub fn fim_cycle_next() -> LttwResult<()> {
     let state = get_state();
-    
+
+    // First pass: ensure we have completions gathered
+    // Second pass: actually cycle through completions
+    let mut completions_gathered = false;
+
     // Get current state before acquiring write lock
-    let (hint_shown, _lines, _pos_x, _pos_y, _line_cur) = {
+    let (hint_shown, _pos_x, _pos_y, _line_cur) = {
         let fim_state = state.fim_state.read();
         if !fim_state.hint_shown {
             return Ok(());
         }
-        
+
         // If no completions in cycle, gather them
         if fim_state.completion_cycle.is_empty() {
             drop(fim_state);
-            
+
             // Get buffer lines for context gathering
-            let _lines = get_buf_lines(..);
-            let (_x, y) = get_pos();
-            let _line_cur = get_buf_line(y);
-            
+            let lines = get_buf_lines(..);
+            let (x, y) = get_pos();
+
             // Gather completions
-            let completions = gather_completions_for_cycle(&state, &_lines, _x, y)?;
-            
-            // Set the completion cycle
-            {
-                let mut fim_state_mut = state.fim_state.write();
-                if !completions.is_empty() {
-                    fim_state_mut.set_completion_cycle(completions);
+            match gather_completions_for_cycle(&state, &lines, x, y) {
+                Ok(completions) => {
+                    if !completions.is_empty() {
+                        // Set the completion cycle
+                        {
+                            let mut fim_state_mut = state.fim_state.write();
+                            fim_state_mut.set_completion_cycle(completions);
+                        }
+                        completions_gathered = true;
+                    }
+                }
+                Err(e) => {
+                    state.debug_manager.read().log(
+                        "fim_cycle_next",
+                        format!("Failed to gather completions: {:?}", e),
+                    );
                 }
             }
-            
-            // Re-read state
-            let fim_state = state.fim_state.read();
-            if fim_state.completion_cycle.is_empty() {
-                return Ok(());
-            }
-            
-            return fim_cycle_next();
         }
-        
-        let _lines = get_buf_lines(..);
-        let (_x, y) = get_pos();
-        let _line_cur = get_buf_line(y);
-        
-        (fim_state.hint_shown, _lines, fim_state.pos_x, fim_state.pos_y, fim_state.line_cur.clone())
+
+        let fim_state = state.fim_state.read();
+        if !completions_gathered && fim_state.completion_cycle.is_empty() {
+            return Ok(());
+        }
+
+        (
+            fim_state.hint_shown,
+            fim_state.pos_x,
+            fim_state.pos_y,
+            fim_state.line_cur.clone(),
+        )
     };
-    
+
     if !hint_shown {
         return Ok(());
     }
-    
+
     // Cycle to next
     {
         let mut fim_state = state.fim_state.write();
-        if let Some(_current) = fim_state.cycle_next() {
-            // Content will be updated by get_current_completion
-        } else {
-            // Should not happen if we checked above
+        if fim_state.cycle_next().is_none() {
             return Ok(());
         }
     }
-    
+
     // Re-display with new completion
     let (pos_x, pos_y, line_cur, content, timings) = {
         let fim_state = state.fim_state.read();
@@ -1743,7 +1755,7 @@ pub fn fim_cycle_next() -> LttwResult<()> {
             fim_state.timings.clone(),
         )
     };
-    
+
     if !content.is_empty() {
         render_fim_suggestion(
             state.clone(),
@@ -1754,72 +1766,79 @@ pub fn fim_cycle_next() -> LttwResult<()> {
             timings,
         )?;
     }
-    
+
     Ok(())
 }
 
 /// Cycle to previous completion
 pub fn fim_cycle_prev() -> LttwResult<()> {
     let state = get_state();
-    
+
+    // First pass: ensure we have completions gathered
+    // Second pass: actually cycle through completions
+    let mut completions_gathered = false;
+
     // Get current state before acquiring write lock
-    let (hint_shown, _lines, _pos_x, _pos_y, _line_cur) = {
+    let (hint_shown, _pos_x, _pos_y, _line_cur) = {
         let fim_state = state.fim_state.read();
         if !fim_state.hint_shown {
             return Ok(());
         }
-        
+
         // If no completions in cycle, gather them
         if fim_state.completion_cycle.is_empty() {
             drop(fim_state);
-            
+
             // Get buffer lines for context gathering
-            let _lines = get_buf_lines(..);
-            let (_x, y) = get_pos();
-            let _line_cur = get_buf_line(y);
-            
+            let lines = get_buf_lines(..);
+            let (x, y) = get_pos();
+
             // Gather completions
-            let completions = gather_completions_for_cycle(&state, &_lines, _x, y)?;
-            
-            // Set the completion cycle
-            {
-                let mut fim_state_mut = state.fim_state.write();
-                if !completions.is_empty() {
-                    fim_state_mut.set_completion_cycle(completions);
+            match gather_completions_for_cycle(&state, &lines, x, y) {
+                Ok(completions) => {
+                    if !completions.is_empty() {
+                        // Set the completion cycle
+                        {
+                            let mut fim_state_mut = state.fim_state.write();
+                            fim_state_mut.set_completion_cycle(completions);
+                        }
+                        completions_gathered = true;
+                    }
+                }
+                Err(e) => {
+                    state.debug_manager.read().log(
+                        "fim_cycle_prev",
+                        format!("Failed to gather completions: {:?}", e),
+                    );
                 }
             }
-            
-            // Re-read state
-            let fim_state = state.fim_state.read();
-            if fim_state.completion_cycle.is_empty() {
-                return Ok(());
-            }
-            
-            return fim_cycle_prev();
         }
-        
-        let _lines = get_buf_lines(..);
-        let (_x, y) = get_pos();
-        let _line_cur = get_buf_line(y);
-        
-        (fim_state.hint_shown, _lines, fim_state.pos_x, fim_state.pos_y, fim_state.line_cur.clone())
+
+        let fim_state = state.fim_state.read();
+        if !completions_gathered && fim_state.completion_cycle.is_empty() {
+            return Ok(());
+        }
+
+        (
+            fim_state.hint_shown,
+            fim_state.pos_x,
+            fim_state.pos_y,
+            fim_state.line_cur.clone(),
+        )
     };
-    
+
     if !hint_shown {
         return Ok(());
     }
-    
+
     // Cycle to previous
     {
         let mut fim_state = state.fim_state.write();
-        if let Some(_current) = fim_state.cycle_prev() {
-            // Content will be updated by get_current_completion
-        } else {
-            // Should not happen if we checked above
+        if fim_state.cycle_prev().is_none() {
             return Ok(());
         }
     }
-    
+
     // Re-display with new completion
     let (pos_x, pos_y, line_cur, content, timings) = {
         let fim_state = state.fim_state.read();
@@ -1831,7 +1850,7 @@ pub fn fim_cycle_prev() -> LttwResult<()> {
             fim_state.timings.clone(),
         )
     };
-    
+
     if !content.is_empty() {
         render_fim_suggestion(
             state.clone(),
@@ -1842,6 +1861,6 @@ pub fn fim_cycle_prev() -> LttwResult<()> {
             timings,
         )?;
     }
-    
+
     Ok(())
 }
