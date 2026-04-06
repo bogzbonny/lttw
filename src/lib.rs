@@ -24,7 +24,8 @@ use {
     context::LocalContext,
     diff_chunk::calculate_diff_between_contents,
     fim::{
-        FimAcceptType, FimTimings, fim_cycle_next, fim_cycle_prev, fim_try_hint, fim_try_hint_skip_debounce, render_fim_suggestion,
+        fim_cycle_next, fim_cycle_prev, fim_try_hint, fim_try_hint_skip_debounce,
+        render_fim_suggestion, FimAcceptType, FimResponse, FimTimings,
     },
     nvim_oxi::{Dictionary, Function},
     plugin_state::{get_state, init_state},
@@ -72,13 +73,14 @@ impl FimTimingsData {
 /// Message sent from async worker to main thread when completion is ready
 #[derive(Debug, Clone)]
 pub struct FimCompletionMessage {
-    buffer_id: u64,                  // Buffer handle to ensure we're still in same buffer
-    ctx: LocalContext,               // All buffer lines captured at start
-    cursor_x: usize,                 // Cursor position X
-    cursor_y: usize,                 // Cursor position Y
-    content: String,                 // FIM response content
-    timings: Option<FimTimingsData>, // Timing information from server response
-    retry: Option<usize>,            // the retry count for this completion
+    buffer_id: u64,                // Buffer handle to ensure we're still in same buffer
+    ctx: LocalContext,             // All buffer lines captured at start
+    cursor_x: usize,               // Cursor position X
+    cursor_y: usize,               // Cursor position Y
+    completions: Vec<FimResponse>, // All available completions for cycling
+    completions_idx: usize,        // Index of current completion in cycle
+    do_render: bool,
+    retry: Option<usize>, // the retry count for this completion
 }
 
 /// Initialize the plugin with configuration
@@ -136,7 +138,7 @@ pub struct FimState {
     /// Timing data from the last completion for display in info string
     timings: Option<FimTimingsData>,
     /// Collection of completions for cycling (longest to shortest)
-    completion_cycle: Vec<String>,
+    completion_cycle: Vec<FimResponse>,
     /// Index of currently displayed completion in the cycle
     completion_index: usize,
 }
@@ -181,36 +183,31 @@ impl FimState {
     fn set_last_pick_buf_id_pos_y(&mut self, buf_id: u64, pos_y: usize) {
         self.last_pick_buf_id_pos_y = Some((buf_id, pos_y));
     }
+
     /// Get the last pick position
     fn get_last_pick_buf_id_pos_y(&self) -> Option<(u64, usize)> {
         self.last_pick_buf_id_pos_y
     }
+
     /// Set the completion cycle list
-    fn set_completion_cycle(&mut self, completions: Vec<String>) {
+    fn set_completion_cycle(&mut self, completions: Vec<FimResponse>, idx: usize) {
         self.completion_cycle = completions;
-        self.completion_index = 0;
+        self.completion_index = idx;
     }
-    /// Get the current completion from cycle
-    #[allow(dead_code)]
-    fn get_current_completion(&self) -> Option<&String> {
-        if self.completion_cycle.is_empty() {
-            return None;
-        }
-        Some(&self.completion_cycle[self.completion_index])
-    }
+
     /// Cycle to next completion
-    fn cycle_next(&mut self) -> Option<&String> {
+    fn cycle_next(&mut self) -> Option<FimResponse> {
         if self.completion_cycle.is_empty() {
             return None;
         }
         self.completion_index = (self.completion_index + 1) % self.completion_cycle.len();
         // Update content to match the current completion
         let current = &self.completion_cycle[self.completion_index];
-        self.content = current.lines().map(|s| s.to_string()).collect();
-        Some(current)
+        Some(current.clone())
     }
+
     /// Cycle to previous completion
-    fn cycle_prev(&mut self) -> Option<&String> {
+    fn cycle_prev(&mut self) -> Option<FimResponse> {
         if self.completion_cycle.is_empty() {
             return None;
         }
@@ -221,13 +218,7 @@ impl FimState {
         };
         // Update content to match the current completion
         let current = &self.completion_cycle[self.completion_index];
-        self.content = current.lines().map(|s| s.to_string()).collect();
-        Some(current)
-    }
-    /// Get completion cycle length
-    #[allow(dead_code)]
-    fn completion_cycle_len(&self) -> usize {
-        self.completion_cycle.len()
+        Some(current.clone())
     }
 }
 
@@ -289,6 +280,14 @@ fn process_pending_display() -> LttwResult<()> {
         "process_pending_display",
         format!("Processing {} pending display messages", messages.len()),
     );
+
+    // XXX
+    // UPDATE the completions with ALL msgs for cursor is in valid position
+    //state
+    //    .fim_state
+    //    .write()
+    //    .set_completion_cycle(completions, completions_idx);
+
     // process the most recent message which has content and isn't only whitespace
     let mut msg = None;
     for msg_ in messages.into_iter().rev() {
@@ -304,14 +303,23 @@ fn process_pending_display() -> LttwResult<()> {
             "process_pending_display",
             format!("valid message found {msg:?}"),
         );
-        render_fim_suggestion(
-            state.clone(),
-            msg.cursor_x,
-            msg.cursor_y,
-            &msg.content,
-            msg.ctx.line_cur,
-            msg.timings,
-        )?;
+        let Some(completion) = msg.completions.get(msg.completions_idx).cloned() else {
+            return Ok(());
+        };
+        state
+            .fim_state
+            .write()
+            .set_completion_cycle(msg.completions, msg.completions_idx);
+
+        if msg.do_render {
+            render_fim_suggestion(
+                state.clone(),
+                msg.cursor_x,
+                msg.cursor_y,
+                &completion,
+                msg.ctx.line_cur,
+            )?;
+        }
         retry = msg.retry.unwrap_or(0);
     }
 
@@ -333,9 +341,11 @@ fn process_pending_display() -> LttwResult<()> {
 }
 
 // should we abort the completion because the content has changed since we started this completion
-#[allow(dead_code)] // TODO fix or delete (needs to not make neovim calls not on the main thread)
 fn msg_is_valid_to_display(msg: &FimCompletionMessage) -> bool {
-    if msg.content.is_empty() || msg.content.trim().is_empty() {
+    let Some(completion) = msg.completions.get(msg.completions_idx) else {
+        return false;
+    };
+    if completion.content.is_empty() || completion.content.trim().is_empty() {
         return false;
     }
     let id = get_current_buffer_id();

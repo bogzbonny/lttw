@@ -41,6 +41,13 @@ cycle back through them if necessary. Keep the existing completion visibly and
 only trigger changing to the newly generated completion once the response for
 this has been received.
 
+05. single_line_prediction_within_line
+ - Option to ONLY show the first line of code completions unless you're in an empty line
+     -> could still predict more, but just dont show it
+set the response stop value '\n' when inside a new line if a new config option
+single_line_prediction_within_line is set to true (default is true). Integrate
+this logic into get_dynamic_n_predict
+
 03. integrate git diff system into extra_inputs 
      - git diff --no-ext-diff --unified=0
          -> use unified=0 for concise chunks
@@ -102,14 +109,13 @@ filename in the PluginState and then everytime BufWritePost is executed we
 compare all the files we have to what we've previously saved and calculate the
 diff based on that
 
-05. integrate in LSP Completions into input_prefix (?)
-     - probably add a mini lag for these completions like 100ms so we're not
-       generating them unnecessarily. 
-        - automatically put the llm completion if the user hasn't moved up or
-          down through the completions - HOWEVER if the user has moved up or
-          down through the completions, then add the completion as the next on
-          the list from whatever the users current position is in the
-          completions list
+05. integrate in LSP Completions into input_prefix
+     - OPTIONAL mini lag for these completions like 100ms so we're not generating
+       them ruthlessly - however I want to try with this at 0ms, it may be fine!
+     - automatically put the llm completion if the user hasn't moved up or down
+       through the completions - HOWEVER if the user has moved up or down
+       through the completions, then add the completion as the next on the list
+       from whatever the users current position is in the completions list
      - supplement the llm completions with suggestions from the LSP completions
      - order the suggested completions randomly as to no constantly get it wrong
        if the first option is typically wrong for some letters
@@ -120,11 +126,10 @@ diff based on that
        (removing the ... keeping it in insert mode THUS triggering the next
        completion).
 
-
-------------------------
-
 05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
      - use regular completions/ endpoint not infill endpoint
+     - NOTE if more tabs are received WHILE the completion is in progress they
+       should be discarded
      - Whatever the whole range of the fed diagnostic is is what should be fed
        into the prompt (along with the diagnostic
      - I'm not sure if it'll be a pain to still use FIM for this or not
@@ -140,16 +145,27 @@ diff based on that
      - OPTION ONCE no more errors - save file to regenerate diagnostics
      - OPTION ONCE no more errors, go to the next file with errors in a new tab
 
+------------------------
 
 20. integrate definitions of all nearby objects 
      - add to extra_input
      - Iterate through all the nearby words and to go-to-definition
+        - one intellegent thing to do would be get the definition of 
+          whatever is currently outside of the containing bracket
+          for instance hello.some_fn(foo, bar, CUR-POS
+          iterate backwards to the ( and then get definition for some_fn
+          - also useful to iterate backwards to the first { and get what's
+            directly before that. 
+             - NOTE should do bracket counting to ensure that we're getting the
+               entry for the thing actually above us
      - use this vim command: https://neovim.io/doc/user/lsp/#lsp-buf
-     - Can use treesitter [](https://neovim.io/doc/user/treesitter/#_treesitter-queries)
-       - I would ONLY go to def for: 
-         function.call function.method.call type constant variable variable.member 
-         type.definition
-       - would (could?) make a query for the specific objects I want
+     - DONT USE TREE SITTER, probably overkill given we probably only want to
+       put in one or two things maximum
+        - Can use treesitter [](https://neovim.io/doc/user/treesitter/#_treesitter-queries)
+          - I would ONLY go to def for: 
+            function.call function.method.call type constant variable variable.member 
+            type.definition
+          - would (could?) make a query for the specific objects I want
 ```
 local query_string = [[
   (function_declaration
@@ -171,20 +187,11 @@ local query_string = [[
 
 20. easier to use debugging system (like debug! macro)
 
-20. better global error printing 
+20. better global error printing/handling
     https://github.com/noib3/nvim-oxi/issues/231
-
-20. Option to ONLY show the first line of code completions unless you're in an empty line
-     -> could still predict more, but just dont show it
 
 20. Option to ONLY accept single line inline suggestions if typing within a fully
     closed bracket system within a line example: "#[derive(Debug, Cl[CURSOR], Default)]"
-
-30. investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
-     - I think would require a implementing my own FIM system, which would be
-       useful anyways
-
-40. Bring the entire FIM system into LTTW for customization
 
 40. instruction system LOW priority can use CodeCompanion for now
 
@@ -195,3 +202,16 @@ local query_string = [[
 
 40. README gif of homer with the bird
      - link it to https://www.youtube.com/watch?v=R_rF4kcqLkI
+
+------------------------
+POST RELEASE
+
+50. Bring the entire FIM system into LTTW for further customization
+     - allow more control over cache ordering if one was to be evicted?
+       - maybe this isn't an issue and we can just add something to the end of
+         the cache though?
+     - investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
+       - would require FIM customization
+     - the indent system for generating completions is good, however, its a bit
+       annoying to not be able to autogenerate a closing } in the right position
+       would be nice if there was a way to have the best of both worlds here

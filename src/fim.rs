@@ -25,30 +25,6 @@ use {
     std::time::{Duration, Instant},
 };
 
-/// Determine n_predict based on cursor position
-/// Returns n_predict_inner if there are non-whitespace characters to the right of the cursor
-/// Returns n_predict_end if at end of line or only whitespace to the right
-pub fn get_dynamic_n_predict(
-    line: &str,
-    pos_x: usize,
-    n_predict_inner: u32,
-    n_predict_end: u32,
-) -> u32 {
-    // Check if pos_x is at or beyond the line length (end of line)
-    if pos_x >= line.len() {
-        return n_predict_end;
-    }
-
-    // Check if there are only whitespace characters to the right of the cursor
-    let suffix = &line[pos_x..];
-    if suffix.trim().is_empty() {
-        return n_predict_end;
-    }
-
-    // There are non-whitespace characters to the right of the cursor
-    n_predict_inner
-}
-
 /// FIM completion request
 #[derive(Debug, Clone, Serialize)]
 pub struct FimRequest {
@@ -110,6 +86,30 @@ pub struct FimTimings {
     pub predicted_per_token_ms: Option<f64>,
     #[serde(rename = "timings/predicted_per_second")]
     pub predicted_per_second: Option<f64>,
+}
+
+/// Determine n_predict based on cursor position
+/// Returns n_predict_inner if there are non-whitespace characters to the right of the cursor
+/// Returns n_predict_end if at end of line or only whitespace to the right
+pub fn get_dynamic_n_predict(
+    line: &str,
+    pos_x: usize,
+    n_predict_inner: u32,
+    n_predict_end: u32,
+) -> u32 {
+    // Check if pos_x is at or beyond the line length (end of line)
+    if pos_x >= line.len() {
+        return n_predict_end;
+    }
+
+    // Check if there are only whitespace characters to the right of the cursor
+    let suffix = &line[pos_x..];
+    if suffix.trim().is_empty() {
+        return n_predict_end;
+    }
+
+    // There are non-whitespace characters to the right of the cursor
+    n_predict_inner
 }
 
 /// Build info string from timing information
@@ -242,111 +242,115 @@ pub fn fim_try_hint_inner(
     let hash = hash_input(&primary_hash_inp);
 
     // Check if the completion is cached (and update LRU order)
-    let mut response = state.cache.write().get(&hash);
-    let mut recache = false; // recache the truncated nearby completion if we find one
+    let response = state.cache.write().get(&hash);
 
-    if response.is_none() {
-        // ... or if there is a cached completion nearby (128 characters behind)
-        // Looks at the previous 128 characters to see if a completion is cached.
-        let pm = format!("{}{}", ctx.prefix, ctx.middle);
-        let mut best_len = 0;
-        let mut best_response: Option<FimResponse> = None;
+    // the bool in all_completions is "recache"
+    let mut completions_idx = 0;
+    let mut all_completions: Vec<(FimResponse, bool)> = Vec::new();
+    let find_better_completion = if let Some(resp) = response {
+        all_completions.push((resp, false));
+        false
+    } else {
+        true
+    };
 
-        // Only search if pm has enough characters
-        if pm.len() < 2 {
-            return Ok(());
-        }
+    // ... or if there is a cached completion nearby (128 characters behind)
+    // Looks at the previous 128 characters to see if a completion is cached.
+    let pm = format!("{}{}", ctx.prefix, ctx.middle);
+    let mut best_len = 0;
 
-        // iterate through the prefix+midde string while removing characters from the tail
-        //
-        let mut char_indices = pm.char_indices().collect::<Vec<_>>();
-        char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
-                                             // its never used
-        let char_len = char_indices.len() - 1;
+    // Only search if pm has enough characters
+    if pm.len() < 2 {
+        return Ok(());
+    }
 
-        let max_iters = 128; // TODO parameterize this
-        for i in 1..=(max_iters.min(char_len.saturating_sub(1))) {
-            let split_byte_idx = char_indices[char_len - i].0;
-            let (pm_with_less_tail, removed) = pm.split_at(split_byte_idx);
+    // iterate through the prefix+midde string while removing characters from the tail
+    //
+    let mut char_indices = pm.char_indices().collect::<Vec<_>>();
+    char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
+                                         // its never used
+    let char_len = char_indices.len() - 1;
 
-            let new_prefix_middle = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
-            let hash_new = hash_input(&new_prefix_middle);
+    let max_iters = 128; // TODO parameterize this
+    for i in 1..=(max_iters.min(char_len.saturating_sub(1))) {
+        let split_byte_idx = char_indices[char_len - i].0;
+        let (pm_with_less_tail, removed) = pm.split_at(split_byte_idx);
 
-            if let Some(response_) = state.cache.write().get(&hash_new) {
-                let content = &response_.content;
-                if content.is_empty() {
+        let new_prefix_middle = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
+        let hash_new = hash_input(&new_prefix_middle);
+
+        if let Some(response_) = state.cache.write().get(&hash_new) {
+            let content = &response_.content;
+            if content.is_empty() {
+                continue;
+            }
+
+            // Check that the removed text matches the beginning of the cached response
+            // NOTE 'i' always is == removed.len()
+            // don't bother if i == content.len() because then there isn't any additional
+            // predicted text
+            if content.starts_with(removed) {
+                // Found a match - use the rest of the content
+                let Some(remaining) = content.strip_prefix(removed) else {
                     continue;
-                }
+                };
 
-                // Check that the removed text matches the beginning of the cached response
-                // NOTE 'i' always is == removed.len()
-                // don't bother if i == content.len() because then there isn't any additional
-                // predicted text
-                if content.starts_with(removed) {
-                    // Found a match - use the rest of the content
-                    let Some(remaining) = content.strip_prefix(removed) else {
-                        continue;
-                    };
+                all_completions.push((
+                    FimResponse {
+                        content: remaining.to_string(),
+                        timings: response_.timings,
+                        tokens_cached: response_.tokens_cached,
+                        truncated: response_.truncated,
+                    },
+                    true,
+                )); // recache = true
 
-                    // could use chars().count() but it's not to important
-                    if !remaining.is_empty() && remaining.len() > best_len {
-                        best_len = remaining.len();
-                        best_response = Some(FimResponse {
-                            content: remaining.to_string(),
-                            timings: response_.timings,
-                            tokens_cached: response_.tokens_cached,
-                            truncated: response_.truncated,
-                        });
-                        recache = true;
-                    }
+                // could use chars().count() but it's not to important
+                if find_better_completion && !remaining.is_empty() && remaining.len() > best_len {
+                    best_len = remaining.len();
+                    completions_idx = all_completions.len() - 1;
                 }
             }
         }
-        response = best_response;
     }
 
-    // recache the re-found response at the new position - this way the response can still be found
-    // if it was longer than 128 characters and the user is accepting this line by line.
-    if recache && let Some(resp) = &response {
-        // use the original ctx to compute the hashes
-        let hashes = compute_hashes(&ctx);
-        let mut cache_lock = state.cache.write();
-        for hash in &hashes {
-            cache_lock.insert(hash.clone(), resp.clone());
+    for all_completion in all_completions.iter() {
+        let (resp, recache) = all_completion;
+        // recache the re-found response at the new position - this way the response can still be found
+        // if it was longer than 128 characters and the user is accepting this line by line.
+        if *recache {
+            // use the original ctx to compute the hashes
+            let hashes = compute_hashes(&ctx);
+            let mut cache_lock = state.cache.write();
+            for hash in &hashes {
+                cache_lock.insert(hash.clone(), resp.clone());
+            }
         }
     }
+    let completions: Vec<FimResponse> = all_completions.into_iter().map(|(r, _)| r).collect();
+    let completion = completions.get(completions_idx);
 
     let mut prev_for_next_fim: Option<Vec<String>> = None;
-    if let Some(response) = response {
+    if let Some(completion) = completion {
+        let prev_content = completion.content.clone();
         state.debug_manager.read().log(
             "fim_try_hint_inner",
-            format!("found cached response: {response:#?}"),
+            format!("found cached prev_content: {prev_content:#?}"),
         );
-        let content = response.content;
-        if !content.is_empty() {
-            let timings = if let Some(resp_timings) = response.timings {
-                Some(FimTimingsData::new(
-                    resp_timings,
-                    response.tokens_cached,
-                    response.truncated,
-                ))
-            } else {
-                None
-            };
+        if !prev_content.is_empty() {
             render_fim_suggestion(
                 state.clone(),
                 pos_x,
                 pos_y,
-                &content,
+                completion,
                 ctx.line_cur.clone(),
-                timings,
             )?;
 
             // run async speculative FIM in the background for this position
             // TODO should this just always run even when no hint is shown?
             let hint_shown = state.fim_state.read().hint_shown;
             if hint_shown {
-                prev_for_next_fim = Some(vec![content]);
+                prev_for_next_fim = Some(vec![prev_content]);
             }
         }
     }
@@ -389,8 +393,11 @@ pub fn fim_try_hint_inner(
                 buffer_id,
                 filename,
                 virtual_lines,
+                completions,
+                completions_idx,
                 prev_for_next_fim,
                 skip_debounce,
+                false, // do not render
                 retry,
             )
             .await;
@@ -405,8 +412,11 @@ pub fn fim_try_hint_inner(
                 buffer_id,
                 filename,
                 lines,
+                completions,
+                completions_idx,
                 prev_for_next_fim,
                 skip_debounce,
+                true, // do attempt to render
                 retry,
             )
             .await;
@@ -428,8 +438,11 @@ async fn spawn_fim_completion_worker(
     buffer_id: u64,
     filename: String,
     buffer_lines: Vec<String>,
+    completions: Vec<FimResponse>,
+    completions_idx: usize,
     prev: Option<Vec<String>>, // speculative FIM content
     skip_debounce: bool,
+    do_render: bool,
     retry: Option<usize>,
 ) -> LttwResult<()> {
     let semaphone = state.fim_worker_semaphore.clone();
@@ -495,7 +508,10 @@ async fn spawn_fim_completion_worker(
         buffer_id,
         filename,
         buffer_lines,
+        completions,
+        completions_idx,
         prev,
+        do_render,
         retry,
     )
     .await?;
@@ -517,7 +533,10 @@ pub async fn fim_completion(
     buffer_id: u64,
     filename: String,
     lines: Vec<String>,
+    mut completions: Vec<FimResponse>,
+    mut completions_idx: usize,
     prev: Option<Vec<String>>, // speculative FIM content
+    do_render: bool,
     retry: Option<usize>,
 ) -> LttwResult<()> {
     state.debug_manager.read().log("fim_completion", "0");
@@ -713,25 +732,26 @@ pub async fn fim_completion(
         }
 
         // Send result through channel
-        // Extract timing data from the response if available
-        let timings = response.timings.as_ref().map(|t| FimTimingsData {
-            n_prompt: t.prompt_n.unwrap_or(0),
-            t_prompt_ms: t.prompt_ms.unwrap_or(0.0),
-            s_prompt: t.prompt_per_second.unwrap_or(0.0),
-            n_predict: t.predicted_n.unwrap_or(0),
-            t_predict_ms: t.predicted_ms.unwrap_or(0.0),
-            s_predict: t.predicted_per_second.unwrap_or(0.0),
-            tokens_cached: response.tokens_cached,
-            truncated: response.truncated,
-        });
+        let new_idx = if completions.is_empty() {
+            completions.push(response);
+            0
+        } else {
+            completions.insert(completions_idx + 1, response);
+            completions_idx + 1
+        };
+
+        if do_render {
+            completions_idx = new_idx;
+        }
 
         let msg = FimCompletionMessage {
             buffer_id,
             ctx,
             cursor_x: pos_x,
             cursor_y: pos_y,
-            content,
-            timings,
+            completions,
+            completions_idx,
+            do_render,
             retry,
         };
 
@@ -862,10 +882,19 @@ pub fn render_fim_suggestion(
     state: Arc<PluginState>,
     pos_x: usize,
     pos_y: usize,
-    content: &str,
+    completion: &FimResponse,
     line_cur: String,
-    timings: Option<FimTimingsData>,
 ) -> LttwResult<()> {
+    let content = &*completion.content;
+
+    let timings = completion.timings.as_ref().map(|timings| {
+        FimTimingsData::new(
+            timings.clone(),
+            completion.tokens_cached,
+            completion.truncated,
+        )
+    });
+
     // Parse content into lines
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
 
@@ -925,23 +954,6 @@ pub fn render_fim_suggestion(
         "render_fim_suggestion",
         format!("Displaying FIM hint: \n{}", lines.join("\n")),
     );
-
-    // Gather completions for cycling
-    let all_lines = get_buf_lines(..);
-    match gather_completions_for_cycle(&state, &all_lines, pos_x, pos_y) {
-        Ok(completions) => {
-            if !completions.is_empty() {
-                let mut fim_state = state.fim_state.write();
-                fim_state.set_completion_cycle(completions);
-            }
-        }
-        Err(e) => {
-            state.debug_manager.read().log(
-                "render_fim_suggestion",
-                format!("Failed to gather completions: {:?}", e),
-            );
-        }
-    }
 
     // Update FIM state with timing data
     state.fim_state.write().update(
@@ -1091,6 +1103,91 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
             }
         }
     }
+
+    Ok(())
+}
+
+/// Cycle to next completion
+pub fn fim_cycle_next() -> LttwResult<()> {
+    let state = get_state();
+
+    // Get current state
+    let (hint_shown, _pos_x, _pos_y, _line_cur, _cycle_empty) = {
+        let fim_state = state.fim_state.read();
+        if !fim_state.hint_shown {
+            return Ok(());
+        }
+        (
+            fim_state.hint_shown,
+            fim_state.pos_x,
+            fim_state.pos_y,
+            fim_state.line_cur.clone(),
+            fim_state.completion_cycle.is_empty(),
+        )
+    };
+
+    if !hint_shown {
+        return Ok(());
+    }
+
+    // Cycle to next
+    let completion = {
+        let mut fim_state = state.fim_state.write();
+        let Some(completion) = fim_state.cycle_next() else {
+            return Ok(());
+        };
+        completion
+    };
+
+    // Re-display with new completion
+    let (pos_x, pos_y, line_cur) = {
+        let fim_state = state.fim_state.read();
+        (fim_state.pos_x, fim_state.pos_y, fim_state.line_cur.clone())
+    };
+
+    render_fim_suggestion(state.clone(), pos_x, pos_y, &completion, line_cur)?;
+
+    Ok(())
+}
+
+/// Cycle to previous completion
+pub fn fim_cycle_prev() -> LttwResult<()> {
+    let state = get_state();
+
+    // Get current state
+    let (hint_shown, _pos_x, _pos_y, _line_cur) = {
+        let fim_state = state.fim_state.read();
+        if !fim_state.hint_shown {
+            return Ok(());
+        }
+        (
+            fim_state.hint_shown,
+            fim_state.pos_x,
+            fim_state.pos_y,
+            fim_state.line_cur.clone(),
+        )
+    };
+
+    if !hint_shown {
+        return Ok(());
+    }
+
+    // Cycle to previous
+    let completion = {
+        let mut fim_state = state.fim_state.write();
+        let Some(completion) = fim_state.cycle_prev() else {
+            return Ok(());
+        };
+        completion
+    };
+
+    // Re-display with new completion
+    let (pos_x, pos_y, line_cur) = {
+        let fim_state = state.fim_state.read();
+        (fim_state.pos_x, fim_state.pos_y, fim_state.line_cur.clone())
+    };
+
+    render_fim_suggestion(state.clone(), pos_x, pos_y, &completion, line_cur)?;
 
     Ok(())
 }
@@ -1616,251 +1713,4 @@ mod tests {
         // Should still have same queued count
         assert_eq!(ring_buffer.queued_len(), 0);
     }
-}
-
-/// Gather completions from cache for the current position
-/// Returns a list of completions sorted by length (longest to shortest)
-fn gather_completions_for_cycle(
-    state: &PluginState,
-    lines: &[String],
-    pos_x: usize,
-    pos_y: usize,
-) -> LttwResult<Vec<String>> {
-    let mut completions: Vec<String> = Vec::new();
-
-    // Get local context
-    let ctx = get_local_context(lines, pos_x, pos_y, &state.config.read());
-
-    // Add current completion first (if any)
-    {
-        let fim_state = state.fim_state.read();
-        if !fim_state.content.is_empty() {
-            let current = fim_state.content.join("\n");
-            if !current.is_empty() {
-                completions.push(current);
-            }
-        }
-    }
-
-    // Search for similar completions in cache
-    // Look for completions with partial prefix matches
-    let pm = format!("{}{}", ctx.prefix, ctx.middle);
-    if pm.len() >= 2 {
-        let max_iters = 128;
-        let char_indices = pm.char_indices().collect::<Vec<_>>();
-        let char_len = char_indices.len();
-
-        for i in 1..=max_iters.min(char_len.saturating_sub(1)) {
-            let split_byte_idx = char_indices[char_len - i].0;
-            let (pm_with_less_tail, _removed) = pm.split_at(split_byte_idx);
-
-            let new_prefix_middle = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
-            let hash_new = hash_input(&new_prefix_middle);
-
-            // Use get_fim which doesn't require mutable access
-            if let Some(response) = state.cache.read().get_fim(&hash_new) {
-                let content = response.content.clone();
-                if !content.is_empty() && !completions.contains(&content) {
-                    completions.push(content);
-                }
-            }
-        }
-    }
-
-    // Sort by length (longest to shortest)
-    if completions.len() > 1 {
-        completions.sort_by(|a, b| b.len().cmp(&a.len()));
-    }
-
-    Ok(completions)
-}
-
-/// Cycle to next completion
-pub fn fim_cycle_next() -> LttwResult<()> {
-    let state = get_state();
-
-    // First pass: ensure we have completions gathered
-    // Second pass: actually cycle through completions
-    let mut completions_gathered = false;
-
-    // Get current state before acquiring write lock
-    let (hint_shown, _pos_x, _pos_y, _line_cur) = {
-        let fim_state = state.fim_state.read();
-        if !fim_state.hint_shown {
-            return Ok(());
-        }
-
-        // If no completions in cycle, gather them
-        if fim_state.completion_cycle.is_empty() {
-            drop(fim_state);
-
-            // Get buffer lines for context gathering
-            let lines = get_buf_lines(..);
-            let (x, y) = get_pos();
-
-            // Gather completions
-            match gather_completions_for_cycle(&state, &lines, x, y) {
-                Ok(completions) => {
-                    if !completions.is_empty() {
-                        // Set the completion cycle
-                        {
-                            let mut fim_state_mut = state.fim_state.write();
-                            fim_state_mut.set_completion_cycle(completions);
-                        }
-                        completions_gathered = true;
-                    }
-                }
-                Err(e) => {
-                    state.debug_manager.read().log(
-                        "fim_cycle_next",
-                        format!("Failed to gather completions: {:?}", e),
-                    );
-                }
-            }
-        }
-
-        let fim_state = state.fim_state.read();
-        if !completions_gathered && fim_state.completion_cycle.is_empty() {
-            return Ok(());
-        }
-
-        (
-            fim_state.hint_shown,
-            fim_state.pos_x,
-            fim_state.pos_y,
-            fim_state.line_cur.clone(),
-        )
-    };
-
-    if !hint_shown {
-        return Ok(());
-    }
-
-    // Cycle to next
-    {
-        let mut fim_state = state.fim_state.write();
-        if fim_state.cycle_next().is_none() {
-            return Ok(());
-        }
-    }
-
-    // Re-display with new completion
-    let (pos_x, pos_y, line_cur, content, timings) = {
-        let fim_state = state.fim_state.read();
-        (
-            fim_state.pos_x,
-            fim_state.pos_y,
-            fim_state.line_cur.clone(),
-            fim_state.content.clone(),
-            fim_state.timings.clone(),
-        )
-    };
-
-    if !content.is_empty() {
-        render_fim_suggestion(
-            state.clone(),
-            pos_x,
-            pos_y,
-            &content.join("\n"),
-            line_cur,
-            timings,
-        )?;
-    }
-
-    Ok(())
-}
-
-/// Cycle to previous completion
-pub fn fim_cycle_prev() -> LttwResult<()> {
-    let state = get_state();
-
-    // First pass: ensure we have completions gathered
-    // Second pass: actually cycle through completions
-    let mut completions_gathered = false;
-
-    // Get current state before acquiring write lock
-    let (hint_shown, _pos_x, _pos_y, _line_cur) = {
-        let fim_state = state.fim_state.read();
-        if !fim_state.hint_shown {
-            return Ok(());
-        }
-
-        // If no completions in cycle, gather them
-        if fim_state.completion_cycle.is_empty() {
-            drop(fim_state);
-
-            // Get buffer lines for context gathering
-            let lines = get_buf_lines(..);
-            let (x, y) = get_pos();
-
-            // Gather completions
-            match gather_completions_for_cycle(&state, &lines, x, y) {
-                Ok(completions) => {
-                    if !completions.is_empty() {
-                        // Set the completion cycle
-                        {
-                            let mut fim_state_mut = state.fim_state.write();
-                            fim_state_mut.set_completion_cycle(completions);
-                        }
-                        completions_gathered = true;
-                    }
-                }
-                Err(e) => {
-                    state.debug_manager.read().log(
-                        "fim_cycle_prev",
-                        format!("Failed to gather completions: {:?}", e),
-                    );
-                }
-            }
-        }
-
-        let fim_state = state.fim_state.read();
-        if !completions_gathered && fim_state.completion_cycle.is_empty() {
-            return Ok(());
-        }
-
-        (
-            fim_state.hint_shown,
-            fim_state.pos_x,
-            fim_state.pos_y,
-            fim_state.line_cur.clone(),
-        )
-    };
-
-    if !hint_shown {
-        return Ok(());
-    }
-
-    // Cycle to previous
-    {
-        let mut fim_state = state.fim_state.write();
-        if fim_state.cycle_prev().is_none() {
-            return Ok(());
-        }
-    }
-
-    // Re-display with new completion
-    let (pos_x, pos_y, line_cur, content, timings) = {
-        let fim_state = state.fim_state.read();
-        (
-            fim_state.pos_x,
-            fim_state.pos_y,
-            fim_state.line_cur.clone(),
-            fim_state.content.clone(),
-            fim_state.timings.clone(),
-        )
-    };
-
-    if !content.is_empty() {
-        render_fim_suggestion(
-            state.clone(),
-            pos_x,
-            pos_y,
-            &content.join("\n"),
-            line_cur,
-            timings,
-        )?;
-    }
-
-    Ok(())
 }
