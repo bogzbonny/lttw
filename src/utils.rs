@@ -260,6 +260,36 @@ pub fn get_current_filetype() -> LttwResult<String> {
     Ok(ft)
 }
 
+/// Check if cursor is in a comment
+/// Uses synID() and synIDattr() to determine syntax group under cursor
+pub fn is_in_comment(pos_x: usize, pos_y: usize) -> LttwResult<bool> {
+    assert_not_tokio_worker();
+
+    // synID() - get syntax ID at position
+    // Arguments: winid (0 for current), row (1-indexed), col (1-indexed), trans (0 for false)
+    let syn_id_result: i64 =
+        api::call_function("synID", (0_i64, pos_y as i64 + 1, pos_x as i64 + 1, 0_i64))
+            .unwrap_or(0);
+
+    if syn_id_result == 0 {
+        // No syntax ID found at this position
+        return Ok(false);
+    }
+
+    // synIDattr() - get syntax attribute for syntax ID
+    // Get the name of the syntax group
+    let syn_name: String =
+        api::call_function("synIDattr", (syn_id_result, "name")).unwrap_or_default();
+
+    // Check if the syntax name indicates a comment
+    // Common comment syntax names: Comment, cComment, cppComment, htmlComment, etc.
+    let is_comment = syn_name.starts_with("Comment")
+        || syn_name.contains("comment")
+        || syn_name.contains("Comment");
+
+    Ok(is_comment)
+}
+
 // --------------------------
 
 fn is_readable(path: &Path) -> bool {

@@ -128,6 +128,9 @@ pub struct FimState {
     hint_shown: bool,
     /// Last buffer id and cursor Y position where ring buffer chunks were picked
     last_pick_buf_id_pos_y: Option<(u64, usize)>,
+    /// Cursor position after accepting a completion, used to allow FIM in comments
+    /// immediately after accepting code that may end in a comment
+    allow_comment_fim_cur_pos: Option<(u64, usize, usize)>,
 
     pos_x: usize,
     pos_y: usize,
@@ -164,6 +167,7 @@ impl FimState {
         self.line_cur.clear();
         self.content.clear();
         self.last_pick_buf_id_pos_y = None;
+        self.allow_comment_fim_cur_pos = None;
         self.timings = None;
     }
 
@@ -174,6 +178,18 @@ impl FimState {
     /// Get the last pick position
     fn get_last_pick_buf_id_pos_y(&self) -> Option<(u64, usize)> {
         self.last_pick_buf_id_pos_y
+    }
+    /// Set the allow comment FIM cursor position
+    fn set_allow_comment_fim_cur_pos(&mut self, buf_id: u64, pos_x: usize, pos_y: usize) {
+        self.allow_comment_fim_cur_pos = Some((buf_id, pos_x, pos_y));
+    }
+    /// Set the allow comment FIM cursor position
+    fn clear_allow_comment_fim_cur_pos(&mut self) {
+        self.allow_comment_fim_cur_pos = None;
+    }
+    /// Get the allow comment FIM cursor position
+    pub fn get_allow_comment_fim_cur_pos(&self) -> Option<(u64, usize, usize)> {
+        self.allow_comment_fim_cur_pos
     }
 }
 
@@ -374,6 +390,13 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
     // Move the cursor to the end of the accepted text
     set_window_cursor(new_x, new_y)?;
 
+    // Set allow_comment_fim_cur_pos to allow FIM in comments immediately after accepting completion
+    let buf_id = get_current_buffer_id();
+    state
+        .fim_state
+        .write()
+        .set_allow_comment_fim_cur_pos(buf_id, new_x, new_y);
+
     state.fim_state.write().clear();
 
     // Clear virtual text from display
@@ -537,6 +560,18 @@ fn toggle_auto_fim() -> LttwResult<bool> {
 fn on_move() -> LttwResult<()> {
     let state = get_state();
     *state.last_move_time.write() = Instant::now();
+
+    // Check if cursor has moved to a different position than allow_comment_fim_cur_pos
+    let (pos_x, pos_y) = get_pos();
+    let buf_id = get_current_buffer_id();
+
+    let allow_comment_pos = state.fim_state.read().get_allow_comment_fim_cur_pos();
+    if let Some((allowed_buf, allowed_x, allowed_y)) = allow_comment_pos
+        && (buf_id != allowed_buf || pos_x != allowed_x || pos_y != allowed_y)
+    {
+        state.fim_state.write().clear_allow_comment_fim_cur_pos();
+    }
+
     state.debug_manager.read().log("on_move", "Cursor moved");
     fim_hide()?;
     fim_try_hint(None)?;

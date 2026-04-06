@@ -3,6 +3,44 @@
 
 ^^^^^^^^^ DONE
 
+03. option to not predict while in comments
+Add an new feature which prevents FIM prediction while in comments 
+ - new config option no_fim_in_comments (default true)
+ - Use the synID() and synIDattr() functions to check the syntax ID under the cursor:
+   - need to use equivalent within nvim_oxi
+ - should however ALLOW comment predictions immediately after accepting a code
+   completion, because the code completion may end in a comment, and if that's
+   the case then we want to allow for further code completions
+ - everytime a completion is accepted, update a new plugin state
+   allow_comment_fim_cur_pos (Option<>) which contains the final cursor position which
+   the accept function moves the cursor to upon accepting a completion. Whenever
+   checking against code comments, ignore checking if we're in a code comment if
+   this value is set. Everytime the on_move function is triggered, check the
+   cursor pos, if the cursor pos is different from allow_comment_fim_cur_pos
+   then set allow_comment_fim_cur_pos to None.
+
+10. n_predict changes
+dynamically change n_predict during each FIM call (number of tokens to predict)
+ - replaces existing n_predict config option
+ - When in a line and there are non-whitespace characters to the right of the
+   cursor set to n_predict_inner (default value 16)
+ - for at the end of a line or where there's only whitespace left to the right
+   of the cursor set to a new config param n_prefict_end (default value 256)
+
+05. completion cycling
+New keymaps; use CTRL-j and CTRL-k from insert mode to cycle through the
+completions options. Now whenever we compile autocompletions from previous
+nearby autocompletions, we should keep a list of all the autocompletions
+(ordered from longest to shortest) and start by displaying the first FIM but
+then allow cycling through these
+
+05. regenerate
+New keymaps; Ctrl+l from insert move to regenerate the completion at the
+location. NOTE add this to the list of completions at this location, so one can
+cycle back through them if necessary. Keep the existing completion visibly and
+only trigger changing to the newly generated completion once the response for
+this has been received.
+
 03. integrate git diff system into extra_inputs 
      - git diff --no-ext-diff --unified=0
          -> use unified=0 for concise chunks
@@ -64,48 +102,6 @@ filename in the PluginState and then everytime BufWritePost is executed we
 compare all the files we have to what we've previously saved and calculate the
 diff based on that
 
-
-03. option to not predict while in comments
-
-Add an new feature which prevents FIM prediction while in comments 
- - new config option no_fim_in_comments (default true)
- - Use the synID() and synIDattr() functions to check the syntax ID under the cursor:
-   - need to use equivalent within nvim_oxi
- - should however ALLOW comment predictions immediately after accepting a code
-   completion, because the code completion may end in a comment, and if that's
-   the case then we want to allow for further code completions
- - everytime a completion is accepted, update a new plugin state
-   allow_comment_fim_cur_pos (Option<>) which contains the final cursor position which
-   the accept function moves the cursor to upon accepting a completion. Whenever
-   checking against code comments, ignore checking if we're in a code comment if
-   this value is set. Everytime the on_move function is triggered, check the
-   cursor pos, if the cursor pos is different from allow_comment_fim_cur_pos
-   then set allow_comment_fim_cur_pos to None.
-
-
-
-05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
-     - I'm not sure if it'll be a pain to still use FIM for this or not
-        - probably use a regular completion 
-     - afterwords this will generate a replacement line(s) for which will be
-       displayed using extmarks
-     - then a 3rd TAB can accept this
-     - then a 4th TAB should take the cursor to the next line which has
-       diagnostic errors
-     - use this entire system in reverse as well with SHIFT-TAB to move up
-     - CTRL-TAB to regenerate a TAB-TAB if the user doesn't like the provided
-       response
-     - OPTION ONCE no more errors - save file to regenerate diagnostics
-     - OPTION ONCE no more errors, go to the next file with errors in a new tab
-
-------------------------
-05. Ctrl+l to regenerate the completion at the location. NOTE add this to the
-    list of completions at this location, so one can cycle back through them if
-    necessary 
-
-05. use CTRL-j and CTRL-k from insert mode to cycle through the completions
-    options
-
 05. integrate in LSP Completions into input_prefix (?)
      - probably add a mini lag for these completions like 100ms so we're not
        generating them unnecessarily. 
@@ -122,7 +118,28 @@ Add an new feature which prevents FIM prediction while in comments
        (removing the ... keeping it in insert mode THUS triggering the next
        completion).
 
-10. integrate definitions of all nearby objects 
+
+------------------------
+
+05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
+     - use regular completions/ endpoint not infill endpoint
+     - Whatever the whole range of the fed diagnostic is is what should be fed
+       into the prompt (along with the diagnostic
+     - I'm not sure if it'll be a pain to still use FIM for this or not
+        - probably use a regular completion 
+     - afterwords this will generate a replacement line(s) for which will be
+       displayed using extmarks
+     - then a 3rd TAB can accept this
+     - then a 4th TAB should take the cursor to the next line which has
+       diagnostic errors
+     - use this entire system in reverse as well with SHIFT-TAB to move up
+     - CTRL-TAB to regenerate a TAB-TAB if the user doesn't like the provided
+       response
+     - OPTION ONCE no more errors - save file to regenerate diagnostics
+     - OPTION ONCE no more errors, go to the next file with errors in a new tab
+
+
+20. integrate definitions of all nearby objects 
      - Iterate through all the nearby words and to go-to-definition
      - use this vim command: https://neovim.io/doc/user/lsp/#lsp-buf
      - Can use treesitter [](https://neovim.io/doc/user/treesitter/#_treesitter-queries)
@@ -145,15 +162,6 @@ local query_string = [[
        - probably want to have a config option for all the words which we don't
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
-
-10. Minimize predicted tokens
-     - dynamically change n_predict during each rest call (number of tokens to
-       predict)
-        - for in a middle of a word this should be really small 8?
-        - for outside of a word but in the middle of a line this could be larger 16? 
-        - for at the end of a line or where there's only whitespace left in the
-          line this could be much larger like for generating function calls
-          (256?)
 
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 

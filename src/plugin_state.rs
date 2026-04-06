@@ -59,6 +59,7 @@ pub struct PluginState {
     pub autocmd_id_filetype_check: Arc<RwLock<Option<u32>>>,
     pub ring_buffer_timer_handle: Arc<RwLock<RingBufferTimerHandle>>,
     pub ring_updating_active: Arc<AtomicBool>,
+    pub allow_comment_fim: Arc<AtomicBool>, // Whether to allow FIM in comments (set before spawning async)
 
     // File content storage - stores the most recent content of each open buffer
     // Used for calculating diffs on file save
@@ -138,6 +139,7 @@ impl PluginState {
             autocmd_id_filetype_check: Arc::new(RwLock::new(None)),
             ring_buffer_timer_handle: Arc::new(RwLock::new(None)),
             ring_updating_active: Arc::new(AtomicBool::new(false)),
+            allow_comment_fim: Arc::new(AtomicBool::new(false)),
             file_contents: Arc::new(RwLock::new(HashMap::new())),
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(RwLock::new(None)),

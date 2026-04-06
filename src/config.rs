@@ -70,6 +70,9 @@ pub struct LttwConfig {
     // Diff tracking configuration
     pub diff_tracking_enabled: bool,
 
+    // Comment detection configuration
+    pub no_fim_in_comments: bool,
+
     // Startup configuration
     pub enable_at_startup: bool,
     pub debug_enabled_at_startup: bool,
@@ -115,6 +118,7 @@ impl Default for LttwConfig {
             keymap_inst_accept: "<Tab>".to_string(),
             keymap_inst_cancel: "<Esc>".to_string(),
             diff_tracking_enabled: false,
+            no_fim_in_comments: true,
             enable_at_startup: true,
             debug_enabled_at_startup: false,
             disabled_filetypes: Vec::new(),
@@ -275,6 +279,9 @@ impl LttwConfig {
         // Override bool fields
         if let Some(v) = get_bool("diff_tracking_enabled") {
             config.diff_tracking_enabled = v;
+        }
+        if let Some(v) = get_bool("no_fim_in_comments") {
+            config.no_fim_in_comments = v;
         }
 
         // Handle deprecated key names (rename old keys to new ones)
