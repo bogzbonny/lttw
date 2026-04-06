@@ -1,6 +1,7 @@
 use {
     crate::{
-        fim::FimAcceptType, fim_accept, fim_cycle_next, fim_cycle_prev, get_state, LttwResult,
+        fim::fim_try_hint_regenerate, fim::FimAcceptType, fim_accept, fim_cycle_next,
+        fim_cycle_prev, get_state, LttwResult,
     },
     nvim_oxi::api::{del_keymap, opts::SetKeymapOptsBuilder, set_keymap, types::Mode},
 };
@@ -113,6 +114,25 @@ pub fn setup_keymaps() -> LttwResult<()> {
             .build(),
     );
 
+    // FIM regenerate (CTRL-l) - trigger new completion at current position
+    let _ = set_keymap(
+        Mode::Insert,
+        "<C-l>",
+        "",
+        &SetKeymapOptsBuilder::default()
+            .callback(|_| {
+                if let Err(e) = fim_try_hint_regenerate() {
+                    // Log error but don't crash
+                    let state = get_state();
+                    state.debug_manager.read().log(
+                        "LttwFimRegenerate",
+                        format!("Error regenerating FIM: {:?}", e),
+                    );
+                }
+            })
+            .build(),
+    );
+
     Ok(())
 }
 
@@ -163,6 +183,7 @@ pub fn remove_keymaps() -> LttwResult<()> {
     let _ = del_keymap(Mode::Insert, "<S-Tab>");
     let _ = del_keymap(Mode::Insert, "<C-j>");
     let _ = del_keymap(Mode::Insert, "<C-k>");
+    let _ = del_keymap(Mode::Insert, "<C-l>");
 
     Ok(())
 }

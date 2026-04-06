@@ -37,9 +37,7 @@ then allow cycling through these
 05. regenerate
 New keymaps; Ctrl+l from insert move to regenerate the completion at the
 location. NOTE add this to the list of completions at this location, so one can
-cycle back through them if necessary. Keep the existing completion visibly and
-only trigger changing to the newly generated completion once the response for
-this has been received.
+cycle back through them if necessary. 
 
 05. single_line_prediction_within_line
  - Option to ONLY show the first line of code completions unless you're in an empty line

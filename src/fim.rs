@@ -166,14 +166,21 @@ pub fn fim_try_hint(retry: Option<usize>) -> LttwResult<()> {
     if !in_insert_mode()? {
         return Ok(());
     }
-    fim_try_hint_inner(false, retry) // check_comment = true for normal FIM
+    fim_try_hint_inner(false, false, retry) // check_comment = true for normal FIM
 }
 
 pub fn fim_try_hint_skip_debounce() -> LttwResult<()> {
     if !in_insert_mode()? {
         return Ok(());
     }
-    fim_try_hint_inner(true, None) // check_comment = true for skip_debounce
+    fim_try_hint_inner(true, false, None) // check_comment = true for skip_debounce
+}
+
+pub fn fim_try_hint_regenerate() -> LttwResult<()> {
+    if !in_insert_mode()? {
+        return Ok(());
+    }
+    fim_try_hint_inner(true, true, None) // check_comment = true for skip_debounce
 }
 
 /// Try to generate a suggestion using the data in the cache
@@ -181,17 +188,14 @@ pub fn fim_try_hint_skip_debounce() -> LttwResult<()> {
 /// If one is found at (x,y) then it checks that the characters typed after (x,y)
 /// match up with the cached completion result.
 ///
-/// # Returns
-///  - `Some(RenderedSuggestion)` - If a cached completion is found
-///  - `None` - If no cached completion is found
-///
 /// NOTE this happens on the neovim main thread
 ///
-/// # Arguments
-/// * `skip_debounce` - whether to skip the debounce check
-/// * `retry` - retry number for speculative FIM
+/// ### Arguments
+///  - `skip_debounce` - whether to skip the debounce check
+///  - `retry` - retry number for speculative FIM
 pub fn fim_try_hint_inner(
     skip_debounce: bool,
+    force_regenerate: bool,
     retry: Option<usize>, // retry number
 ) -> LttwResult<()> {
     // filetype failsafe
@@ -331,7 +335,7 @@ pub fn fim_try_hint_inner(
     let completion = completions.get(completions_idx);
 
     let mut prev_for_next_fim: Option<Vec<String>> = None;
-    if let Some(completion) = completion {
+    if !force_regenerate && let Some(completion) = completion {
         let prev_content = completion.content.clone();
         state.debug_manager.read().log(
             "fim_try_hint_inner",
@@ -355,14 +359,6 @@ pub fn fim_try_hint_inner(
         }
     }
     let filename = get_buf_filename()?;
-
-    // Set the allow_comment_fim flag before spawning async worker
-    // This allows FIM in comments when immediately after accepting a completion
-    // Note: is_in_comment() is called above in fim_try_hint_inner on main thread
-    let is_after_accept = prev_for_next_fim.is_some();
-    state
-        .allow_comment_fim
-        .store(is_after_accept, std::sync::atomic::Ordering::SeqCst);
 
     // Spawn a FIM in the background nomatter what
     // either a speculative-fim as though the completion was accepted

@@ -1,21 +1,21 @@
 use {
     crate::{
-        Error, FimCompletionMessage, FimState, LttwResult, cache, config, debug,
-        instruction::InstructionRequestState, ring_buffer,
+        cache, config, debug, instruction::InstructionRequestState, ring_buffer, Error,
+        FimCompletionMessage, FimState, LttwResult,
     },
     ahash::{HashMap, HashMapExt},
     nvim_oxi::api::create_namespace,
     parking_lot::RwLock,
     std::{
         sync::{
-            Arc, OnceLock,
             atomic::{AtomicBool, AtomicI64, AtomicU64},
+            Arc, OnceLock,
         },
         time::Instant,
     },
     tokio::{
         runtime::Runtime,
-        sync::{Semaphore, mpsc},
+        sync::{mpsc, Semaphore},
     },
 };
 
@@ -60,7 +60,6 @@ pub struct PluginState {
     pub ring_buffer_timer_handle: Arc<RwLock<RingBufferTimerHandle>>,
     pub ring_updating_active: Arc<AtomicBool>,
 
-    pub allow_comment_fim: Arc<AtomicBool>, // Whether to allow FIM in comments (set before spawning async)
     /// Cursor position after accepting a completion, used to allow FIM in comments
     /// immediately after accepting code that may end in a comment
     pub allow_comment_fim_cur_pos: Arc<RwLock<Option<(u64, usize, usize)>>>,
@@ -144,7 +143,6 @@ impl PluginState {
             ring_buffer_timer_handle: Arc::new(RwLock::new(None)),
             ring_updating_active: Arc::new(AtomicBool::new(false)),
 
-            allow_comment_fim: Arc::new(AtomicBool::new(false)),
             allow_comment_fim_cur_pos: Arc::new(RwLock::new(None)),
 
             file_contents: Arc::new(RwLock::new(HashMap::new())),
