@@ -663,35 +663,40 @@ fn on_buf_write_post() -> LttwResult<()> {
         // Convert lines to string for diff comparison
         let new_content = lines.join("\n");
 
-        // Save the current file content for future diff comparison
-        {
-            let mut file_contents_lock = state.file_contents.write();
-            file_contents_lock.insert(filename.clone(), new_content.clone());
-        }
-
         // Get saved content for this file
-        let old_content = {
-            let file_contents_lock = state.file_contents.read();
-            file_contents_lock.get(&filename).cloned()
+        let mut diff_chunks = {
+            let old_content = state.file_contents.read().get(&filename).cloned();
+
+            // Calculate diff between saved content and current content
+            if let Some(ref old_content) = old_content {
+                calculate_diff_between_contents(&filename, old_content, &new_content)?
+            } else {
+                // No previous content - return empty
+                Vec::new()
+            }
         };
 
-        // Calculate diff between saved content and current content
-        let mut diff_chunks = if let Some(ref old_content) = old_content {
-            calculate_diff_between_contents(&filename, old_content, &new_content)?
-        } else {
-            // No previous content - return empty
-            Vec::new()
-        };
+        // Save the current file content for future diff comparison
+        state
+            .file_contents
+            .write()
+            .insert(filename.clone(), new_content);
+
+        state
+            .debug_manager
+            .read()
+            .log("diff_chunks", format!("diff_chunks: {:#?}", diff_chunks));
 
         // Process diff chunks
         if !diff_chunks.is_empty() {
             // Assign sequential IDs to new chunks and evaluate changes
             let (additions, removals) = {
-                let mut old_chunks_lock = state.diff_chunks.write();
-                let old_chunks: Vec<diff_chunk::DiffChunk> = old_chunks_lock.clone();
+                let mut old_chunks = &*state.diff_chunks.read();
 
                 // Assign sequential IDs to new chunks
-                let mut next_id = state.next_diff_chunk_id.load(std::sync::atomic::Ordering::SeqCst);
+                let mut next_id = state
+                    .next_diff_chunk_id
+                    .load(std::sync::atomic::Ordering::SeqCst);
                 for chunk in &mut diff_chunks {
                     // Check if this filepath was in old chunks
                     let was_in_old = old_chunks.iter().any(|c| c.filepath == chunk.filepath);
@@ -699,7 +704,9 @@ fn on_buf_write_post() -> LttwResult<()> {
                         // Find the old chunk for this filepath and reuse its id if content unchanged
                         let mut found = false;
                         for old_chunk in &old_chunks {
-                            if old_chunk.filepath == chunk.filepath && old_chunk.content == chunk.content {
+                            if old_chunk.filepath == chunk.filepath
+                                && old_chunk.content == chunk.content
+                            {
                                 // Content unchanged - reuse old id
                                 chunk.id = old_chunk.id;
                                 found = true;
@@ -717,7 +724,9 @@ fn on_buf_write_post() -> LttwResult<()> {
                         next_id += 1;
                     }
                 }
-                state.next_diff_chunk_id.store(next_id, std::sync::atomic::Ordering::SeqCst);
+                state
+                    .next_diff_chunk_id
+                    .store(next_id, std::sync::atomic::Ordering::SeqCst);
 
                 // Evaluate changes
                 let (additions, removals) = evaluate_diff_changes(&diff_chunks, &old_chunks);
@@ -733,7 +742,7 @@ fn on_buf_write_post() -> LttwResult<()> {
 
             // Apply changes to ring buffer in a separate locked section
             let mut ring_buffer_lock = state.ring_buffer.write();
-            
+
             // Perform removals first (as per requirements)
             for chunk in &removals {
                 // Evict chunks by id from both queued and ring
@@ -758,10 +767,10 @@ fn on_buf_write_post() -> LttwResult<()> {
         // Small file - just track content
         let filename = get_buf_filename().unwrap_or_default();
         let new_content = lines.join("\n");
-        {
-            let mut file_contents_lock = state.file_contents.write();
-            file_contents_lock.insert(filename.clone(), new_content);
-        }
+        state
+            .file_contents
+            .write()
+            .insert(filename.clone(), new_content);
     }
 
     Ok(())
@@ -774,7 +783,7 @@ fn on_buf_write_post() -> LttwResult<()> {
 /// 2. Compares with previously stored chunks
 /// 3. Assigns unique sequential IDs to new/changed chunks
 /// 4. Adds new chunks to ringbuffer.queued (additions)
-/// 5. Removes chunks from ringbuffer by id (removals) 
+/// 5. Removes chunks from ringbuffer by id (removals)
 /// 6. Updates stored chunks in PluginState
 ///
 /// NOTE: This function avoids holding multiple locks simultaneously to prevent deadlocks.
@@ -804,15 +813,20 @@ fn evaluate_all_repo_diffs() -> LttwResult<()> {
                 match calculate_diff_between_contents(filepath, saved, current_content) {
                     Ok(mut diff_chunks) => {
                         // Assign IDs to new chunks
-                        let mut next_id = state.next_diff_chunk_id.load(std::sync::atomic::Ordering::SeqCst);
+                        let mut next_id = state
+                            .next_diff_chunk_id
+                            .load(std::sync::atomic::Ordering::SeqCst);
                         for chunk in &mut diff_chunks {
                             // Check if this filepath was in old chunks
-                            let was_in_old = old_chunks.iter().any(|c| c.filepath == chunk.filepath);
+                            let was_in_old =
+                                old_chunks.iter().any(|c| c.filepath == chunk.filepath);
                             if was_in_old {
                                 // Find the old chunk for this filepath and reuse its id if content unchanged
                                 let mut found = false;
                                 for old_chunk in &old_chunks {
-                                    if old_chunk.filepath == chunk.filepath && old_chunk.content == chunk.content {
+                                    if old_chunk.filepath == chunk.filepath
+                                        && old_chunk.content == chunk.content
+                                    {
                                         // Content unchanged - reuse old id
                                         chunk.id = old_chunk.id;
                                         found = true;
@@ -830,7 +844,9 @@ fn evaluate_all_repo_diffs() -> LttwResult<()> {
                                 next_id += 1;
                             }
                         }
-                        state.next_diff_chunk_id.store(next_id, std::sync::atomic::Ordering::SeqCst);
+                        state
+                            .next_diff_chunk_id
+                            .store(next_id, std::sync::atomic::Ordering::SeqCst);
 
                         new_chunks.extend(diff_chunks);
                     }
@@ -891,8 +907,12 @@ fn evaluate_all_repo_diffs() -> LttwResult<()> {
     let chunk_count = state.diff_chunks.read().len();
     state.debug_manager.read().log(
         "evaluate_all_repo_diffs",
-        format!("Evaluated {} chunks ({} additions, {} removals)", 
-            chunk_count, additions.len(), removals.len()),
+        format!(
+            "Evaluated {} chunks ({} additions, {} removals)",
+            chunk_count,
+            additions.len(),
+            removals.len()
+        ),
     );
 
     Ok(())

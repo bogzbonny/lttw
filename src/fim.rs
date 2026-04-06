@@ -33,9 +33,9 @@ pub struct FimRequest {
     pub input_suffix: String,
     pub input_extra: Vec<ExtraContext>,
     pub prompt: String,
+    pub n_indent: usize,
     pub n_predict: u32,
     pub stop: Vec<String>,
-    pub n_indent: usize,
     pub top_k: u32,
     pub top_p: f32,
     pub samplers: Vec<String>,
@@ -523,10 +523,16 @@ pub async fn fim_completion(
     let text = &lines[start_line..end_line];
     {
         let mut rb = state.ring_buffer.write();
+
+        // TODO strange that we only evict a single chunk here I imagine that we could evict more if the
+        // text.len > chunk_size. ALSO it seems like this eviction process is going to slow down
+        // code completions,
+        // TODO OPTIONALY queue up the chunk deletions rather than deleting them at FIM time
+        //       -> they should still be evicted from the ring_buffer queue at this moment however
         let chunk = rb.get_chunk_from_text(text);
+
         if !chunk.is_empty() {
-            //rb.evict_similar(chunk, 0.5); // XXX
-            rb.evict_similar(chunk, 0.9); // XXX
+            rb.evict_similar(chunk, 0.5); // TODO parameterize this
         }
     }
 
@@ -543,14 +549,14 @@ pub async fn fim_completion(
         stop,
         n_indent: ctx.indent,
         top_k: 40,
-         top_p: 0.90,
-         samplers: vec![
-             "top_k".to_string(),
-             "top_p".to_string(),
-             "infill".to_string(),
-         ],
-         t_max_prompt_ms,
-         t_max_predict_ms,
+        top_p: 0.90,
+        samplers: vec![
+            "top_k".to_string(),
+            "top_p".to_string(),
+            "infill".to_string(),
+        ],
+        t_max_prompt_ms,
+        t_max_predict_ms,
         response_fields: vec![
             "content".to_string(),
             "timings/prompt_n".to_string(),
@@ -672,8 +678,14 @@ pub async fn fim_completion(
         }
     });
 
-    // Ring buffer pick logic - gather extra context when cursor moves significantly or to a new
-    // buffer and process it in the background
+    // Ring buffer pick logic - gather extra contextual chunks from nearby (within ring_scope) when
+    // cursor moves significantly or to a new buffer. process it in the background later
+    //
+    // Thinking; this seems like a reasonable time to queue up more chunks, only if it is
+    // significant enought that we want to generate a FIM do we also want to add some more context
+    // to the ring buffer.
+    //
+    // TODO option to allow picking more than one chunk from the scope here
     let do_ring_buffer_pick = if let Some((last_buf_id, last_y)) = last_pick {
         last_buf_id != buffer_id || (pos_y as i64 - last_y as i64).abs() > 32
     } else {
@@ -1141,13 +1153,13 @@ mod tests {
             input_extra: ring_buffer.get_extra(),
             prompt: "    println!(\"hello\"".to_string(),
             n_predict: 32,
-             stop: vec![],
-             n_indent: 4,
-             top_k: 40,
-             top_p: 0.90,
-             samplers: vec!["top_k".to_string(), "top_p".to_string()],
-             t_max_prompt_ms: 500,
-             t_max_predict_ms: 1000,
+            stop: vec![],
+            n_indent: 4,
+            top_k: 40,
+            top_p: 0.90,
+            samplers: vec!["top_k".to_string(), "top_p".to_string()],
+            t_max_prompt_ms: 500,
+            t_max_predict_ms: 1000,
             response_fields: vec!["content".to_string()],
         };
 
@@ -1294,13 +1306,13 @@ mod tests {
             input_extra: extra,
             prompt: "    println!(\"hello\"".to_string(),
             n_predict: 32,
-             stop: vec![],
-             n_indent: 4,
-             top_k: 40,
-             top_p: 0.90,
-             samplers: vec!["top_k".to_string(), "top_p".to_string()],
-             t_max_prompt_ms: 500,
-             t_max_predict_ms: 1000,
+            stop: vec![],
+            n_indent: 4,
+            top_k: 40,
+            top_p: 0.90,
+            samplers: vec!["top_k".to_string(), "top_p".to_string()],
+            t_max_prompt_ms: 500,
+            t_max_predict_ms: 1000,
             response_fields: vec!["content".to_string()],
         };
 

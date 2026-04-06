@@ -232,6 +232,9 @@ impl RingBuffer {
 
         // Evict queued chunks that are very similar
         if do_evict {
+            // TODO probably only actually evict from the ring_buffer once
+            // the chunk enters the buffer. So here we should only be evicting from
+            // the similar from the queue.
             self.evict_similar(chunk, 0.9);
         }
 
@@ -364,7 +367,7 @@ impl RingBuffer {
     }
 
     /// Evict chunks from the ring buffer by filename
-    /// 
+    ///
     /// # Arguments
     /// * `filename` - Filename to match for eviction
     pub fn evict_by_filename(&mut self, filename: &str) {
@@ -380,7 +383,7 @@ impl RingBuffer {
     }
 
     /// Evict chunks from the ring buffer by unique id
-    /// 
+    ///
     /// # Arguments
     /// * `chunk_id` - Unique id to match for eviction
     pub fn evict_by_id(&mut self, chunk_id: usize) {

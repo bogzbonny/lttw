@@ -14,18 +14,85 @@
 
 ^^^^^^^^^ DONE
 
-03. integrate git diff system into extra_inputs 
-     - definitely should integrate with extra_input ring_buffer system -
-       ordering is important
-     - should be a part of the same ring buffer 
-     - PROBABLY should just integrate in diff only on file saves just to be a
-       bit more conservative - otherwise what would be the time when we'd be
-       making the diffs? after each insert? - possible but a bit more
-       complicated, I suppose it depends on your programming style -I think this
-       is fine for me as I save whenever its important
+03. optionize the git diff functionality
 
-     - use autocmd BufWritePost 
-     - use gix diff for calculating diffs
+03. RING BUFFER UPDATES
+     - pick_chunk_inner: 
+            // TODO probably only actually evict from the ring_buffer once
+            // the chunk enters the buffer. So here we should only be evicting from
+            // the similar from the queue.
+            self.evict_similar(chunk, 0.9);
+     - allow for multiple chunks to be picked once insert mode is entered. 
+       - do not evict similar chunks to the text on fim_completion?
+          -> this acts only to slow down completions, chunks should be evicted
+          passively when ring_buffer processing is active once each chunk is
+          added to the queue. 
+           - fim completion: 
+               // TODO strange that we only evict a single chunk here I imagine that we could evict more if the
+               // text.len > chunk_size. ALSO it seems like this eviction process is going to slow down
+               // code completions,
+               // TODO OPTIONALY queue up the chunk deletions rather than deleting them at FIM time
+               //       -> they should still be evicted from the ring_buffer queue at this moment however
+        DO -> just (as an option) just don't remove this chunk and
+           don't even actually queue it up for deletion, just wait for the ring
+           buffer pick function which occurs at the end of the fim_completion
+           section to add new chunks which may end up bumping existing chunks
+           out.
+
+     - fim_completion: 
+          // TODO option to allow picking more than one chunk from the scope here
+     - parameterize the queue length! 
+     - IF we are removing from the main ring buffer chunk once we actually put
+       it in the queue, we should batch buffer the queue because everytime there
+       is an earlier removal 
+        - new parameter of the max amount of queue entries to batch process
+        - OKAY WAIT COULD still dynamically process the queue ASSUMING that
+          there isn't any removals right? SO maybe the thing to do, is to
+          process all the removals in batch right as the first batch process
+          THEN process the remainder of the queue entries in order one by one
+          (were we know we're not adding anything) 
+            - the removals-processing moment should NOT add any of the queue
+              entries which removed them, those should still be processed one by
+              one in the post-removal ring-buffer updating.
+        - NOTE important - We need to take a snapshot of all the queued chunks
+          which are being processed for the removal processing and subsiquent
+          additions processing SO THAT if a new chunk gets picked somehow during
+          these proceedings it doesn't get processed until the NEXT
+          removal-round. A new queue'd chunk which gets added post-removal
+          during the updating SHOULD HOWEVER be allowed to remove chunks from
+          the list of actively processing chunks.  
+        - Keep an BTreeMap of all the chunks-ids that have already been compared
+          similarity between (for eviction) which we can quickly check before
+          each process in order to reduce recomputations of similarity
+
+03. integrate git diff system into extra_inputs 
+     - git diff --no-ext-diff --unified=0
+         -> use unified=0 for concise chunks
+     - because we're just saving the file changes we do not need to actually 
+       calculate removed diffs, just calculate the new diffs and add those to
+       the queue HOWEVER we should probably remove other diff segments by
+       filename and position of the diff. For a diff with the header:
+       @@ -183,6 +185,2 @@
+         the new file has a modification at line 185 (1 based) for 2 lines
+         so now if another diff comes in 
+       @@ -184,6 +190,2 @@
+         then we know that this DOES intersect with the first diff and therefor
+         we should remove the old diff extra_inputs. 
+       This of couse however means that we can ONLY make this evaluation for
+       diff changes of the previous diff because something that happened 2
+       evaluations ago may have a completely different diff location.
+         ... HMMMMMM solution?
+  DO THIS-> - SOLUTION 1) track the changes (by filename) and line positions and adjust any of
+              the old diff locations... kind of annoying algo but probably quite good once
+              it works properly
+            - Look at chunk similarity 
+     - When using a git-diff chunk for eviction:
+        - evict other git-diff chunks by their "new" file location
+        - evict other regular chunks by their similarity between the
+          git-diff-chunk OLD content and the regular chunk content
+     - When using a normal chunks for eviction:
+        - evict git-diff chunks by comparing the chunk similarity to the
+          git-diff chunks UPDATED information.
 
 integrate a new system which keeps track of diff chunks each time there is a
 filesave. the diff of a single file may contain several small diff chunks if
@@ -39,7 +106,6 @@ removals evict the diff from ringbuffer.queued and ringbuffer.chunks (note those
 chunks may have already been evicted for other reasons by the time we go to
 evict those chunks). perform the removals before the additions and add debug
 output for these operations
-
 
 DO NOT revert to using CLI git, that is forbidden. Review
 https://github.com/GitoxideLabs/gitoxide/blob/main/gix-diff/tests/diff/blob/unified_diff.rs
@@ -59,6 +125,9 @@ Our approach should be to simply save the most recent buffers we encounter by
 filename in the PluginState and then everytime BufWritePost is executed we
 compare all the files we have to what we've previously saved and calculate the
 diff based on that
+
+
+
 
 03. option to not predict while in comments
      - should ALLOW comment predictions immediately after 

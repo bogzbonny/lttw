@@ -4,11 +4,15 @@
 // It tracks diff chunks on file save (BufWritePost autocmd) and stores them in PluginState.
 // On each recalculation, it compares new vs old diff chunks and updates the ring buffer.
 
-use crate::{ring_buffer::Chunk, LttwResult};
-use gix_diff::blob::intern::InternedInput;
-use gix_diff::blob::unified_diff::{ConsumeBinaryHunk, ContextSize};
-use gix_diff::blob::{Algorithm, UnifiedDiff};
-use std::time::Instant;
+use {
+    crate::{ring_buffer::Chunk, LttwResult},
+    gix_diff::blob::{
+        intern::InternedInput,
+        unified_diff::{ConsumeBinaryHunk, ContextSize},
+        Algorithm, UnifiedDiff,
+    },
+    std::{collections::BTreeMap, time::Instant},
+};
 
 /// Represents a single diff chunk with metadata
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +94,11 @@ pub fn calculate_diff_between_contents(
     );
 
     let diff_output = gix_diff::blob::diff(Algorithm::Myers, &interner, unified)?;
+    let state = crate::get_state();
+    state.debug_manager.read().log(
+        "calculate_diff_between_contents",
+        format!("state {diff_output}"),
+    );
 
     // Parse the diff output to extract hunks
     // The output is a unified diff string
@@ -167,36 +176,21 @@ fn parse_hunk_info_from_diff(diff_lines: &[&str]) -> (u32, u32, u32, u32) {
 /// * `additions` - Chunks that are new (should be added to ringbuffer)
 /// * `removals` - Chunks that were removed (should be evicted from ringbuffer)
 pub fn evaluate_diff_changes(
-    new_chunks: &[DiffChunk],
-    old_chunks: &[DiffChunk],
+    new_chunks: &BTreeMap<usize, DiffChunk>,
+    old_chunks: &BTreeMap<usize, DiffChunk>,
 ) -> (Vec<DiffChunk>, Vec<DiffChunk>) {
-    // Create maps based on filepath for comparison
-    let old_by_filepath: std::collections::HashMap<String, &DiffChunk> =
-        old_chunks.iter().map(|c| (c.filepath.clone(), c)).collect();
-
-    let new_by_filepath: std::collections::HashMap<String, &DiffChunk> =
-        new_chunks.iter().map(|c| (c.filepath.clone(), c)).collect();
-
-    // Additions: in new but not in old (by filepath)
+    // Additions: in new but not in old
     let additions: Vec<DiffChunk> = new_chunks
         .iter()
-        .filter(|c| {
-            let old_chunk = old_by_filepath.get(&c.filepath);
-            // New if filepath is new OR content has changed
-            old_chunk.is_none() || old_chunk.map(|oc| oc.content != c.content).unwrap_or(false)
-        })
-        .cloned()
+        .filter(|(id, _)| !old_chunks.contains_key(id))
+        .map(|(_, chunk)| chunk.clone())
         .collect();
 
-    // Removals: in old but not in new (by filepath)
+    // Removals: in old but not in new
     let removals: Vec<DiffChunk> = old_chunks
         .iter()
-        .filter(|c| {
-            let new_chunk = new_by_filepath.get(&c.filepath);
-            // Removed if filepath no longer exists
-            new_chunk.is_none()
-        })
-        .cloned()
+        .filter(|(id, _)| !new_chunks.contains_key(id))
+        .map(|(_, chunk)| chunk.clone())
         .collect();
 
     (additions, removals)
@@ -273,15 +267,27 @@ mod tests {
     #[test]
     fn test_evaluate_diff_changes() {
         // Use from_hunk_data to create consistent IDs
-        let old_chunks = vec![
-            DiffChunk::from_hunk_data("file1.rs", 1, 1, 1, 1, "content1"),
-            DiffChunk::from_hunk_data("file2.rs", 2, 1, 2, 1, "content2"),
-        ];
+        let old_chunks: BTreeMap<usize, DiffChunk> = BTreeMap::from([
+            (
+                1,
+                DiffChunk::from_hunk_data("file1.rs", 1, 1, 1, 1, "content1"),
+            ),
+            (
+                2,
+                DiffChunk::from_hunk_data("file2.rs", 2, 1, 2, 1, "content2"),
+            ),
+        ]);
 
-        let new_chunks = vec![
-            DiffChunk::from_hunk_data("file1.rs", 1, 1, 1, 1, "content1"),
-            DiffChunk::from_hunk_data("file3.rs", 3, 1, 3, 1, "content3"),
-        ];
+        let new_chunks: BTreeMap<usize, DiffChunk> = BTreeMap::from([
+            (
+                1,
+                DiffChunk::from_hunk_data("file1.rs", 1, 1, 1, 1, "content1"),
+            ),
+            (
+                3,
+                DiffChunk::from_hunk_data("file3.rs", 3, 1, 3, 1, "content3"),
+            ),
+        ]);
 
         let (additions, removals) = evaluate_diff_changes(&new_chunks, &old_chunks);
 
@@ -312,6 +318,6 @@ mod tests {
         let chunks = calculate_diff_between_contents("test.rs", old, new);
         assert!(chunks.is_ok());
         // Should have at least one chunk
-        assert!(chunks.unwrap().len() >= 1);
+        assert!(!chunks.unwrap().is_empty());
     }
 }
