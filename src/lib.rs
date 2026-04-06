@@ -565,10 +565,16 @@ fn on_move() -> LttwResult<()> {
     let (pos_x, pos_y) = get_pos();
     let buf_id = get_current_buffer_id();
 
-    let allow_comment_pos = state.fim_state.read().get_allow_comment_fim_cur_pos();
-    if let Some((allowed_buf, allowed_x, allowed_y)) = allow_comment_pos
+    if let Some((allowed_buf, allowed_x, allowed_y)) =
+        state.fim_state.read().get_allow_comment_fim_cur_pos()
         && (buf_id != allowed_buf || pos_x != allowed_x || pos_y != allowed_y)
     {
+        state.debug_manager.read().log(
+            "on_move clearing allow_comment_fim_cur_pos",
+            format!(
+                "buf_id={buf_id}, pos_x={pos_x}, pos_y={pos_y}, allowed_buf={allowed_buf}, allowed_x={allowed_x}, allowed_y={allowed_y}",
+            ),
+        );
         state.fim_state.write().clear_allow_comment_fim_cur_pos();
     }
 

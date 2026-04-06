@@ -69,8 +69,7 @@ lua require('llama').setup()
    pick) NOTE that the ring scope should be larger if you increase this
  - adaptive debounce strategy for fast typing
  - ability to explicitly cap the limit number of concurrent FIM calls 
- - option to not run FIM while in code comments
-
+ - don't autocomplete while in code comments (option to turn that on)
 
 ## Alternatives Local Code Completion 
 

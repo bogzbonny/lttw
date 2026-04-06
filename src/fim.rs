@@ -25,7 +25,7 @@ use {
     std::time::{Duration, Instant},
 };
 
-/// FIM compl request
+/// FIM completion request
 #[derive(Debug, Clone, Serialize)]
 pub struct FimRequest {
     pub id_slot: i64,
