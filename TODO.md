@@ -25,15 +25,15 @@ dynamically change n_predict during each FIM call (number of tokens to predict)
 
 ^^^^^^^^^ DONE
 
+01. when debugging is disabled the lttw.log file is still created/cleared, this
+    shouldn't happen
+
 05. completion cycling
 New keymaps; use CTRL-j and CTRL-k from insert mode to cycle through the
 completions options. Now whenever we compile autocompletions from previous
 nearby autocompletions, we should keep a list of all the autocompletions
 (ordered from longest to shortest) and start by displaying the first FIM but
 then allow cycling through these
-
-01. when debugging is disabled the lttw.log file is still created/cleared, this
-    shouldn't happen
 
 05. regenerate
 New keymaps; Ctrl+l from insert move to regenerate the completion at the
@@ -141,6 +141,7 @@ diff based on that
 
 
 20. integrate definitions of all nearby objects 
+     - add to extra_input
      - Iterate through all the nearby words and to go-to-definition
      - use this vim command: https://neovim.io/doc/user/lsp/#lsp-buf
      - Can use treesitter [](https://neovim.io/doc/user/treesitter/#_treesitter-queries)

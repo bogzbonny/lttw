@@ -22,8 +22,10 @@ impl DebugManager {
     pub fn new_with_enabled(enabled: bool) -> Self {
         let log_file_path = Self::get_log_file_path();
 
-        // Clear the log file on startup
-        Self::clear_log_file(&log_file_path);
+        // Only clear the log file on startup if debug is enabled
+        if enabled {
+            Self::clear_log_file(&log_file_path);
+        }
 
         Self {
             log_file_path,
@@ -71,6 +73,9 @@ impl DebugManager {
 
     /// Clear the log file
     pub fn clear(&mut self) {
+        if !self.enabled {
+            return;
+        }
         Self::clear_log_file(&self.log_file_path);
     }
 
