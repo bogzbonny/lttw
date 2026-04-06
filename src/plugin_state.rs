@@ -59,7 +59,11 @@ pub struct PluginState {
     pub autocmd_id_filetype_check: Arc<RwLock<Option<u32>>>,
     pub ring_buffer_timer_handle: Arc<RwLock<RingBufferTimerHandle>>,
     pub ring_updating_active: Arc<AtomicBool>,
+
     pub allow_comment_fim: Arc<AtomicBool>, // Whether to allow FIM in comments (set before spawning async)
+    /// Cursor position after accepting a completion, used to allow FIM in comments
+    /// immediately after accepting code that may end in a comment
+    pub allow_comment_fim_cur_pos: Arc<RwLock<Option<(u64, usize, usize)>>>,
 
     // File content storage - stores the most recent content of each open buffer
     // Used for calculating diffs on file save
@@ -139,7 +143,10 @@ impl PluginState {
             autocmd_id_filetype_check: Arc::new(RwLock::new(None)),
             ring_buffer_timer_handle: Arc::new(RwLock::new(None)),
             ring_updating_active: Arc::new(AtomicBool::new(false)),
+
             allow_comment_fim: Arc::new(AtomicBool::new(false)),
+            allow_comment_fim_cur_pos: Arc::new(RwLock::new(None)),
+
             file_contents: Arc::new(RwLock::new(HashMap::new())),
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(RwLock::new(None)),
@@ -186,5 +193,18 @@ impl PluginState {
 
     pub fn get_cur_buffer_info(&self) -> CurrentBufferInfo {
         self.cur_buf_info.read().clone()
+    }
+
+    /// Set the allow comment FIM cursor position
+    pub fn set_allow_comment_fim_cur_pos(&self, buf_id: u64, pos_x: usize, pos_y: usize) {
+        *self.allow_comment_fim_cur_pos.write() = Some((buf_id, pos_x, pos_y));
+    }
+    /// Set the allow comment FIM cursor position
+    pub fn clear_allow_comment_fim_cur_pos(&self) {
+        *self.allow_comment_fim_cur_pos.write() = None;
+    }
+    /// Get the allow comment FIM cursor position
+    pub fn get_allow_comment_fim_cur_pos(&self) -> Option<(u64, usize, usize)> {
+        *self.allow_comment_fim_cur_pos.read()
     }
 }
