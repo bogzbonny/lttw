@@ -25,7 +25,7 @@ use {
     std::time::{Duration, Instant},
 };
 
-/// FIM completion request
+/// FIM compl request
 #[derive(Debug, Clone, Serialize)]
 pub struct FimRequest {
     pub id_slot: i64,
@@ -142,14 +142,14 @@ pub fn fim_try_hint(retry: Option<usize>) -> LttwResult<()> {
     if !in_insert_mode()? {
         return Ok(());
     }
-    fim_try_hint_inner(false, retry, true) // check_comment = true for normal FIM
+    fim_try_hint_inner(false, retry) // check_comment = true for normal FIM
 }
 
 pub fn fim_try_hint_skip_debounce() -> LttwResult<()> {
     if !in_insert_mode()? {
         return Ok(());
     }
-    fim_try_hint_inner(true, None, true) // check_comment = true for skip_debounce
+    fim_try_hint_inner(true, None) // check_comment = true for skip_debounce
 }
 
 /// Try to generate a suggestion using the data in the cache
@@ -166,11 +166,9 @@ pub fn fim_try_hint_skip_debounce() -> LttwResult<()> {
 /// # Arguments
 /// * `skip_debounce` - whether to skip the debounce check
 /// * `retry` - retry number for speculative FIM
-/// * `check_comment` - whether to check if cursor is in a comment (for non-speculative calls)
 pub fn fim_try_hint_inner(
     skip_debounce: bool,
     retry: Option<usize>, // retry number
-    check_comment: bool,  // whether to check if cursor is in a comment
 ) -> LttwResult<()> {
     // filetype failsafe
     if !should_be_enabled() {
@@ -183,39 +181,29 @@ pub fn fim_try_hint_inner(
     let state = get_state();
     let lines = get_buf_lines(..);
     let buffer_id = get_current_buffer_id();
+    let no_fim_in_comments = state.config.read().no_fim_in_comments;
+    state
+        .debug_manager
+        .read()
+        .log("no_fim_in_comments", no_fim_in_comments);
 
-    // Determine if we should skip FIM in comments
-    // Note: is_in_comment() must be called on the main thread, before spawning async workers
-    let mut skip_fim_in_comment = false;
     #[allow(clippy::collapsible_if)]
-    if check_comment {
+    if no_fim_in_comments {
+        let at_eol = lines.get(pos_y).is_some_and(|line| pos_x == line.len());
         if let Some((allowed_buf, allowed_x, allowed_y)) =
             state.fim_state.read().get_allow_comment_fim_cur_pos()
-            && (allowed_buf != buffer_id || allowed_x != pos_x || allowed_y != pos_y)
+            && (allowed_buf == buffer_id && allowed_x == pos_x && allowed_y == pos_y)
         {
-            let no_fim_in_comments = state.config.read().no_fim_in_comments;
-            if no_fim_in_comments {
-                // Call is_in_comment() here on the main thread (not in async context)
-                let is_in_comment_flag = is_in_comment(pos_x, pos_y).unwrap_or(false);
-
-                if is_in_comment_flag {
-                    state
-                        .debug_manager
-                        .read()
-                        .log("fim_try_hint_inner", "Cursor is in a comment");
-                    skip_fim_in_comment = true
-                }
-            }
+            // comments FIM allowed at this position, continue with FIM
+            //
+        } else if is_in_comment(&state, pos_x, pos_y, at_eol).unwrap_or(false) {
+            state
+                .debug_manager
+                .read()
+                .log("fim_try_hint_inner", "Skipping FIM in comment");
+            return Ok(());
         }
     };
-
-    if skip_fim_in_comment {
-        state
-            .debug_manager
-            .read()
-            .log("fim_try_hint_inner", "Skipping FIM in comment");
-        return Ok(());
-    }
 
     // first things first, increment the seq at the beginning to indicate to any waiting
     // fim_workers in the debounce period that there is a new show in town (so don't start!).

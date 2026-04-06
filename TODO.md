@@ -34,6 +34,9 @@ nearby autocompletions, we should keep a list of all the autocompletions
 (ordered from longest to shortest) and start by displaying the first FIM but
 then allow cycling through these
 
+01. when debugging is disabled the lttw.log file is still created/cleared, this
+    shouldn't happen
+
 05. regenerate
 New keymaps; Ctrl+l from insert move to regenerate the completion at the
 location. NOTE add this to the list of completions at this location, so one can

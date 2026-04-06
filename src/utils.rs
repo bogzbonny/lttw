@@ -3,7 +3,7 @@
 // This module provides various utility functions used throughout the plugin.
 
 use {
-    crate::{get_state, plugin_state::CurrentBufferInfo, LttwResult},
+    crate::{get_state, plugin_state::CurrentBufferInfo, plugin_state::PluginState, LttwResult},
     ahash::AHasher,
     nvim_oxi::{
         api::{
@@ -262,14 +262,28 @@ pub fn get_current_filetype() -> LttwResult<String> {
 
 /// Check if cursor is in a comment
 /// Uses synID() and synIDattr() to determine syntax group under cursor
-pub fn is_in_comment(pos_x: usize, pos_y: usize) -> LttwResult<bool> {
+/// if at eol then we must check the previous character
+pub fn is_in_comment(
+    state: &PluginState,
+    mut pos_x: usize,
+    pos_y: usize,
+    at_eol: bool,
+) -> LttwResult<bool> {
     assert_not_tokio_worker();
 
+    if at_eol && pos_x > 0 {
+        // Check previous character if at end of line
+        pos_x -= 1;
+    }
+
     // synID() - get syntax ID at position
-    // Arguments: winid (0 for current), row (1-indexed), col (1-indexed), trans (0 for false)
+    // Arguments: row (1-indexed), col (1-indexed), trans (0 for false)
     let syn_id_result: i64 =
-        api::call_function("synID", (0_i64, pos_y as i64 + 1, pos_x as i64 + 1, 0_i64))
-            .unwrap_or(0);
+        api::call_function("synID", (pos_y as i64 + 1, pos_x as i64 + 1, 0i64)).unwrap_or(0);
+    state
+        .debug_manager
+        .read()
+        .log("is_in_comment syn_id_result", syn_id_result);
 
     if syn_id_result == 0 {
         // No syntax ID found at this position
@@ -280,12 +294,21 @@ pub fn is_in_comment(pos_x: usize, pos_y: usize) -> LttwResult<bool> {
     // Get the name of the syntax group
     let syn_name: String =
         api::call_function("synIDattr", (syn_id_result, "name")).unwrap_or_default();
+    state
+        .debug_manager
+        .read()
+        .log("is_in_comment syn_name", &syn_name);
 
     // Check if the syntax name indicates a comment
     // Common comment syntax names: Comment, cComment, cppComment, htmlComment, etc.
     let is_comment = syn_name.starts_with("Comment")
         || syn_name.contains("comment")
         || syn_name.contains("Comment");
+
+    state
+        .debug_manager
+        .read()
+        .log("is_in_comment", "Skipping FIM in comment");
 
     Ok(is_comment)
 }
