@@ -60,6 +60,9 @@ pub struct LttwConfig {
     pub keymap_inst_accept: String,
     pub keymap_inst_cancel: String,
 
+    // Diff tracking configuration
+    pub diff_tracking_enabled: bool,
+
     // Startup configuration
     pub enable_at_startup: bool,
     pub debug_enabled_at_startup: bool,
@@ -102,6 +105,7 @@ impl Default for LttwConfig {
             keymap_inst_continue: "<leader>llc".to_string(),
             keymap_inst_accept: "<Tab>".to_string(),
             keymap_inst_cancel: "<Esc>".to_string(),
+            diff_tracking_enabled: false,
             enable_at_startup: true,
             debug_enabled_at_startup: false,
             disabled_filetypes: Vec::new(),
@@ -253,6 +257,11 @@ impl LttwConfig {
             config.stop_strings = v;
         }
 
+        // Override bool fields
+        if let Some(v) = get_bool("diff_tracking_enabled") {
+            config.diff_tracking_enabled = v;
+        }
+
         // Handle deprecated key names (rename old keys to new ones)
         if let Some(v) = get_string("endpoint") {
             config.endpoint_fim = v;
@@ -350,5 +359,6 @@ mod tests {
         assert_eq!(config.n_suffix, 64);
         assert_eq!(config.n_predict, 128);
         assert!(config.auto_fim);
+        assert!(!config.diff_tracking_enabled);
     }
 }

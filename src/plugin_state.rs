@@ -1,15 +1,14 @@
 use {
     crate::{
-        cache, config, debug, diff_chunk, instruction::InstructionRequestState, ring_buffer, Error,
+        cache, config, debug, instruction::InstructionRequestState, ring_buffer, Error,
         FimCompletionMessage, FimState, LttwResult,
     },
     ahash::{HashMap, HashMapExt},
     nvim_oxi::api::create_namespace,
     parking_lot::RwLock,
     std::{
-        collections::BTreeMap,
         sync::{
-            atomic::{AtomicBool, AtomicI64, AtomicUsize},
+            atomic::{AtomicBool, AtomicI64},
             Arc, OnceLock,
         },
         time::Instant,
@@ -60,13 +59,11 @@ pub struct PluginState {
     pub autocmd_id_filetype_check: Arc<RwLock<Option<u32>>>,
     pub ring_buffer_timer_handle: Arc<RwLock<RingBufferTimerHandle>>,
     pub ring_updating_active: Arc<AtomicBool>,
-    // Next sequential id for diff chunks
-    pub next_diff_chunk_id: Arc<AtomicUsize>,
-    // Diff chunks storage - stores all diff chunks from file saves
-    pub diff_chunks: Arc<RwLock<BTreeMap<usize, diff_chunk::DiffChunk>>>,
+
     // File content storage - stores the most recent content of each open buffer
     // Used for calculating diffs on file save
     pub file_contents: Arc<RwLock<HashMap<String, String>>>,
+
     // FIM completion channel for async worker communication
     pub fim_completion_tx: Arc<RwLock<Option<mpsc::Sender<FimCompletionMessage>>>>,
     // Pending display queue - holds messages waiting to be rendered on main thread
@@ -139,8 +136,6 @@ impl PluginState {
             autocmd_id_filetype_check: Arc::new(RwLock::new(None)),
             ring_buffer_timer_handle: Arc::new(RwLock::new(None)),
             ring_updating_active: Arc::new(AtomicBool::new(false)),
-            next_diff_chunk_id: Arc::new(AtomicUsize::new(0)),
-            diff_chunks: Arc::new(RwLock::new(BTreeMap::new())),
             file_contents: Arc::new(RwLock::new(HashMap::new())),
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(RwLock::new(None)),

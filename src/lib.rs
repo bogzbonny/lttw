@@ -22,7 +22,7 @@ pub use error::{Error, LttwResult};
 
 use {
     context::LocalContext,
-    diff_chunk::{calculate_diff_between_contents, evaluate_diff_changes, log_diff_operations},
+    diff_chunk::calculate_diff_between_contents,
     fim::{
         fim_try_hint, fim_try_hint_skip_debounce, render_fim_suggestion, FimAcceptType, FimTimings,
     },
@@ -602,11 +602,13 @@ fn on_buf_enter_gather_chunks() -> LttwResult<()> {
         let mut ring_buffer_lock = state.ring_buffer.write();
         ring_buffer_lock.pick_chunk(&state, &lines, filename.clone(), false, true)?;
 
-        // Track file content for future diff comparison
-        let content = lines.join("\n");
-        {
-            let mut file_contents_lock = state.file_contents.write();
-            file_contents_lock.insert(filename.clone(), content);
+        // Track file content for future diff comparison if diff tracking is enabled
+        if state.config.read().diff_tracking_enabled {
+            let content = lines.join("\n");
+            {
+                let mut file_contents_lock = state.file_contents.write();
+                file_contents_lock.insert(filename.clone(), content);
+            }
         }
     }
 
@@ -627,11 +629,13 @@ fn on_buf_leave() -> LttwResult<()> {
             format!("Leaving buffer with {} lines: {}", lines.len(), filename),
         );
 
-        // Track file content for future diff comparison
-        let content = lines.join("\n");
-        {
-            let mut file_contents_lock = state.file_contents.write();
-            file_contents_lock.insert(filename.clone(), content);
+        // Track file content for future diff comparison if diff tracking is enabled
+        if state.config.read().diff_tracking_enabled {
+            let content = lines.join("\n");
+            {
+                let mut file_contents_lock = state.file_contents.write();
+                file_contents_lock.insert(filename.clone(), content);
+            }
         }
 
         // Pick chunk from buffer
@@ -660,260 +664,63 @@ fn on_buf_write_post() -> LttwResult<()> {
         let mut ring_buffer_lock = state.ring_buffer.write();
         ring_buffer_lock.pick_chunk(&state, &lines, filename.clone(), false, true)?;
 
-        // Convert lines to string for diff comparison
-        let new_content = lines.join("\n");
+        // Track file content for future diff comparison if diff tracking is enabled
+        if state.config.read().diff_tracking_enabled {
+            // Convert lines to string for diff comparison
+            let new_content = lines.join("\n");
 
-        // Get saved content for this file
-        let mut diff_chunks = {
-            let old_content = state.file_contents.read().get(&filename).cloned();
+            // Get saved content for this file
+            let diff_chunks = {
+                let old_content = state.file_contents.read().get(&filename).cloned();
 
-            // Calculate diff between saved content and current content
-            if let Some(ref old_content) = old_content {
-                calculate_diff_between_contents(&filename, old_content, &new_content)?
-            } else {
-                // No previous content - return empty
-                Vec::new()
-            }
-        };
-
-        // Save the current file content for future diff comparison
-        state
-            .file_contents
-            .write()
-            .insert(filename.clone(), new_content);
-
-        state
-            .debug_manager
-            .read()
-            .log("diff_chunks", format!("diff_chunks: {:#?}", diff_chunks));
-
-        // Process diff chunks
-        if !diff_chunks.is_empty() {
-            // Assign sequential IDs to new chunks and evaluate changes
-            let (additions, removals) = {
-                let mut old_chunks = &*state.diff_chunks.read();
-
-                // Assign sequential IDs to new chunks
-                let mut next_id = state
-                    .next_diff_chunk_id
-                    .load(std::sync::atomic::Ordering::SeqCst);
-                for chunk in &mut diff_chunks {
-                    // Check if this filepath was in old chunks
-                    let was_in_old = old_chunks.iter().any(|c| c.filepath == chunk.filepath);
-                    if was_in_old {
-                        // Find the old chunk for this filepath and reuse its id if content unchanged
-                        let mut found = false;
-                        for old_chunk in &old_chunks {
-                            if old_chunk.filepath == chunk.filepath
-                                && old_chunk.content == chunk.content
-                            {
-                                // Content unchanged - reuse old id
-                                chunk.id = old_chunk.id;
-                                found = true;
-                                break;
-                            }
-                        }
-                        if !found && chunk.id == 0 {
-                            // Content changed - assign new id
-                            chunk.id = next_id;
-                            next_id += 1;
-                        }
-                    } else {
-                        // New filepath - assign new id
-                        chunk.id = next_id;
-                        next_id += 1;
-                    }
+                // Calculate diff between saved content and current content
+                if let Some(ref old_content) = old_content {
+                    calculate_diff_between_contents(&filename, old_content, &new_content)?
+                } else {
+                    // No previous content - return empty
+                    Vec::new()
                 }
-                state
-                    .next_diff_chunk_id
-                    .store(next_id, std::sync::atomic::Ordering::SeqCst);
-
-                // Evaluate changes
-                let (additions, removals) = evaluate_diff_changes(&diff_chunks, &old_chunks);
-
-                // Log operations for debugging
-                log_diff_operations(&state.debug_manager.read(), &additions, &removals);
-
-                // Update stored chunks
-                *old_chunks_lock = diff_chunks;
-
-                (additions, removals)
             };
 
-            // Apply changes to ring buffer in a separate locked section
-            let mut ring_buffer_lock = state.ring_buffer.write();
+            // Save the current file content for future diff comparison
+            state
+                .file_contents
+                .write()
+                .insert(filename.clone(), new_content);
 
-            // Perform removals first (as per requirements)
-            for chunk in &removals {
-                // Evict chunks by id from both queued and ring
-                ring_buffer_lock.evict_by_id(chunk.id);
-                state.debug_manager.read().log(
-                    "diff_chunk_evicted",
-                    format!("Evicted from buffer: {} (id: {})", chunk.filepath, chunk.id),
-                );
-            }
+            state
+                .debug_manager
+                .read()
+                .log("diff_chunks", format!("diff_chunks: {:#?}", diff_chunks));
 
-            // Perform additions (after removals)
-            for chunk in &additions {
-                let ring_chunk = chunk.to_ring_chunk();
-                ring_buffer_lock.queued.push(ring_chunk);
-                state.debug_manager.read().log(
-                    "diff_chunk_added",
-                    format!("Added to queued: {} (id: {})", chunk.filepath, chunk.id),
-                );
-            }
-        }
-    } else {
-        // Small file - just track content
-        let filename = get_buf_filename().unwrap_or_default();
-        let new_content = lines.join("\n");
-        state
-            .file_contents
-            .write()
-            .insert(filename.clone(), new_content);
-    }
+            // Process diff chunks
+            if !diff_chunks.is_empty() {
+                // Assign sequential IDs to new chunks and evaluate changes
 
-    Ok(())
-}
+                // Apply changes to ring buffer in a separate locked section
+                let mut ring_buffer_lock = state.ring_buffer.write();
 
-/// Evaluate all repository diffs and update ring buffer
-///
-/// This function:
-/// 1. Calculates all diff chunks by comparing saved file contents with current buffer contents
-/// 2. Compares with previously stored chunks
-/// 3. Assigns unique sequential IDs to new/changed chunks
-/// 4. Adds new chunks to ringbuffer.queued (additions)
-/// 5. Removes chunks from ringbuffer by id (removals)
-/// 6. Updates stored chunks in PluginState
-///
-/// NOTE: This function avoids holding multiple locks simultaneously to prevent deadlocks.
-/// It performs calculations first, then applies changes in separate locked sections.
-///
-/// NOTE: This function is called when evaluating diffs on demand (e.g., from a command).
-/// The on_buf_write_post function handles diffs on file save.
-#[allow(dead_code)]
-fn evaluate_all_repo_diffs() -> LttwResult<()> {
-    let state = get_state();
-
-    // Phase 1: Calculate new chunks from current buffer contents
-    let mut new_chunks = Vec::new();
-
-    // Get all file contents from the file_contents map (these are the buffers we're tracking)
-    {
-        let file_contents_lock = state.file_contents.read();
-        let old_chunks_lock = state.diff_chunks.read();
-        let old_chunks: Vec<diff_chunk::DiffChunk> = old_chunks_lock.clone();
-
-        for (filepath, current_content) in file_contents_lock.iter() {
-            // Get the saved content (if any)
-            let saved_content = file_contents_lock.get(filepath);
-
-            if let Some(saved) = saved_content {
-                // Calculate diff between saved content and current content
-                match calculate_diff_between_contents(filepath, saved, current_content) {
-                    Ok(mut diff_chunks) => {
-                        // Assign IDs to new chunks
-                        let mut next_id = state
-                            .next_diff_chunk_id
-                            .load(std::sync::atomic::Ordering::SeqCst);
-                        for chunk in &mut diff_chunks {
-                            // Check if this filepath was in old chunks
-                            let was_in_old =
-                                old_chunks.iter().any(|c| c.filepath == chunk.filepath);
-                            if was_in_old {
-                                // Find the old chunk for this filepath and reuse its id if content unchanged
-                                let mut found = false;
-                                for old_chunk in &old_chunks {
-                                    if old_chunk.filepath == chunk.filepath
-                                        && old_chunk.content == chunk.content
-                                    {
-                                        // Content unchanged - reuse old id
-                                        chunk.id = old_chunk.id;
-                                        found = true;
-                                        break;
-                                    }
-                                }
-                                if !found && chunk.id == 0 {
-                                    // Content changed - assign new id
-                                    chunk.id = next_id;
-                                    next_id += 1;
-                                }
-                            } else {
-                                // New filepath - assign new id
-                                chunk.id = next_id;
-                                next_id += 1;
-                            }
-                        }
-                        state
-                            .next_diff_chunk_id
-                            .store(next_id, std::sync::atomic::Ordering::SeqCst);
-
-                        new_chunks.extend(diff_chunks);
-                    }
-                    Err(e) => {
-                        state.debug_manager.read().log(
-                            "calculate_diff_error",
-                            format!("Failed to calculate diff for {}: {}", filepath, e),
-                        );
-                    }
+                // Perform additions (after removals)
+                // TODO delete old intersecting chunks too
+                for chunk in &diff_chunks {
+                    let ring_chunk = chunk.to_ring_chunk();
+                    ring_buffer_lock.queued.push(ring_chunk);
+                    state.debug_manager.read().log(
+                        "diff_chunk_added",
+                        format!("Added to queued: {} (id: {})", chunk.filepath, chunk.id),
+                    );
                 }
             }
+        } else {
+            // Small file or diff tracking disabled - just track content if enabled
+            let filename = get_buf_filename().unwrap_or_default();
+            let new_content = lines.join("\n");
+            state
+                .file_contents
+                .write()
+                .insert(filename.clone(), new_content);
         }
     }
-
-    // Phase 2: Evaluate changes
-    let (additions, removals) = {
-        let mut new_chunks_lock = state.diff_chunks.write();
-        let old_chunks: Vec<diff_chunk::DiffChunk> = new_chunks_lock.clone();
-
-        // Evaluate changes
-        let (additions, removals) = evaluate_diff_changes(&new_chunks, &old_chunks);
-
-        // Log operations for debugging
-        log_diff_operations(&state.debug_manager.read(), &additions, &removals);
-
-        // Update stored chunks
-        *new_chunks_lock = new_chunks;
-
-        (additions, removals)
-    };
-
-    // Phase 3: Apply changes to ring buffer (separate locked section)
-    {
-        let mut ring_buffer_lock = state.ring_buffer.write();
-
-        // Perform removals first (as per requirements)
-        for chunk in &removals {
-            // Evict chunks by id from both queued and ring
-            ring_buffer_lock.evict_by_id(chunk.id);
-            state.debug_manager.read().log(
-                "diff_chunk_evicted",
-                format!("Evicted from buffer: {} (id: {})", chunk.filepath, chunk.id),
-            );
-        }
-
-        // Perform additions (after removals)
-        for chunk in &additions {
-            let ring_chunk = chunk.to_ring_chunk();
-            ring_buffer_lock.queued.push(ring_chunk);
-            state.debug_manager.read().log(
-                "diff_chunk_added",
-                format!("Added to queued: {} (id: {})", chunk.filepath, chunk.id),
-            );
-        }
-    }
-
-    // Log summary
-    let chunk_count = state.diff_chunks.read().len();
-    state.debug_manager.read().log(
-        "evaluate_all_repo_diffs",
-        format!(
-            "Evaluated {} chunks ({} additions, {} removals)",
-            chunk_count,
-            additions.len(),
-            removals.len()
-        ),
-    );
 
     Ok(())
 }

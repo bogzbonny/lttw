@@ -112,18 +112,26 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
     .unwrap_or(0);
     ids.push(id);
 
-    // Buffer write for ring buffer
-    let id = create_autocmd(
-        ["BufWritePost"],
-        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .callback(|_| {
-                let _ = on_buf_write_post();
-                false
-            })
-            .build(),
-    )
-    .unwrap_or(0);
-    ids.push(id);
+    let state = get_state();
+
+    // Buffer write for ring buffer (only if diff tracking is enabled)
+    if state.config.read().diff_tracking_enabled {
+        state
+            .debug_manager
+            .read()
+            .log("registering bufwritepost autocmd", "");
+        let id = create_autocmd(
+            ["BufWritePost"],
+            &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+                .callback(|_| {
+                    let _ = on_buf_write_post();
+                    false
+                })
+                .build(),
+        )
+        .unwrap_or(0);
+        ids.push(id);
+    }
 
     // InsertLeave - hide FIM hint when leaving Insert mode
     let id = create_autocmd(

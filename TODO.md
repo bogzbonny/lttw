@@ -11,10 +11,9 @@
     empty line) then discard that from the prediction... seems janky when it
     shows up
      - I think the tail reduction already trims the final whitespace
+03. optionize the git diff functionality
 
 ^^^^^^^^^ DONE
-
-03. optionize the git diff functionality
 
 03. RING BUFFER UPDATES
      - pick_chunk_inner: 
