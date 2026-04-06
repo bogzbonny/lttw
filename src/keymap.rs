@@ -1,5 +1,7 @@
 use {
-    crate::{LttwResult, fim::FimAcceptType, fim_accept, get_state},
+    crate::{
+        fim::FimAcceptType, fim_accept, fim_cycle_next, fim_cycle_prev, get_state, LttwResult,
+    },
     nvim_oxi::api::{del_keymap, opts::SetKeymapOptsBuilder, set_keymap, types::Mode},
 };
 
@@ -73,6 +75,44 @@ pub fn setup_keymaps() -> LttwResult<()> {
             .build(),
     );
 
+    // FIM cycle next (CTRL-j) - cycle through completion options
+    let _ = set_keymap(
+        Mode::Insert,
+        "<C-j>",
+        "",
+        &SetKeymapOptsBuilder::default()
+            .callback(|_| {
+                if let Err(e) = fim_cycle_next() {
+                    // Log error but don't crash
+                    let state = get_state();
+                    state.debug_manager.read().log(
+                        "LttwFimCycleNext",
+                        format!("Error cycling to next FIM: {:?}", e),
+                    );
+                }
+            })
+            .build(),
+    );
+
+    // FIM cycle previous (CTRL-k) - cycle through completion options
+    let _ = set_keymap(
+        Mode::Insert,
+        "<C-k>",
+        "",
+        &SetKeymapOptsBuilder::default()
+            .callback(|_| {
+                if let Err(e) = fim_cycle_prev() {
+                    // Log error but don't crash
+                    let state = get_state();
+                    state.debug_manager.read().log(
+                        "LttwFimCyclePrev",
+                        format!("Error cycling to previous FIM: {:?}", e),
+                    );
+                }
+            })
+            .build(),
+    );
+
     Ok(())
 }
 
@@ -121,6 +161,8 @@ pub fn remove_keymaps() -> LttwResult<()> {
     let _ = del_keymap(Mode::Insert, "<Tab>");
     let _ = del_keymap(Mode::Insert, "<Esc>");
     let _ = del_keymap(Mode::Insert, "<S-Tab>");
+    let _ = del_keymap(Mode::Insert, "<C-j>");
+    let _ = del_keymap(Mode::Insert, "<C-k>");
 
     Ok(())
 }

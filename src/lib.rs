@@ -24,7 +24,7 @@ use {
     context::LocalContext,
     diff_chunk::calculate_diff_between_contents,
     fim::{
-        FimAcceptType, FimTimings, fim_try_hint, fim_try_hint_skip_debounce, render_fim_suggestion,
+        FimAcceptType, FimTimings, fim_cycle_next, fim_cycle_prev, fim_try_hint, fim_try_hint_skip_debounce, render_fim_suggestion,
     },
     nvim_oxi::{Dictionary, Function},
     plugin_state::{get_state, init_state},
@@ -143,6 +143,7 @@ pub struct FimState {
 
 impl FimState {
     #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)]
     fn update(
         &mut self,
         hint_shown: bool,
@@ -159,6 +160,9 @@ impl FimState {
         self.content.clear();
         self.content = content;
         self.timings = timings;
+        // Reset completion cycle when a new completion is shown
+        self.completion_cycle.clear();
+        self.completion_index = 0;
     }
 
     fn clear(&mut self) {
@@ -169,6 +173,8 @@ impl FimState {
         self.content.clear();
         self.last_pick_buf_id_pos_y = None;
         self.timings = None;
+        self.completion_cycle.clear();
+        self.completion_index = 0;
     }
 
     /// Update the last pick position
@@ -178,6 +184,44 @@ impl FimState {
     /// Get the last pick position
     fn get_last_pick_buf_id_pos_y(&self) -> Option<(u64, usize)> {
         self.last_pick_buf_id_pos_y
+    }
+    /// Set the completion cycle list
+    fn set_completion_cycle(&mut self, completions: Vec<String>) {
+        self.completion_cycle = completions;
+        self.completion_index = 0;
+    }
+    /// Get the current completion from cycle
+    #[allow(dead_code)]
+    fn get_current_completion(&self) -> Option<&String> {
+        if self.completion_cycle.is_empty() {
+            return None;
+        }
+        Some(&self.completion_cycle[self.completion_index])
+    }
+    /// Cycle to next completion
+    fn cycle_next(&mut self) -> Option<&String> {
+        if self.completion_cycle.is_empty() {
+            return None;
+        }
+        self.completion_index = (self.completion_index + 1) % self.completion_cycle.len();
+        Some(&self.completion_cycle[self.completion_index])
+    }
+    /// Cycle to previous completion
+    fn cycle_prev(&mut self) -> Option<&String> {
+        if self.completion_cycle.is_empty() {
+            return None;
+        }
+        self.completion_index = if self.completion_index == 0 {
+            self.completion_cycle.len() - 1
+        } else {
+            self.completion_index - 1
+        };
+        Some(&self.completion_cycle[self.completion_index])
+    }
+    /// Get completion cycle length
+    #[allow(dead_code)]
+    fn completion_cycle_len(&self) -> usize {
+        self.completion_cycle.len()
     }
 }
 
