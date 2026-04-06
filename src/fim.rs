@@ -680,8 +680,6 @@ pub async fn fim_completion(
     // Thinking; this seems like a reasonable time to queue up more chunks, only if it is
     // significant enought that we want to generate a FIM do we also want to add some more context
     // to the ring buffer.
-    //
-    // TODO option to allow picking more than one chunk from the scope here
     let do_ring_buffer_pick = if let Some((last_buf_id, last_y)) = last_pick {
         last_buf_id != buffer_id || (pos_y as i64 - last_y as i64).abs() > 32
     } else {
@@ -690,31 +688,53 @@ pub async fn fim_completion(
 
     if do_ring_buffer_pick {
         // Get ring configuration
-        let (ring_scope, n_prefix, n_suffix, ring_chunk_size) = {
+        let (ring_scope, n_prefix, n_suffix, ring_chunk_size, ring_n_picks) = {
             let config = state_.config.read();
             (
                 config.ring_scope as usize,
                 config.n_prefix as usize,
                 config.n_suffix as usize,
                 config.ring_chunk_size as usize,
+                config.ring_n_picks as usize,
             )
         };
 
         let max_y = lines.len() - 1;
+
+        // Pick chunks from prefix scope - loop based on ring_n_picks
         let prefix_start = pos_y.saturating_sub(ring_scope).min(max_y);
         let prefix_end = pos_y.saturating_sub(n_prefix).min(max_y);
         let prefix_lines = &lines[prefix_start..=prefix_end];
         if !prefix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
-            ring_buffer_lock.pick_chunk(&state_, prefix_lines, filename.clone())?;
+            for _ in 0..ring_n_picks {
+                if let Err(e) = ring_buffer_lock.pick_chunk(&state_, prefix_lines, filename.clone())
+                {
+                    // Log error but continue with other picks
+                    state_
+                        .debug_manager
+                        .read()
+                        .log("pick_chunk", format!("Error picking prefix chunk: {}", e));
+                }
+            }
         }
 
+        // Pick chunks from suffix scope - loop based on ring_n_picks
         let suffix_start = (pos_y + n_suffix).min(max_y);
         let suffix_end = (pos_y + n_suffix + ring_chunk_size).min(max_y);
         let suffix_lines = &lines[suffix_start..=suffix_end];
         if !suffix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
-            ring_buffer_lock.pick_chunk(&state_, suffix_lines, filename)?;
+            for _ in 0..ring_n_picks {
+                if let Err(e) = ring_buffer_lock.pick_chunk(&state_, suffix_lines, filename.clone())
+                {
+                    // Log error but continue with other picks
+                    state_
+                        .debug_manager
+                        .read()
+                        .log("pick_chunk", format!("Error picking suffix chunk: {}", e));
+                }
+            }
         }
 
         // Update the last pick position

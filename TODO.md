@@ -1,3 +1,5 @@
+10. fim_completion, option to pick more
+       // TODO option to allow picking more than one chunk from the scope here
 
 ^^^^^^^^^ DONE
 
@@ -64,40 +66,22 @@ diff based on that
 
 
 03. option to not predict while in comments
-     - should ALLOW comment predictions immediately after 
-       accepting a code completion, because the code completion 
-       may end in a comment, and if that's the case then we want to allow for 
-       further code completions
-Use the synID() and synIDattr() functions to check the syntax ID under the cursor:
-function! IsInComment()
-  let l:syn_id = synID(line('.'), col('.'), 1)
-  let l:syn_name = synIDattr(l:syn_id, 'name')
-  return l:syn_name =~? '^comment$'
-endfunction
 
-05. integrate in LSP diagnostics into input_prefix (?)
-     - because the diagnostics are per-line and are likely not to get reused
-       then adding them to the beginning of input prefix is likely the best
-       strategy... 
-       - NOTE If we added them as the final input_extra entry then they would
-         get priority positioning, but if we removed it on the next cache call
-         then it would break the caching mechanism and all subsiquent calls
-         would recalculate all the cached entries (which would not have had to
-         happen if we never removed this input_extra).
+Add an new feature which prevents FIM prediction while in comments 
+ - new config option no_fim_in_comments (default true)
+ - Use the synID() and synIDattr() functions to check the syntax ID under the cursor:
+   - need to use equivalent within nvim_oxi
+ - should however ALLOW comment predictions immediately after accepting a code
+   completion, because the code completion may end in a comment, and if that's
+   the case then we want to allow for further code completions
+ - everytime a completion is accepted, update a new plugin state
+   allow_comment_fim_cur_pos (Option<>) which contains the final cursor position which
+   the accept function moves the cursor to upon accepting a completion. Whenever
+   checking against code comments, ignore checking if we're in a code comment if
+   this value is set. Everytime the on_move function is triggered, check the
+   cursor pos, if the cursor pos is different from allow_comment_fim_cur_pos
+   then set allow_comment_fim_cur_pos to None.
 
-       - HOWEVER the issue with adding it to the input_prefix, is that the
-         content CAN ACTUALLY GET TRUNCATED once it reaches llama.cpp which
-         truncates this information to fit within a batch size (for prefix and
-         suffix lines) -> We could risk it and try and add it to the prefix but
-         then make n_prefix small so that hopefully it doesn't truncate the
-         diagostic information. 
-
-       - could experiment with re-adding in the token "<FIM_PRE>" after the
-         diagnostic information is provided.. might be a problem though
-       - Caching: Your diagnostic would be cached and reused across requests,
-         potentially contaminating future completions
-     - Use autocmd and keep our own map 
-     - https://neovim.io/doc/user/diagnostic/#diagnostic-events
 
 
 05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
@@ -115,16 +99,28 @@ endfunction
      - OPTION ONCE no more errors, go to the next file with errors in a new tab
 
 ------------------------
+05. Ctrl+l to regenerate the completion at the location. NOTE add this to the
+    list of completions at this location, so one can cycle back through them if
+    necessary 
+
+05. use CTRL-j and CTRL-k from insert mode to cycle through the completions
+    options
 
 05. integrate in LSP Completions into input_prefix (?)
-     - suppliment the llm completions with suggestions from the LSP completions
+     - probably add a mini lag for these completions like 100ms so we're not
+       generating them unnecessarily. 
+        - automatically put the llm completion if the user hasn't moved up or
+          down through the completions - HOWEVER if the user has moved up or
+          down through the completions, then add the completion as the next on
+          the list from whatever the users current position is in the
+          completions list
+     - supplement the llm completions with suggestions from the LSP completions
      - MAYBE also just provide the LSP completion as an option immediately until
        the LLM response comes in. I noticed with ALE (from insert mode go C-X
        then C-O) it gives a suggestion with a `...` in it which is probably
-       where the cursor should just be inserted if the completion is accepted.
-
-10. fim_completion, option to pick more
-       // TODO option to allow picking more than one chunk from the scope here
+       where the cursor should just be inserted if the completion is accepted
+       (removing the ... keeping it in insert mode THUS triggering the next
+       completion).
 
 10. integrate definitions of all nearby objects 
      - Iterate through all the nearby words and to go-to-definition

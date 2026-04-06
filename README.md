@@ -63,8 +63,13 @@ lua require('llama').setup()
  - process ring buffer queue from most recent updates to oldest (instead of oldest to newest)
  - continious ring buffer updating (when in normal mode/ inactive) instead of
    just capping it at 1 chunk per second
+ - picking ring buffer chunks to the queue doesn't evict similar chunks from the live buffer
+   (only once that queue entry is added to the live buffer will this occur)  
+ - param to pick more from the FIM scope after fim (instead of limited to 1
+   pick) NOTE that the ring scope should be larger if you increase this
  - adaptive debounce strategy for fast typing
- - explicit ability to limit number of concurrent FIM calls 
+ - ability to explicitly cap the limit number of concurrent FIM calls 
+ - option to not run FIM while in code comments
 
 
 ## Alternatives Local Code Completion 

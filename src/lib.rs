@@ -707,7 +707,7 @@ fn on_buf_write_post() -> LttwResult<()> {
                     ring_buffer_lock.queued.push(ring_chunk);
                     state.debug_manager.read().log(
                         "diff_chunk_added",
-                        format!("Added to queued: {} (id: {})", chunk.filepath, chunk.id),
+                        format!("Added to queued: {}", chunk.filepath),
                     );
                 }
             }

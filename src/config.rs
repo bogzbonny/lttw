@@ -48,6 +48,10 @@ pub struct LttwConfig {
     pub ring_scope: u32,
     pub ring_update_ms: u64,
     pub ring_queue_length: usize,
+    /// Number of chunks to pick from the scope when the cursor moves significantly
+    /// or to a new buffer. The greater this number, the greater the scope should be
+    /// to reduce overlapping picks.
+    pub ring_n_picks: u32,
 
     // Keymap configuration
 
@@ -99,6 +103,7 @@ impl Default for LttwConfig {
             ring_scope: 1024,
             ring_update_ms: 1000,
             ring_queue_length: 16,
+            ring_n_picks: 1, // Default to 1 - number of chunks to pick from scope
             keymap_fim_trigger: "<leader>llf".to_string(),
             keymap_fim_accept_full: "<Tab>".to_string(),
             keymap_fim_accept_line: "<S-Tab>".to_string(),
@@ -222,6 +227,9 @@ impl LttwConfig {
         }
         if let Some(v) = get_i64("ring_queue_length") {
             config.ring_queue_length = v as usize;
+        }
+        if let Some(v) = get_i64("ring_n_picks") {
+            config.ring_n_picks = v as u32;
         }
 
         // Helper to get bool field from dictionary

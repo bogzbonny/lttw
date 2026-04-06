@@ -31,8 +31,6 @@ pub struct DiffChunk {
     pub content: String,
     /// Timestamp when this diff was created
     pub time: Instant,
-    /// Unique identifier for this chunk (assigned by PluginState)
-    pub id: usize,
 }
 
 impl DiffChunk {
@@ -53,7 +51,6 @@ impl DiffChunk {
             new_lines,
             content: content.to_string(),
             time: Instant::now(),
-            id: 0, // Will be assigned by PluginState
         }
     }
 
@@ -65,7 +62,6 @@ impl DiffChunk {
             chunk_str: self.content.clone(),
             time: self.time,
             filename: self.filepath.clone(),
-            id: self.id,
         }
     }
 }
@@ -180,7 +176,6 @@ mod tests {
             new_lines: 7,
             content: "@@ -10,5 +12,7 @@\n+line1\n+line2\n-context\n".to_string(),
             time: Instant::now(),
-            id: 123,
         };
 
         assert_eq!(chunk.filepath, "test.rs");
@@ -188,7 +183,6 @@ mod tests {
         assert_eq!(chunk.old_lines, 5);
         assert_eq!(chunk.new_start, 12);
         assert_eq!(chunk.new_lines, 7);
-        assert_eq!(chunk.id, 123);
     }
 
     #[test]

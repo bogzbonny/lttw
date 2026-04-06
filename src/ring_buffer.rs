@@ -120,6 +120,7 @@ async fn ring_update() -> LttwResult<bool> {
             format!("Processing {chunk_count} ring buffer chunks "),
         );
 
+        // TODO should n-predict be 0 here?? test
         // Build request with ring buffer context
         let extra = state.ring_buffer.read().get_extra();
         let request = serde_json::json!({
@@ -150,8 +151,6 @@ pub struct Chunk {
     pub chunk_str: String,
     pub time: Instant,
     pub filename: String,
-    /// Unique identifier for this chunk (nonce assigned by PluginState)
-    pub id: usize,
 }
 
 /// Ring buffer for extra context chunks
@@ -235,8 +234,7 @@ impl RingBuffer {
             data: chunk.to_vec(),
             chunk_str,
             time: Instant::now(),
-            filename, // Will be set by caller
-            id: 0,    // Will be set by caller
+            filename,
         });
         Ok(())
     }
@@ -252,11 +250,12 @@ impl RingBuffer {
         // added first however the more relavent things (added last) will be in the ring buffer for
         // longer (get evicted last). I DONT KNOW - should do trial and error TODO
         if let Some(chunk) = self.queued.pop() {
+            let chunk_data = chunk.data.clone();
+            // evict similar from the live buffer BEFORE adding the new chunk
+            // this prevents evicting the chunk we're about to add
+            self.evict_similar_from_live(&chunk_data, 0.9);
             self.chunks.push(chunk);
         }
-
-        // evict similar from the live buffer
-        self.evict_similar_from_live(chunk, 0.9);
 
         // Remove oldest chunk if buffer is full
         while self.chunks.len() > self.ring_n_chunks {
@@ -379,22 +378,6 @@ impl RingBuffer {
 
         // Evict from ring chunks (internal method to access private field)
         self.chunks.retain(|c| c.filename != filename);
-    }
-
-    /// Evict chunks from the ring buffer by unique id
-    ///
-    /// # Arguments
-    /// * `chunk_id` - Unique id to match for eviction
-    pub fn evict_by_id(&mut self, chunk_id: usize) {
-        // Evict from queued chunks
-        for i in (0..self.queued.len()).rev() {
-            if self.queued[i].id == chunk_id {
-                self.queued.remove(i);
-            }
-        }
-
-        // Evict from ring chunks
-        self.chunks.retain(|c| c.id != chunk_id);
     }
 
     /// Get the number of chunks in the ring buffer (for testing)
