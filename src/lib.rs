@@ -2,6 +2,10 @@
 //
 // This module provides the entry point for the Neovim plugin using nvim-oxi.
 // All core logic is implemented in Rust modules and exposed to Neovim via FFI.
+
+#[macro_use]
+pub mod log; // note, must be first for the macro to work throughout
+
 pub mod autocmd;
 pub mod cache;
 pub mod commands;
@@ -236,7 +240,7 @@ fn init_completion_processing_thread() {
     let rt = state.tokio_runtime.clone();
     rt.read().spawn(async move {
         while let Some(msg) = rx.recv().await {
-            state_.debug_manager.read().log("pending_queue msg", "");
+            debug!("pending_queue msg");
             state_.pending_display.write().push(msg);
         }
     });
@@ -276,10 +280,7 @@ fn process_pending_display() -> LttwResult<()> {
         return Ok(());
     }
 
-    state.debug_manager.read().log(
-        "process_pending_display",
-        format!("Processing {} pending display messages", messages.len()),
-    );
+    debug!("Processing {} pending display messages", messages.len(),);
 
     // XXX
     // UPDATE the completions with ALL msgs for cursor is in valid position
@@ -299,10 +300,7 @@ fn process_pending_display() -> LttwResult<()> {
 
     let mut retry = 0;
     if let Some(msg) = msg {
-        state.debug_manager.read().log(
-            "process_pending_display",
-            format!("valid message found {msg:?}"),
-        );
+        debug!("valid message found {msg:?}",);
         let Some(completion) = msg.completions.get(msg.completions_idx).cloned() else {
             return Ok(());
         };
@@ -330,10 +328,7 @@ fn process_pending_display() -> LttwResult<()> {
     // only retry a llm call 3 times before giving up
     if !state.fim_state.read().hint_shown && retry <= 3 {
         retry += 1;
-        state
-            .debug_manager
-            .read()
-            .log("process_pending_display", "rerendering fim suggestion");
+        debug!("rerendering fim suggestion");
         fim_try_hint(Some(retry))?;
     }
 
@@ -404,10 +399,7 @@ fn fim_accept_inner(
 fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
     // Log before releasing the lock
     let state = get_state();
-    {
-        let debug_manager = state.debug_manager.read().clone();
-        debug_manager.log("fim_accept_triggered", "");
-    }
+    debug!("fim_accept_triggered");
 
     let (hint_shown, pos_x, pos_y, line_cur, content) = {
         let fim_state_lock = state.fim_state.read();
@@ -424,10 +416,7 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
         return Ok(());
     }
 
-    state.debug_manager.read().log(
-        "fim_accept",
-        format!("Accepting {} suggestion", accept_type),
-    );
+    debug!("Accepting {} suggestion", accept_type,);
 
     let (new_x, new_y, final_content) =
         fim_accept_inner(accept_type, pos_x, pos_y, line_cur, content)?;
@@ -525,17 +514,11 @@ fn enable_plugin() -> LttwResult<()> {
     // Check filetype
     let filetype = get_current_filetype()?;
     if !state.config.read().is_filetype_enabled(&filetype) {
-        state.debug_manager.read().log(
-            "enable_plugin",
-            format!("Plugin not enabled for filetype: {}", filetype),
-        );
+        debug!("Plugin not enabled for filetype: {}", filetype);
         return Ok(());
     }
 
-    state
-        .debug_manager
-        .read()
-        .log("enable_plugin", "Enabling plugin");
+    debug!("Enabling plugin");
 
     // Setup keymaps
     keymap::setup_keymaps()?;
@@ -561,10 +544,7 @@ fn disable_plugin() -> LttwResult<()> {
         return Ok(());
     }
 
-    state
-        .debug_manager
-        .read()
-        .log("disable_plugin", "Disabling plugin");
+    debug!("Disabling plugin");
 
     // Hide FIM hints
     fim_hide()?;
@@ -613,16 +593,14 @@ fn on_move() -> LttwResult<()> {
     if let Some((allowed_buf, allowed_x, allowed_y)) = state.get_allow_comment_fim_cur_pos()
         && (buf_id != allowed_buf || pos_x != allowed_x || pos_y != allowed_y)
     {
-        state.debug_manager.read().log(
-            "on_move clearing allow_comment_fim_cur_pos",
-            format!(
-                "buf_id={buf_id}, pos_x={pos_x}, pos_y={pos_y}, allowed_buf={allowed_buf}, allowed_x={allowed_x}, allowed_y={allowed_y}",
-            ),
+        debug!(
+            "on_move clearing allow_comment_fim_cur_pos buf_id={buf_id}, pos_x={pos_x}, \
+           pos_y={pos_y}, allowed_buf={allowed_buf}, allowed_x={allowed_x}, allowed_y={allowed_y}",
         );
         state.clear_allow_comment_fim_cur_pos();
     }
 
-    state.debug_manager.read().log("on_move", "Cursor moved");
+    debug!("Cursor moved");
     fim_hide()?;
     fim_try_hint(None)?;
     Ok(())
@@ -656,10 +634,7 @@ fn on_text_yank_post() -> LttwResult<()> {
     if !yanked.is_empty() {
         let filename = get_buf_filename().unwrap_or_default();
 
-        state.debug_manager.read().log(
-            "on_text_yank_post",
-            format!("Yanked {} lines from {}", yanked.len(), filename),
-        );
+        debug!("Yanked {} lines from {}", yanked.len(), filename,);
 
         // Pick chunk from yanked text
         let mut ring_buffer_lock = state.ring_buffer.write();
@@ -678,10 +653,7 @@ fn on_buf_enter_gather_chunks() -> LttwResult<()> {
     if lines.len() > 3 {
         let filename = get_buf_filename().unwrap_or_default();
 
-        state.debug_manager.read().log(
-            "on_buf_enter",
-            format!("Entered buffer with {} lines: {}", lines.len(), filename),
-        );
+        debug!("Entered buffer with {} lines: {}", lines.len(), filename,);
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
@@ -709,10 +681,7 @@ fn on_buf_leave() -> LttwResult<()> {
     if lines.len() > 3 {
         let filename = get_buf_filename().unwrap_or_default();
 
-        state.debug_manager.read().log(
-            "on_buf_leave",
-            format!("Leaving buffer with {} lines: {}", lines.len(), filename),
-        );
+        debug!("Leaving buffer with {} lines: {}", lines.len(), filename,);
 
         // Track file content for future diff comparison if diff tracking is enabled
         if state.config.read().diff_tracking_enabled {
@@ -740,10 +709,7 @@ fn on_buf_write_post() -> LttwResult<()> {
     if lines.len() > 3 {
         let filename = get_buf_filename().unwrap_or_default();
 
-        state.debug_manager.read().log(
-            "on_buf_write_post",
-            format!("Buffer saved with {} lines: {filename}", lines.len()),
-        );
+        debug!("Buffer saved with {} lines: {filename}", lines.len(),);
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
@@ -773,10 +739,7 @@ fn on_buf_write_post() -> LttwResult<()> {
                 .write()
                 .insert(filename.clone(), new_content);
 
-            state
-                .debug_manager
-                .read()
-                .log("diff_chunks", format!("diff_chunks: {:#?}", diff_chunks));
+            debug!("diff_chunks: {:#?}", diff_chunks);
 
             // Process diff chunks
             if !diff_chunks.is_empty() {
@@ -790,10 +753,7 @@ fn on_buf_write_post() -> LttwResult<()> {
                 for chunk in &diff_chunks {
                     let ring_chunk = chunk.to_ring_chunk();
                     ring_buffer_lock.queued.push(ring_chunk);
-                    state.debug_manager.read().log(
-                        "diff_chunk_added",
-                        format!("Added to queued: {}", chunk.filepath),
-                    );
+                    debug!("diff_chunk_added Added to queued: {}", chunk.filepath,);
                 }
             }
         } else {

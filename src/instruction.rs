@@ -5,10 +5,10 @@
 
 use {
     crate::{
-        Error, LttwResult,
         config::LttwConfig,
         get_buf_lines, get_pos, get_state,
         utils::{del_buf_extmark, get_current_buffer_id, set_buf_extmark, set_buf_lines},
+        Error, LttwResult,
     },
     nvim_oxi::Dictionary,
     serde::{Deserialize, Serialize},
@@ -283,11 +283,9 @@ mod tests {
 
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "system");
-        assert!(
-            messages[0]
-                .content
-                .contains("You are a text-editing assistant")
-        );
+        assert!(messages[0]
+            .content
+            .contains("You are a text-editing assistant"));
         assert_eq!(messages[1].role, "user");
         assert!(messages[1].content.contains("INSTRUCTION: make it shorter"));
     }
@@ -516,16 +514,10 @@ fn inst_start(l0: i64, l1: i64, inst: &str) -> LttwResult<i64> {
         match set_buf_extmark(ns_id, l1 as usize, 0, &opts) {
             Ok(id) => {
                 req.extmark_id = Some(id);
-                state.debug_manager.read().log(
-                    "inst_start",
-                    format!("Created extmark {} for instruction {}", id, req_id),
-                );
+                debug!("Created extmark {} for instruction {}", id, req_id);
             }
             Err(e) => {
-                state
-                    .debug_manager
-                    .read()
-                    .log("inst_start", format!("Failed to create extmark: {:?}", e));
+                debug!("Failed to create extmark: {:?}", e);
             }
         }
     }
@@ -542,10 +534,7 @@ fn inst_start(l0: i64, l1: i64, inst: &str) -> LttwResult<i64> {
         instruction_requests_lock.insert(req_id, req);
     }
 
-    state.debug_manager.read().log(
-        "inst_start",
-        format!("Started instruction {} at range ({}, {})", req_id, l0, l1),
-    );
+    debug!("Started instruction {} at range ({}, {})", req_id, l0, l1);
 
     Ok(req_id)
 }
@@ -579,31 +568,22 @@ fn inst_send(req_id: i64) -> LttwResult<Option<String>> {
     let state = get_state();
 
     // Get the request
-    let (_req, messages, debug_manager, config) = {
+    let (_req, messages, config) = {
         let instruction_requests_lock = state.instruction_requests.read();
         let r = match instruction_requests_lock.get(&req_id) {
             Some(r) => r,
             None => {
-                let debug_manager = state.debug_manager.read().clone();
-                debug_manager.log("inst_send", format!("Request {} not found", req_id));
+                debug!("Request {} not found", req_id);
                 return Ok(None);
             }
         };
 
-        (
-            r.clone(),
-            r.inst_prev.clone(),
-            state.debug_manager.read().clone(),
-            state.config.read().clone(),
-        )
+        (r.clone(), r.inst_prev.clone(), state.config.read().clone())
     };
 
-    debug_manager.log(
-        "inst_send",
-        format!(
-            "Sending instruction request {req_id} with {} messages",
-            messages.len()
-        ),
+    debug!(
+        "Sending instruction request {req_id} with {} messages",
+        messages.len()
     );
 
     // Send request asynchronously
@@ -651,8 +631,7 @@ fn inst_send(req_id: i64) -> LttwResult<Option<String>> {
         }
         Err(e) => {
             // Log the error
-            let debug_manager = state.debug_manager.read().clone();
-            debug_manager.log("inst_send", format!("Error: {:?}", e));
+            debug!("Error: {:?}", e);
 
             // Update request status
             {
@@ -738,11 +717,7 @@ fn inst_update(req_id: i64, response_chunk: &str) -> LttwResult<String> {
 
             new_content
         } else {
-            let debug_manager = state.debug_manager.read().clone();
-            debug_manager.log(
-                "inst_update",
-                format!("Request {} not found for streaming update", req_id),
-            );
+            debug!("Request {} not found for streaming update", req_id);
             return Ok(String::new());
         }
     };
@@ -764,23 +739,12 @@ fn inst_finalize(req_id: i64) -> LttwResult<()> {
             req.status = InstructionStatus::Ready;
             req.result.len()
         } else {
-            let debug_manager = state.debug_manager.read().clone();
-            debug_manager.log(
-                "inst_finalize",
-                format!("Request {} not found for finalize", req_id),
-            );
+            debug!("Request {} not found for finalize", req_id);
             return Ok(());
         }
     };
 
-    // Log after updating state
-    {
-        let state = get_state();
-        state.debug_manager.read().log(
-            "inst_finalize",
-            format!("Request {} finalized with {} chars", req_id, result_len),
-        );
-    }
+    debug!("Request {} finalized with {} chars", req_id, result_len);
 
     // Update virtual text to show ready status
     inst_update_virt_text(req_id)?;
@@ -818,10 +782,7 @@ fn inst_accept() -> LttwResult<()> {
         && let Some(req) = req
     {
         if req.result.is_empty() {
-            state.debug_manager.read().log(
-                "inst_accept",
-                format!("Request {} has empty result, skipping apply", req_id),
-            );
+            debug!("Request {} has empty result, skipping apply", req_id,);
             // Still clean up the visual marker
             if let (Some(ns_id), Some(extmark_id)) = (req.ns_id, req.extmark_id) {
                 del_buf_extmark(ns_id, extmark_id)?;
@@ -832,15 +793,12 @@ fn inst_accept() -> LttwResult<()> {
         let result_lines: Vec<String> = req.result.split('\n').map(|s| s.to_string()).collect();
         let (l0, l1) = req.range;
 
-        state.debug_manager.read().log(
-            "inst_accept",
-            format!(
-                "Applying {} lines to buffer {} at range ({}, {})",
-                result_lines.len(),
-                bufnr,
-                l0,
-                l1
-            ),
+        debug!(
+            "Applying {} lines to buffer {} at range ({}, {})",
+            result_lines.len(),
+            bufnr,
+            l0,
+            l1
         );
 
         // Apply the result to the buffer using current buffer (assuming we're on the right buffer)
@@ -849,18 +807,10 @@ fn inst_accept() -> LttwResult<()> {
         // set_lines replaces lines in range [start, end) with new lines
         match set_buf_lines(l0..(l1 + 1), result_lines) {
             Ok(_) => {
-                let state = get_state();
-                state.debug_manager.read().log(
-                    "inst_accept",
-                    "Successfully applied instruction result to buffer",
-                );
+                debug!("Successfully applied instruction result to buffer",);
             }
             Err(e) => {
-                let state = get_state();
-                state.debug_manager.read().log(
-                    "inst_accept",
-                    format!("Failed to set buffer lines: {:?}", e),
-                );
+                debug!("Failed to set buffer lines: {:?}", e);
             }
         }
 
@@ -872,10 +822,7 @@ fn inst_accept() -> LttwResult<()> {
         return Ok(());
     }
 
-    state.debug_manager.read().log(
-        "inst_accept",
-        "No ready instruction request found for current buffer",
-    );
+    debug!("No ready instruction request found for current buffer",);
 
     Ok(())
 }
@@ -904,27 +851,16 @@ fn inst_cancel() -> LttwResult<()> {
     };
 
     if let (Some(req_id), Some(req)) = (req_id_to_cancel, req) {
-        state
-            .debug_manager
-            .read()
-            .log("inst_cancel", format!("Cancelling request {}", req_id));
+        debug!("Cancelling request {}", req_id);
 
         // Delete the visual marker
         if let (Some(ns_id), Some(extmark_id)) = (req.ns_id, req.extmark_id) {
             match del_buf_extmark(ns_id, extmark_id) {
                 Ok(_) => {
-                    let state = get_state();
-                    state.debug_manager.read().log(
-                        "inst_cancel",
-                        format!("Deleted extmark for request {}", req_id),
-                    );
+                    debug!("Deleted extmark for request {}", req_id,);
                 }
                 Err(e) => {
-                    let state = get_state();
-                    state
-                        .debug_manager
-                        .read()
-                        .log("inst_cancel", format!("Failed to delete extmark: {:?}", e));
+                    debug!("Failed to delete extmark: {:?}", e);
                 }
             }
         }
@@ -969,10 +905,7 @@ pub fn inst_rerun() -> LttwResult<Option<String>> {
             }
         }
 
-        state
-            .debug_manager
-            .read()
-            .log("inst_rerun", format!("Re-running request {}", req_id));
+        debug!("Re-running request {}", req_id);
         return Ok(Some(format!("Re-running request {}", req_id)));
     }
 
@@ -1008,10 +941,7 @@ pub fn inst_continue() -> LttwResult<Option<String>> {
             req.n_gen = 0;
         }
 
-        state
-            .debug_manager
-            .read()
-            .log("inst_continue", format!("Continuing request {}", req_id));
+        debug!("Continuing request {}", req_id);
         return Ok(Some(format!("Continuing request {}", req_id)));
     }
 

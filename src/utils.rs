@@ -3,13 +3,14 @@
 // This module provides various utility functions used throughout the plugin.
 
 use {
-    crate::{LttwResult, get_state, plugin_state::CurrentBufferInfo, plugin_state::PluginState},
+    crate::{plugin_state::CurrentBufferInfo, LttwResult},
     ahash::AHasher,
     nvim_oxi::{
         api::{
-            self, Buffer, Window, get_option_value,
+            self, get_option_value,
             opts::{CreateAutocmdOpts, OptionOpts, SetExtmarkOpts, SetExtmarkOptsBuilder},
             types::ExtmarkVirtTextPosition,
+            Buffer, Window,
         },
         conversion::FromObject,
     },
@@ -31,12 +32,8 @@ fn assert_not_tokio_worker() {
     if let Some(n) = t.name()
         && n.contains("tokio")
     {
-        let state = get_state();
         let bt = Backtrace::force_capture();
-        state
-            .debug_manager
-            .read()
-            .log("assert_not_tokio_worker", format!("Backtrace:\n{bt:?}"));
+        debug!("assert_not_tokio_worker Backtrace:\n{bt:?}");
 
         panic!("function must not be called from Tokio runtime worker thread (name: {n})");
     }
@@ -262,12 +259,7 @@ pub fn get_current_filetype() -> LttwResult<String> {
 /// Check if cursor is in a comment
 /// Uses synID() and synIDattr() to determine syntax group under cursor
 /// if at eol then we must check the previous character
-pub fn is_in_comment(
-    state: &PluginState,
-    mut pos_x: usize,
-    pos_y: usize,
-    at_eol: bool,
-) -> LttwResult<bool> {
+pub fn is_in_comment(mut pos_x: usize, pos_y: usize, at_eol: bool) -> LttwResult<bool> {
     assert_not_tokio_worker();
 
     if at_eol && pos_x > 0 {
@@ -279,10 +271,6 @@ pub fn is_in_comment(
     // Arguments: row (1-indexed), col (1-indexed), trans (0 for false)
     let syn_id_result: i64 =
         api::call_function("synID", (pos_y as i64 + 1, pos_x as i64 + 1, 0i64)).unwrap_or(0);
-    state
-        .debug_manager
-        .read()
-        .log("is_in_comment syn_id_result", syn_id_result);
 
     if syn_id_result == 0 {
         // No syntax ID found at this position
@@ -293,10 +281,6 @@ pub fn is_in_comment(
     // Get the name of the syntax group
     let syn_name: String =
         api::call_function("synIDattr", (syn_id_result, "name")).unwrap_or_default();
-    state
-        .debug_manager
-        .read()
-        .log("is_in_comment syn_name", &syn_name);
 
     // Check if the syntax name indicates a comment
     // Common comment syntax names: Comment, cComment, cppComment, htmlComment, etc.
@@ -304,10 +288,7 @@ pub fn is_in_comment(
         || syn_name.contains("comment")
         || syn_name.contains("Comment");
 
-    state
-        .debug_manager
-        .read()
-        .log("is_in_comment", "Skipping FIM in comment");
+    debug!("Skipping FIM in comment");
 
     Ok(is_comment)
 }

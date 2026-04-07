@@ -9,6 +9,7 @@ use {
         cache::compute_hashes,
         context::get_local_context,
         context::LocalContext,
+        debug,
         filetype::should_be_enabled,
         fim_accept_inner, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
         plugin_state::{get_state, PluginState},
@@ -210,10 +211,7 @@ pub fn fim_try_hint_inner(
     let lines = get_buf_lines(..);
     let buffer_id = get_current_buffer_id();
     let no_fim_in_comments = state.config.read().no_fim_in_comments;
-    state
-        .debug_manager
-        .read()
-        .log("no_fim_in_comments", no_fim_in_comments);
+    debug!("{}", no_fim_in_comments);
 
     #[allow(clippy::collapsible_if)]
     if no_fim_in_comments {
@@ -223,11 +221,8 @@ pub fn fim_try_hint_inner(
         {
             // comments FIM allowed at this position, continue with FIM
             //
-        } else if is_in_comment(&state, pos_x, pos_y, at_eol).unwrap_or(false) {
-            state
-                .debug_manager
-                .read()
-                .log("fim_try_hint_inner", "Skipping FIM in comment");
+        } else if is_in_comment(pos_x, pos_y, at_eol).unwrap_or(false) {
+            debug!("Skipping FIM in comment");
             return Ok(());
         }
     };
@@ -239,7 +234,7 @@ pub fn fim_try_hint_inner(
 
     // Get local context
     let ctx = get_local_context(&lines, pos_x, pos_y, &state.config.read());
-    state.debug_manager.read().log("fim_try_hint_inner", "");
+    debug!("fim_try_hint_inner");
 
     // Compute primary hash
     let primary_hash_inp = format!("{}{}Î{}", ctx.prefix, ctx.middle, ctx.suffix);
@@ -337,10 +332,7 @@ pub fn fim_try_hint_inner(
     let mut prev_for_next_fim: Option<Vec<String>> = None;
     if !force_regenerate && let Some(completion) = completion {
         let prev_content = completion.content.clone();
-        state.debug_manager.read().log(
-            "fim_try_hint_inner",
-            format!("found cached prev_content: {prev_content:#?}"),
-        );
+        debug!("found cached prev_content: {prev_content:#?}");
         if !prev_content.is_empty() {
             render_fim_suggestion(
                 state.clone(),
@@ -462,10 +454,7 @@ async fn spawn_fim_completion_worker(
             // Still within debounce period. Since this is the most recent request,
             // we should wait until debounce expires and then spawn.
             let remaining_ms = debounce_ms - elapsed.as_millis() as u64;
-            state.debug_manager.read().log(
-                "spawn_fim_completion_worker",
-                format!("Within debounce period, (seq {seq}, remaining {remaining_ms}ms)",),
-            );
+            debug!("Within debounce period, (seq {seq}, remaining {remaining_ms}ms)");
 
             // Wait for remaining debounce time
             tokio::time::sleep(Duration::from_millis(remaining_ms)).await;
@@ -481,20 +470,14 @@ async fn spawn_fim_completion_worker(
         .load(std::sync::atomic::Ordering::SeqCst);
     if seq < latest_sequence {
         // A newer request has come in, discard this one
-        state.debug_manager.read().log(
-            "spawn_fim_completion_worker",
-            format!("Discarding stale worker after wait (seq {seq} < latest {latest_sequence})",),
-        );
+        debug!("Discarding stale worker after wait (seq {seq} < latest {latest_sequence})");
         drop(permit);
         return Ok(());
     }
 
     state.record_worker_spawn();
 
-    state.debug_manager.read().log(
-        "spawn_fim_completion_worker",
-        format!("Spawning worker for ({}, {})", cursor_x, cursor_y),
-    );
+    debug!("Spawning worker for ({cursor_x}, {cursor_y})");
 
     fim_completion(
         state,
@@ -535,7 +518,6 @@ pub async fn fim_completion(
     do_render: bool,
     retry: Option<usize>,
 ) -> LttwResult<()> {
-    state.debug_manager.read().log("fim_completion", "0");
     let (
         n_predict_inner,
         n_predict_end,
@@ -563,12 +545,9 @@ pub async fn fim_completion(
 
     // Determine n_predict dynamically based on cursor position
     let n_predict = get_dynamic_n_predict(&ctx.line_cur, pos_x, n_predict_inner, n_predict_end);
-    state.debug_manager.read().log(
-        "fim_completion",
-        format!(
-            "dynamic n_predict: {} (inner: {}, end: {})",
-            n_predict, n_predict_inner, n_predict_end
-        ),
+    debug!(
+        "dynamic n_predict: {} (inner: {}, end: {})",
+        n_predict, n_predict_inner, n_predict_end
     );
 
     // Get local context
@@ -680,20 +659,14 @@ pub async fn fim_completion(
             return;
         };
 
-        state__
-            .debug_manager
-            .read()
-            .log("response text raw", &response_text);
+        debug!("response text raw {}", &response_text);
 
         // Parse response
         let Ok(mut response) = serde_json::from_str::<FimResponse>(&response_text) else {
             // TODO log error
             return;
         };
-        state__
-            .debug_manager
-            .read()
-            .log("response received", format!("{response:#?}"));
+        debug!("resp: {response:#?}");
 
         // compare the tail of the content to the lines and filter out any matching with the
         // following lines
@@ -708,10 +681,7 @@ pub async fn fim_completion(
             .split('\n')
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
-        state__.debug_manager.read().log(
-            "filter_tail",
-            format!("\tcontent: {content:#?}\n\tten_lines: {ten_lines:#?}"),
-        );
+        debug!("\tcontent: {content:#?}\n\tten_lines: {ten_lines:#?}");
         let content = filter_tail(&content, &ten_lines).join("\n");
         let content = content
             .strip_prefix(&current_line_prefix)
@@ -797,10 +767,7 @@ pub async fn fim_completion(
                 if let Err(e) = ring_buffer_lock.pick_chunk(&state_, prefix_lines, filename.clone())
                 {
                     // Log error but continue with other picks
-                    state_
-                        .debug_manager
-                        .read()
-                        .log("pick_chunk", format!("Error picking prefix chunk: {}", e));
+                    debug!("Error picking prefix chunk: {}", e);
                 }
             }
         }
@@ -815,10 +782,7 @@ pub async fn fim_completion(
                 if let Err(e) = ring_buffer_lock.pick_chunk(&state_, suffix_lines, filename.clone())
                 {
                     // Log error but continue with other picks
-                    state_
-                        .debug_manager
-                        .read()
-                        .log("pick_chunk", format!("Error picking suffix chunk: {}", e));
+                    debug!("Error picking suffix chunk: {}", e);
                 }
             }
         }
@@ -946,10 +910,7 @@ pub fn render_fim_suggestion(
     let joined = lines.join("\n");
     let hint_is_valid = !joined.trim().is_empty();
 
-    state.debug_manager.read().log(
-        "render_fim_suggestion",
-        format!("Displaying FIM hint: \n{}", lines.join("\n")),
-    );
+    debug!("Displaying FIM hint: \n{}", lines.join("\n"));
 
     // Update FIM state with timing data
     state.fim_state.write().update(
@@ -974,10 +935,9 @@ pub fn render_fim_suggestion(
 /// NOTE this happens on the neovim main thread
 fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
     // Lock the fim_state and config to get the data we need
-    let (content, extmark_ns, pos_y, pos_x, line_cur, config, debug_manager, timing_data) = {
+    let (content, extmark_ns, pos_y, pos_x, line_cur, config, timing_data) = {
         let fs = state.fim_state.read();
         let config = state.config.read().clone();
-        let debug_manager = state.debug_manager.read().clone();
         let timing_data = fs.timings.clone();
         (
             fs.content.clone(),
@@ -986,7 +946,6 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
             fs.pos_x,
             fs.line_cur.clone(),
             config,
-            debug_manager,
             timing_data,
         )
     };
@@ -1030,16 +989,10 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
         // Set the extmark for suggestion text at cursor position
         match set_buf_extmark(ns_id, pos_y, pos_x, &suggestion_opts.build()) {
             Ok(_id) => {
-                debug_manager.log(
-                    "display_fim_text",
-                    format!("Set suggestion extmark at line {}, col {}", pos_y, pos_x),
-                );
+                debug!("Set suggestion extmark at line {}, col {}", pos_y, pos_x);
             }
             Err(e) => {
-                debug_manager.log(
-                    "display_fim_text",
-                    format!("Error setting suggestion extmark: {:?}", e),
-                );
+                debug!("Error setting suggestion extmark: {:?}", e);
             }
         }
 
@@ -1092,10 +1045,7 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
             if !info_string.is_empty()
                 && let Err(e) = set_buf_extmark_top_right(ns_id, info_string)
             {
-                debug_manager.log(
-                    "display_fim_text",
-                    format!("Error setting info extmark: {:?}", e),
-                );
+                debug!("Error setting info extmark: {:?}", e);
             }
         }
     }

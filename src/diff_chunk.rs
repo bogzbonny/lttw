@@ -5,11 +5,11 @@
 // On each recalculation, it compares new vs old diff chunks and updates the ring buffer.
 
 use {
-    crate::{LttwResult, ring_buffer::Chunk},
+    crate::{ring_buffer::Chunk, LttwResult},
     gix_diff::blob::{
-        Algorithm, UnifiedDiff,
         intern::InternedInput,
         unified_diff::{ConsumeBinaryHunk, ContextSize},
+        Algorithm, UnifiedDiff,
     },
     std::time::Instant,
 };
@@ -90,11 +90,7 @@ pub fn calculate_diff_between_contents(
     );
 
     let diff_output = gix_diff::blob::diff(Algorithm::Myers, &interner, unified)?;
-    let state = crate::get_state();
-    state.debug_manager.read().log(
-        "calculate_diff_between_contents",
-        format!("state {diff_output}"),
-    );
+    debug!("state {diff_output}");
 
     // Parse the diff output to extract hunks
     // The output is a unified diff string

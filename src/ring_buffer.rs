@@ -9,10 +9,10 @@
 ///       currently happening.
 use {
     crate::{
-        LttwResult, context::chunk_similarity, get_state, plugin_state::PluginState,
-        utils::random_range,
+        context::chunk_similarity, get_state, plugin_state::PluginState, utils::random_range,
+        LttwResult,
     },
-    std::sync::{Arc, atomic::Ordering},
+    std::sync::{atomic::Ordering, Arc},
     std::time::{Duration, Instant},
 };
 
@@ -50,10 +50,7 @@ pub fn setup_ring_buffer_timer() -> LttwResult<()> {
     // Store the handle in the plugin state
     *state.ring_buffer_timer_handle.write() = Some(Arc::new(parking_lot::Mutex::new(timer_handle)));
 
-    state.debug_manager.read().log(
-        "setup_ring_buffer_timer",
-        format!("Started ring buffer timer (interval: {}ms)", interval),
-    );
+    debug!("Started ring buffer timer (interval: {}ms)", interval,);
 
     Ok(())
 }
@@ -115,10 +112,7 @@ async fn ring_update() -> LttwResult<bool> {
     };
 
     if chunk_count > 0 {
-        state.debug_manager.read().log(
-            "ring_update",
-            format!("Processing {chunk_count} ring buffer chunks "),
-        );
+        debug!("Processing {chunk_count} ring buffer chunks ",);
 
         // TODO should n-predict be 0 here?? test
         // Build request with ring buffer context

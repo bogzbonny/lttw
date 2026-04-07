@@ -1,11 +1,11 @@
 use crate::{
-    LttwResult,
     filetype::on_buf_enter_check_filetype,
     fim_hide, get_state, on_buf_enter_gather_chunks, on_buf_leave, on_buf_write_post, on_move,
     on_text_yank_post,
     ring_buffer::mode_change_maybe_start_processing_ring_updates,
     set_cur_buffer_info_in_state, set_mode_in_state,
     utils::{create_autocmd, del_autocmd},
+    LttwResult,
 };
 
 /// Setup autocmds function - creates autocmds for auto-triggering FIM and ring buffer
@@ -55,10 +55,7 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
     ids.push(id);
 
     if state.config.read().auto_fim {
-        state
-            .debug_manager
-            .read()
-            .log("registering auto fim autocmds", "");
+        debug!("registering auto fim autocmds");
         let id = create_autocmd(
             ["CursorMoved", "CursorMovedI"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
@@ -116,10 +113,7 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
 
     // Buffer write for ring buffer (only if diff tracking is enabled)
     if state.config.read().diff_tracking_enabled {
-        state
-            .debug_manager
-            .read()
-            .log("registering bufwritepost autocmd", "");
+        debug!("registering bufwritepost autocmd");
         let id = create_autocmd(
             ["BufWritePost"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()

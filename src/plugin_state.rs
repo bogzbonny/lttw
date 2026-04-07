@@ -123,7 +123,7 @@ impl PluginState {
                 chunk_size,
                 ring_queue_length,
             ))),
-            debug_manager: Arc::new(RwLock::new(debug::DebugManager::new_with_enabled(
+            debug_manager: Arc::new(RwLock::new(debug::DebugManager::new(
                 debug_enabled_at_startup,
             ))),
             nvim_mode: Arc::new(RwLock::new(Vec::new())),

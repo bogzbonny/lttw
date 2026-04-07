@@ -45,11 +45,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
             .callback(|_| {
                 if let Err(e) = fim_accept(FimAcceptType::Full) {
                     // Log error but don't crash
-                    let state = get_state();
-                    state
-                        .debug_manager
-                        .read()
-                        .log("Tab accept", format!("Error accepting FIM: {:?}", e));
+                    debug!("Error accepting FIM: {:?}", e);
                 }
                 // TODO insert tab if not in hint mode
             })
@@ -65,11 +61,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
             .callback(|_| {
                 if let Err(e) = fim_accept(FimAcceptType::Line) {
                     // Log error but don't crash
-                    let state = get_state();
-                    state.debug_manager.read().log(
-                        "LttwFimAcceptFullOrTab",
-                        format!("Error accepting FIM: {:?}", e),
-                    );
+                    debug!("Error accepting FIM: {:?}", e);
                 }
                 // TODO insert tab if not in hint mode
             })
@@ -85,11 +77,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
             .callback(|_| {
                 if let Err(e) = fim_cycle_next() {
                     // Log error but don't crash
-                    let state = get_state();
-                    state.debug_manager.read().log(
-                        "LttwFimCycleNext",
-                        format!("Error cycling to next FIM: {:?}", e),
-                    );
+                    debug!("Error cycling to next FIM: {:?}", e,);
                 }
             })
             .build(),
@@ -104,11 +92,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
             .callback(|_| {
                 if let Err(e) = fim_cycle_prev() {
                     // Log error but don't crash
-                    let state = get_state();
-                    state.debug_manager.read().log(
-                        "LttwFimCyclePrev",
-                        format!("Error cycling to previous FIM: {:?}", e),
-                    );
+                    debug!("Error cycling to previous FIM: {:?}", e,);
                 }
             })
             .build(),
@@ -123,11 +107,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
             .callback(|_| {
                 if let Err(e) = fim_try_hint_regenerate() {
                     // Log error but don't crash
-                    let state = get_state();
-                    state.debug_manager.read().log(
-                        "LttwFimRegenerate",
-                        format!("Error regenerating FIM: {:?}", e),
-                    );
+                    debug!("Error regenerating FIM: {:?}", e,);
                 }
             })
             .build(),

@@ -24,6 +24,7 @@ dynamically change n_predict during each FIM call (number of tokens to predict)
    of the cursor set to a new config param n_prefict_end (default value 256)
 01. when debugging is disabled the lttw.log file is still created/cleared, this
     shouldn't happen
+20. easier to use debugging system (like debug! macro)
 
 ^^^^^^^^^ DONE
 
@@ -183,7 +184,6 @@ local query_string = [[
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
 
-20. easier to use debugging system (like debug! macro)
 
 20. better global error printing/handling
     https://github.com/noib3/nvim-oxi/issues/231
