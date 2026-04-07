@@ -225,11 +225,6 @@ impl FimState {
         self.completion_cycle.push(completions);
     }
 
-    /// Set the completion cycle list
-    fn extend_completion_cycle(&mut self, completions: Vec<FimResponse>) {
-        self.completion_cycle.extend(completions);
-    }
-
     fn push_completion_idx_to_tail(&mut self) {
         self.set_completion_idx(self.completion_cycle.len() - 1);
     }

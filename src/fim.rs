@@ -97,20 +97,20 @@ pub fn get_dynamic_n_predict(
     pos_x: usize,
     n_predict_inner: u32,
     n_predict_end: u32,
-) -> u32 {
+) -> (u32, bool) {
     // Check if pos_x is at or beyond the line length (end of line)
     if pos_x >= line.len() {
-        return n_predict_end;
+        return (n_predict_end, false);
     }
 
     // Check if there are only whitespace characters to the right of the cursor
     let suffix = &line[pos_x..];
     if suffix.trim().is_empty() {
-        return n_predict_end;
+        return (n_predict_end, false);
     }
 
     // There are non-whitespace characters to the right of the cursor
-    n_predict_inner
+    (n_predict_inner, true)
 }
 
 /// Build info string from timing information
@@ -525,7 +525,6 @@ pub async fn fim_completion(
     let (
         n_predict_inner,
         n_predict_end,
-        stop,
         t_max_prompt_ms,
         mut t_max_predict_ms,
         model,
@@ -537,7 +536,6 @@ pub async fn fim_completion(
         (
             config.n_predict_inner,
             config.n_predict_end,
-            config.stop_strings.clone(),
             config.t_max_prompt_ms,
             config.t_max_predict_ms,
             config.model_fim.clone(),
@@ -548,11 +546,18 @@ pub async fn fim_completion(
     };
 
     // Determine n_predict dynamically based on cursor position
-    let n_predict = get_dynamic_n_predict(&ctx.line_cur, pos_x, n_predict_inner, n_predict_end);
+    let (n_predict, inside_a_line) =
+        get_dynamic_n_predict(&ctx.line_cur, pos_x, n_predict_inner, n_predict_end);
     debug!(
         "dynamic n_predict: {} (inner: {}, end: {})",
         n_predict, n_predict_inner, n_predict_end
     );
+
+    let stop = if inside_a_line && state.config.read().single_line_prediction_within_line {
+        vec!["\n".to_string()]
+    } else {
+        Vec::with_capacity(0)
+    };
 
     // Get local context
 

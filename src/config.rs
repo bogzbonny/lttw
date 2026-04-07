@@ -33,12 +33,12 @@ pub struct LttwConfig {
     pub n_predict_inner: u32,
     pub n_predict_end: u32,
 
-    pub stop_strings: Vec<String>,
     pub t_max_prompt_ms: u32,
     pub t_max_predict_ms: u32,
     pub debounce_min_ms: u64,
     pub debounce_max_ms: u64,
     pub max_concurrent_fim_requests: u32,
+    pub single_line_prediction_within_line: bool,
 
     // Display configuration
     pub show_info: u8,
@@ -98,12 +98,12 @@ impl Default for LttwConfig {
             n_suffix: 64,
             n_predict_inner: 16,
             n_predict_end: 256,
-            stop_strings: Vec::new(),
             t_max_prompt_ms: 500,
             t_max_predict_ms: 1000,
             debounce_min_ms: 20,
             debounce_max_ms: 200,
             max_concurrent_fim_requests: 3, // good to be larger than 1 to allow for speculative FIM
+            single_line_prediction_within_line: true,
             show_info: 2,
             auto_fim: true,
             max_line_suffix: 8,
@@ -265,6 +265,9 @@ impl LttwConfig {
         };
 
         // Override bool fields
+        if let Some(v) = get_bool("single_line_prediction_within_line") {
+            config.single_line_prediction_within_line = v;
+        }
         if let Some(v) = get_bool("auto_fim") {
             config.auto_fim = v;
         }
@@ -282,10 +285,6 @@ impl LttwConfig {
         if let Some(v) = get_string_array("enabled_filetypes") {
             config.enabled_filetypes = v;
         }
-        if let Some(v) = get_string_array("stop_strings") {
-            config.stop_strings = v;
-        }
-
         // Override bool fields
         if let Some(v) = get_bool("diff_tracking_enabled") {
             config.diff_tracking_enabled = v;
