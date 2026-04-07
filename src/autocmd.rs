@@ -70,6 +70,20 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         ids.push(id);
     }
 
+    // DiagnosticChanged - track diagnostics when they change
+    let id = create_autocmd(
+        ["DiagnosticChanged"],
+        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+            .callback(|_| {
+                debug!("DiagnosticChanged autocmd fired");
+                let _ = handle_diagnostic_changed(nvim_oxi::Object::nil());
+                false
+            })
+            .build(),
+    )
+    .unwrap_or(0);
+    ids.push(id);
+
     // For keeping track of the active buffer and whether it is modified
     // for the tokio threads
     let id = create_autocmd(
@@ -184,28 +198,5 @@ pub fn clear_filetype_autocommand() -> LttwResult<()> {
     if let Some(id) = ft_ac_id {
         del_autocmd(id)?;
     }
-    Ok(())
-}
-
-/// Setup DiagnosticChanged autocmd for continuous diagnostics tracking
-pub fn setup_diagnostic_autocmd() -> LttwResult<()> {
-    let state = get_state();
-    let mut ids = Vec::new();
-
-    // DiagnosticChanged - track diagnostics when they change
-    let id = create_autocmd(
-        ["DiagnosticChanged"],
-        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .callback(|_| {
-                let _ = handle_diagnostic_changed(nvim_oxi::Object::nil());
-                false
-            })
-            .build(),
-    )
-    .unwrap_or(0);
-    ids.push(id);
-
-    let mut autocmd_ids_lock = state.autocmd_ids.write();
-    autocmd_ids_lock.extend(ids);
     Ok(())
 }

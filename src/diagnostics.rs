@@ -12,7 +12,7 @@ use {
 /// Represents a single diagnostic entry
 #[derive(Debug, Clone)]
 pub struct DiagnosticInfo {
-    pub buffer_id: u64,
+    pub buffer_id: u64,   // Neovim buffer ID
     pub line: usize,      // 0-indexed line number
     pub severity: String, // error, warn, info, hint
     pub message: String,
@@ -27,12 +27,6 @@ pub struct DiagnosticTracker {
 }
 
 impl DiagnosticTracker {
-    pub fn new() -> Self {
-        Self {
-            diagnostics_by_buf: HashMap::new(),
-        }
-    }
-
     /// Clear all tracked diagnostics
     pub fn clear(&mut self) {
         self.diagnostics_by_buf.clear();
@@ -123,41 +117,88 @@ impl DiagnosticTracker {
 /// This function is called when DiagnosticChanged autocmd fires.
 /// It retrieves diagnostics from Neovim and stores them in the tracker.
 pub fn handle_diagnostic_changed(_arg: nvim_oxi::Object) -> LttwResult<()> {
-    let state = get_state();
-    let tracker = state.diagnostics.read();
-
-    // Get current buffer (the one the LSP attached to)
+    // Get current buffer
     let buf = Buffer::current();
     let buf_id = buf.handle();
+    let buf_id_u64: u64 = buf_id.try_into().unwrap_or(0);
+    debug!(_arg);
 
-    // Get filename
-    let filename = match buf.get_name() {
-        Ok(name) => name.to_string_lossy().to_string(),
-        Err(_) => return Ok(()),
+    // Get diagnostics for this buffer using Neovim's vim.diagnostic.get()
+    // We'll use a Lua callback to get the diagnostics directly
+    // First execute a command to put the diagnostics in a register
+    let _ =
+        nvim_oxi::api::command("lua vim.cmd('let @+ = vim.json.encode(vim.diagnostic.get(0))')");
+
+    // Use nvim_command to execute Lua and store diagnostics in a variable
+    // We'll use a global variable approach
+    let _ = nvim_oxi::api::command(
+        "lua vim.g.lttw_diagnostics = vim.json.encode(vim.diagnostic.get(0))",
+    );
+
+    // Read the global variable using nvim_oxi::api::get_var with String type
+    let json_str = match nvim_oxi::api::get_var::<String>("lttw_diagnostics") {
+        Ok(s) => s,
+        Err(_) => String::new(),
     };
 
-    if filename.is_empty() {
+    if json_str.is_empty() || json_str == "[]" {
+        // No diagnostics for this buffer
+        let state = get_state();
+        let mut tracker = state.diagnostics.write();
+        tracker.add_diagnostics(buf_id_u64, Vec::new());
         return Ok(());
     }
 
-    // Get diagnostics for this buffer using nvim command
-    // We use nvim command to call vim.diagnostic.get()
-    let diags_json: String = nvim_oxi::api::command("echo json_encode(vim.diagnostic.get(0))")
-        .map(|_| "".to_string())
-        .unwrap_or_else(|_| "[]".to_string());
+    // Parse JSON to get array of diagnostic dictionaries
+    let diags: Vec<serde_json::Value> = match serde_json::from_str(&json_str) {
+        Ok(d) => d,
+        Err(_) => {
+            // If parsing fails, add empty diagnostics
+            let state = get_state();
+            let mut tracker = state.diagnostics.write();
+            tracker.add_diagnostics(buf_id_u64, Vec::new());
+            return Ok(());
+        }
+    };
 
-    // Parse the JSON to extract diagnostics
-    // For now, we'll just log that we got diagnostics
-    if !diags_json.is_empty() && diags_json != "[]" {
-        debug!(
-            "DiagnosticChanged: Got diagnostics for buffer {} ({})",
-            buf_id, filename
-        );
-    }
+    // Convert dictionaries to DiagnosticInfo objects
+    let diagnostics: Vec<DiagnosticInfo> = diags
+        .into_iter()
+        .filter_map(|val| {
+            if let serde_json::Value::Object(map) = val {
+                let message = map
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let line = map.get("lnum").and_then(|v| v.as_i64()).unwrap_or(0) as usize;
+                let severity = map
+                    .get("severity")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                Some(DiagnosticInfo {
+                    buffer_id: buf_id_u64,
+                    line,
+                    severity,
+                    message,
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Add diagnostics to tracker
+    let state = get_state();
+    let mut tracker = state.diagnostics.write();
+    tracker.add_diagnostics(buf_id_u64, diagnostics.clone());
 
     debug!(
-        "DiagnosticChanged: Tracked diagnostics for buffer {}",
-        buf_id
+        "DiagnosticChanged: Tracked {} diagnostics for buffer {}",
+        diagnostics.len(),
+        buf_id_u64
     );
 
     Ok(())

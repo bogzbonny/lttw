@@ -7,6 +7,17 @@
 ------------------------
 
 05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
+     - :lua print(vim.inspect(vim.diagnostic.get())) 
+        - DIAGNOSTIC PIPELINE IS OVERWRITTEN BY ALE! thus the diagnostic changed
+          autocmd will not be updated
+          - alternatives: just check/update the diagnostics in a loop (200ms?) 
+             - only while in normal mode 
+
+        config.handlers = {
+        -- Override Neovim's handling of diagnostics to run through ALE's
+        -- functions so all of the functionality in ALE works.
+        ["textDocument/publishDiagnostics"] = function(err, result, _, _)
+
      - use regular completions/ endpoint not infill endpoint
      - NOTE if more tabs are received WHILE the completion is in progress they
        should be discarded
@@ -124,6 +135,8 @@ local query_string = [[
 
 ------------------------
 POST RELEASE
+
+50. Offline/Online mode for getting responses locally or over the web
 
 50. Bring the entire FIM system into LTTW for further customization
      - allow more control over cache ordering if one was to be evicted?
