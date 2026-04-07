@@ -1,21 +1,30 @@
-05. single_line_prediction_within_line
- - Option to ONLY show the first line of code completions unless you're in an empty line
-     -> could still predict more, but just dont show it
- - Option to ONLY accept single line inline suggestions if typing within a fully
-   closed bracket system within a line example: "#[derive(Debug, Cl[CURSOR], Default)]"
-set the fim request `stop` value '\n' when inside a new line if a new config option
-single_line_prediction_within_line is set to true (default is true). Integrate
-this logic into get_dynamic_n_predict
 
 ^^^^^^^^^ DONE
 
-03. integrate git diff system into extra_inputs 
-     - DONE if we use a super simple approach were we don't calculate any of this biz
-       and just evict like normal, the queue ordering should probably be
-       rectified to process in order again (instead of popping) 
-     - git diff --no-ext-diff --unified=0
-         -> use unified=0 for concise chunks
 
+
+------------------------
+
+05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
+     - use regular completions/ endpoint not infill endpoint
+     - NOTE if more tabs are received WHILE the completion is in progress they
+       should be discarded
+     - Whatever the whole range of the fed diagnostic is is what should be fed
+       into the prompt (along with the diagnostic
+     - I'm not sure if it'll be a pain to still use FIM for this or not
+        - probably use a regular completion 
+     - afterwords this will generate a replacement line(s) for which will be
+       displayed using extmarks
+     - then a 3rd TAB can accept this
+     - then a 4th TAB should take the cursor to the next line which has
+       diagnostic errors
+     - use this entire system in reverse as well with SHIFT-TAB to move up
+     - CTRL-TAB to regenerate a TAB-TAB if the user doesn't like the provided
+       response
+     - OPTION ONCE no more errors - save file to regenerate diagnostics
+     - OPTION ONCE no more errors, go to the next file with errors in a new tab
+
+03. git diff eviction by line number
      - because we're just saving the file changes we do not need to actually 
        calculate removed diffs, just calculate the new diffs and add those to
        the queue HOWEVER we should probably remove other diff segments by
@@ -41,60 +50,6 @@ this logic into get_dynamic_n_predict
      - When using a normal chunks for eviction:
         - evict git-diff chunks by comparing the chunk similarity to the
           git-diff chunks UPDATED information.
-
-
-integrate a new system which keeps track of diff chunks each time there is a
-filesave. the diff of a single file may contain several small diff chunks if
-there are disconnect edits. trigger diff evaluation in autoccmd.rs with
-bufwritepost. use the gix-diff crate for calculating the diffs on the codebase
-for all buffers which we have open. save an array of all the diff
-chunks in the pluginstate. each time the diff is recalculated compare it to the
-previously saved diff chunks and add compile the diff-chunk-changes. for
-diff-chunk-changes additions add the diff chunks to the ringbuffer.queued, for
-removals evict the diff from ringbuffer.queued and ringbuffer.chunks (note those
-chunks may have already been evicted for other reasons by the time we go to
-evict those chunks). perform the removals before the additions and add debug
-output for these operations
-
-DO NOT revert to using CLI git, that is forbidden. Review
-https://github.com/GitoxideLabs/gitoxide/blob/main/gix-diff/tests/diff/blob/unified_diff.rs
-to see a basic example of how to diff between two strings, this is very simple!
-Use no context like this:
-
-let actual = gix_diff::blob::diff(
-        Algorithm::Myers,
-        &interner,
-        UnifiedDiff::new(
-            &interner,
-            ConsumeBinaryHunk::new(String::new(), "\n"),
-            ContextSize::symmetrical(0),
-        ),
-    )?; 
-Our approach should be to simply save the most recent buffers we encounter by
-filename in the PluginState and then everytime BufWritePost is executed we
-compare all the files we have to what we've previously saved and calculate the
-diff based on that
-
-------------------------
-
-05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
-     - use regular completions/ endpoint not infill endpoint
-     - NOTE if more tabs are received WHILE the completion is in progress they
-       should be discarded
-     - Whatever the whole range of the fed diagnostic is is what should be fed
-       into the prompt (along with the diagnostic
-     - I'm not sure if it'll be a pain to still use FIM for this or not
-        - probably use a regular completion 
-     - afterwords this will generate a replacement line(s) for which will be
-       displayed using extmarks
-     - then a 3rd TAB can accept this
-     - then a 4th TAB should take the cursor to the next line which has
-       diagnostic errors
-     - use this entire system in reverse as well with SHIFT-TAB to move up
-     - CTRL-TAB to regenerate a TAB-TAB if the user doesn't like the provided
-       response
-     - OPTION ONCE no more errors - save file to regenerate diagnostics
-     - OPTION ONCE no more errors, go to the next file with errors in a new tab
 
 05. integrate in LSP Completions into input_prefix
      - OPTIONAL mini lag for these completions like 100ms so we're not generating
@@ -154,8 +109,7 @@ local query_string = [[
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
 
-20. better global error printing/handling
-    https://github.com/noib3/nvim-oxi/issues/231
+20. better global error printing/handling https://github.com/noib3/nvim-oxi/issues/231
 
 40. instruction system LOW priority can use CodeCompanion for now
 
