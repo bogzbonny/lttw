@@ -7,8 +7,6 @@ use {
     crate::{get_state, LttwResult},
     ahash::{HashMap, HashMapExt},
     nvim_oxi::{api::Buffer, Dictionary, String as NvimString},
-    parking_lot::RwLock,
-    std::sync::Arc,
 };
 
 /// Represents a single diagnostic entry
@@ -173,8 +171,7 @@ pub fn debug_output_diagnostics(_arg: nvim_oxi::Object) -> LttwResult<()> {
     let buf = Buffer::current();
     let buf_id = buf.handle().try_into().unwrap_or(0);
 
-    let tracker_lock = tracker.read();
-    let buffer_diags = tracker_lock.get_buffer_diagnostics(buf_id);
+    let buffer_diags = tracker.get_buffer_diagnostics(buf_id);
 
     match buffer_diags {
         Some(lines) => {
