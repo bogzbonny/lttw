@@ -709,18 +709,23 @@ fn on_buf_write_post() -> LttwResult<()> {
         debug!("Buffer saved with {} lines: {filename}", lines.len(),);
 
         // Pick chunk from buffer
-        let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&state, &lines, filename.clone())?;
+        {
+            let mut ring_buffer_lock = state.ring_buffer.write();
+            ring_buffer_lock.pick_chunk(&state, &lines, filename.clone())?;
+        }
 
         if state.config.read().diff_tracking_enabled {
-            if !state.file_contents.read().contains_key(&filename) {
+            let has_file = state.file_contents.read().contains_key(&filename);
+            if !has_file {
                 state.file_contents.write().insert(filename, None);
             }
 
+            let mut to_write = Vec::new();
             for (filename_, old_content) in state.file_contents.read().iter() {
-                // Track file content for future diff comparison if diff tracking is enabled
-                // Convert lines to string for diff comparison
-                let new_content = lines.join("\n");
+                // get the new file contents from the filesystem
+                let Ok(new_content) = std::fs::read_to_string(filename_) else {
+                    continue;
+                };
 
                 // Get saved content for this file
                 let diff_chunks = {
@@ -735,11 +740,7 @@ fn on_buf_write_post() -> LttwResult<()> {
 
                 // TODO should check ALL the files that we've ever looked at.
 
-                // Save the current file content for future diff comparison
-                state
-                    .file_contents
-                    .write()
-                    .insert(filename_.clone(), Some(new_content));
+                to_write.push((filename_.clone(), new_content));
 
                 debug!("diff_chunks: {:#?}", diff_chunks);
 
@@ -761,6 +762,14 @@ fn on_buf_write_post() -> LttwResult<()> {
                         debug!("diff_chunk_added Added to queued: {}", chunk.filepath,);
                     }
                 }
+            }
+
+            for (filename_, new_content) in to_write.into_iter() {
+                // Save the current file content for future diff comparison
+                state
+                    .file_contents
+                    .write()
+                    .insert(filename_.clone(), Some(new_content));
             }
         }
     }

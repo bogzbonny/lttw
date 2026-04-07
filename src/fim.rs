@@ -26,8 +26,6 @@ use {
     std::time::{Duration, Instant},
 };
 
-//testing
-
 /// FIM completion request
 #[derive(Debug, Clone, Serialize)]
 pub struct FimRequest {
