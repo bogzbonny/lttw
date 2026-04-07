@@ -1,4 +1,5 @@
 use crate::{
+    diagnostics::handle_diagnostic_changed,
     filetype::on_buf_enter_check_filetype,
     fim_hide, get_state, on_buf_enter_gather_chunks, on_buf_leave, on_buf_write_post, on_move,
     on_text_yank_post,
@@ -183,5 +184,28 @@ pub fn clear_filetype_autocommand() -> LttwResult<()> {
     if let Some(id) = ft_ac_id {
         del_autocmd(id)?;
     }
+    Ok(())
+}
+
+/// Setup DiagnosticChanged autocmd for continuous diagnostics tracking
+pub fn setup_diagnostic_autocmd() -> LttwResult<()> {
+    let state = get_state();
+    let mut ids = Vec::new();
+
+    // DiagnosticChanged - track diagnostics when they change
+    let id = create_autocmd(
+        ["DiagnosticChanged"],
+        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+            .callback(|_| {
+                let _ = handle_diagnostic_changed(nvim_oxi::Object::nil());
+                false
+            })
+            .build(),
+    )
+    .unwrap_or(0);
+    ids.push(id);
+
+    let mut autocmd_ids_lock = state.autocmd_ids.write();
+    autocmd_ids_lock.extend(ids);
     Ok(())
 }

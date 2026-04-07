@@ -1,6 +1,7 @@
 
 ^^^^^^^^^ DONE
 
+05. write file contents on first enter of a buffer we haven't entered before 
 
 
 ------------------------

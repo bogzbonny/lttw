@@ -1,7 +1,7 @@
 use {
     crate::{
-        cache, config, debug, instruction::InstructionRequestState, ring_buffer, Error,
-        FimCompletionMessage, FimState, LttwResult,
+        cache, config, debug, diagnostics::DiagnosticTracker, instruction::InstructionRequestState,
+        ring_buffer, Error, FimCompletionMessage, FimState, LttwResult,
     },
     ahash::{HashMap, HashMapExt},
     nvim_oxi::api::create_namespace,
@@ -65,6 +65,9 @@ pub struct PluginState {
     /// Cursor position after accepting a completion, used to allow FIM in comments
     /// immediately after accepting code that may end in a comment
     pub allow_comment_fim_cur_pos: Arc<RwLock<Option<(u64, usize, usize)>>>,
+
+    /// Diagnostic tracker for LSP diagnostics
+    pub diagnostics: Arc<RwLock<DiagnosticTracker>>,
 
     // File content storage - stores the most recent content of each open buffer
     // Used for calculating diffs on file save
@@ -148,6 +151,8 @@ impl PluginState {
             ring_updating_active: Arc::new(AtomicBool::new(false)),
 
             allow_comment_fim_cur_pos: Arc::new(RwLock::new(None)),
+
+            diagnostics: Arc::new(RwLock::new(DiagnosticTracker::default())),
 
             file_contents: Arc::new(RwLock::new(HashMap::new())),
             // Initialize completion channel and runtime (will be set up later)

@@ -16,6 +16,7 @@ pub mod config;
 pub mod context;
 pub mod debug;
 pub mod diff_chunk;
+pub mod diagnostics;
 pub mod error;
 pub mod filetype;
 pub mod fim;
@@ -30,6 +31,7 @@ pub use error::{Error, LttwResult};
 use {
     context::LocalContext,
     diff_chunk::calculate_diff_between_contents,
+    diagnostics::{debug_output_diagnostics, handle_diagnostic_changed},
     fim::{
         fim_cycle_next, fim_cycle_prev, fim_try_hint, fim_try_hint_skip_debounce,
         render_fim_suggestion, FimAcceptType, FimResponse, FimTimings,
@@ -117,6 +119,10 @@ pub fn lttw() -> LttwResult<Dictionary> {
 
     functions.insert::<&str, Function<nvim_oxi::Object, ()>>("setup", Function::from(lttw_setup));
 
+    // Export functions for diagnostic tracking
+    functions.insert::<&str, Function<nvim_oxi::Object, ()>>("handle_diagnostic_changed", Function::from(handle_diagnostic_changed));
+    functions.insert::<&str, Function<nvim_oxi::Object, ()>>("debug_output_diagnostics", Function::from(debug_output_diagnostics));
+
     Ok(functions)
 }
 
@@ -140,6 +146,9 @@ fn lttw_setup(c: nvim_oxi::Object) {
     // Setup autocmds
     let _ = autocmd::setup_filetype_autocmd();
     let _ = autocmd::setup_non_filetype_autocmds();
+
+    // Setup DiagnosticChanged diagnostics tracking
+    let _ = autocmd::setup_diagnostic_autocmd();
 
     // Initialize the LttwFIM highlight group to match Comment
     let _ = init_fim_highlight();
