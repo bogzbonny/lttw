@@ -3,6 +3,9 @@
 // This module provides the entry point for the Neovim plugin using nvim-oxi.
 // All core logic is implemented in Rust modules and exposed to Neovim via FFI.
 
+/// Highlight group name for FIM generated text
+pub const LTTW_FIM_HIGHLIGHT: &str = "LttwFIM";
+
 #[macro_use]
 pub mod log; // note, must be first for the macro to work throughout
 
@@ -31,6 +34,7 @@ use {
         fim_cycle_next, fim_cycle_prev, fim_try_hint, fim_try_hint_skip_debounce,
         render_fim_suggestion, FimAcceptType, FimResponse, FimTimings,
     },
+    //nvim_oxi::{conversion::FromObject, Dictionary, Function},
     nvim_oxi::{Dictionary, Function},
     plugin_state::{get_state, init_state},
     std::{
@@ -87,6 +91,19 @@ pub struct FimCompletionMessage {
     retry: Option<usize>, // the retry count for this completion
 }
 
+/// Initialize the LttwFIM highlight group to match the Comment highlight group
+/// Reads the Comment highlight attributes using Neovim's get_hl_by_name() and applies them to LttwFIM
+fn init_fim_highlight() -> LttwResult<()> {
+    nvim_oxi::api::set_hl(
+        0,
+        LTTW_FIM_HIGHLIGHT,
+        &nvim_oxi::api::opts::SetHighlightOpts::builder()
+            .link("Comment")
+            .build(),
+    )?;
+    Ok(())
+}
+
 /// Initialize the plugin with configuration
 ///
 /// # Arguments
@@ -124,6 +141,9 @@ fn lttw_setup(c: nvim_oxi::Object) {
     // Setup autocmds
     let _ = autocmd::setup_filetype_autocmd();
     let _ = autocmd::setup_non_filetype_autocmds();
+
+    // Initialize the LttwFIM highlight group to match Comment
+    let _ = init_fim_highlight();
 }
 
 // ---------------------------

@@ -18,7 +18,7 @@ use {
             clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input, is_in_comment,
             set_buf_extmark, set_buf_extmark_top_right,
         },
-        Error, FimCompletionMessage, FimTimingsData, LttwResult,
+        Error, FimCompletionMessage, FimTimingsData, LttwResult, LTTW_FIM_HIGHLIGHT,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition},
     serde::{Deserialize, Serialize},
@@ -34,10 +34,12 @@ pub struct FimRequest {
     pub input_suffix: String,
     pub input_extra: Vec<ExtraContext>,
     pub prompt: String,
+
     pub n_indent: usize,
     pub n_predict: u32,
     pub stop: Vec<String>,
     pub top_k: u32,
+
     pub top_p: f32,
     pub samplers: Vec<String>,
     pub t_max_prompt_ms: u32,
@@ -985,11 +987,11 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
         // Create extmark opts for suggestion text
         let mut suggestion_opts = SetExtmarkOptsBuilder::default();
 
-        // NOTE here "Comment" is the neovim hightlight group
+        // NOTE here "LttwFIM" is the neovim highlight group
         // (hence the virt text appears like a comment)
 
         // For single line suggestions, use inline or overlay based on context
-        let suggestion_virt_text = vec![(suggestion_text, "Comment".to_string())];
+        let suggestion_virt_text = vec![(suggestion_text, LTTW_FIM_HIGHLIGHT.to_string())];
         suggestion_opts.virt_text(suggestion_virt_text);
 
         let mut suggestion_pos = ExtmarkVirtTextPosition::Overlay;
@@ -1002,7 +1004,7 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
         if content.len() > 1 {
             let mut virt_lines: Vec<Vec<(String, String)>> = Vec::new();
             for line in &content[1..] {
-                virt_lines.push(vec![(line.clone(), "Comment".to_string())]);
+                virt_lines.push(vec![(line.clone(), LTTW_FIM_HIGHLIGHT.to_string())]);
             }
             suggestion_opts.virt_lines(virt_lines);
         }

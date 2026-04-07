@@ -3,7 +3,7 @@
 // This module provides various utility functions used throughout the plugin.
 
 use {
-    crate::{plugin_state::CurrentBufferInfo, LttwResult},
+    crate::{plugin_state::CurrentBufferInfo, LttwResult, LTTW_FIM_HIGHLIGHT},
     ahash::AHasher,
     nvim_oxi::{
         api::{
@@ -33,7 +33,7 @@ fn assert_not_tokio_worker() {
         && n.contains("tokio")
     {
         let bt = Backtrace::force_capture();
-        debug!("assert_not_tokio_worker Backtrace:\n{bt:?}");
+        debug!("assert_not_tokio_worker Backtrace:\n{:?}", bt);
 
         panic!("function must not be called from Tokio runtime worker thread (name: {n})");
     }
@@ -124,7 +124,7 @@ pub fn set_buf_extmark_top_right(ns_id: u32, message: String) -> LttwResult<u32>
     assert_not_tokio_worker();
 
     let mut info_opts = SetExtmarkOptsBuilder::default();
-    let info_virt_text = vec![(message, "Comment")];
+    let info_virt_text = vec![(message, LTTW_FIM_HIGHLIGHT)];
     info_opts.virt_text(info_virt_text);
 
     // Use RightAlign positioning for the info string

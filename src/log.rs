@@ -17,20 +17,54 @@ use {once_cell::sync::Lazy, parking_lot::RwLock, std::fs::OpenOptions, std::io::
 //    }}
 //}
 
+//#[macro_export]
+//macro_rules! debug {
+//    ($($arg:tt)*) => {{
+//        let s = format!($($arg)*);
+//        let t = std::time::SystemTime::now()
+//            .duration_since(std::time::UNIX_EPOCH)
+//            .unwrap()
+//            .as_secs() as u32;
+//        let h = t / 3600 % 24;
+//        let m = t / 60 % 60;
+//        let s_sec = t % 60;
+//        let s2 = format!("[{:02}:{:02}:{:02} {}:{}] {s}", h, m, s_sec, file!(), line!());
+//        $crate::log::log(s2);
+//    }}
+//}
+
+//#[macro_export]
+//macro_rules! debug {
+//    ($var:ident) => {{
+//        let s = format!("{} = {:?}", stringify!($var), &$var);
+//        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as u32;
+//        let (h,m,s_) = (t/3600%24,t/60%60,t%60);
+//        $crate::log::log(format!("[{:02}:{:02}:{:02} {}:{}] {}", h, m, s_, file!(), line!(), s))
+//    }};
+//    ($($arg:tt)*) => {{
+//        let s = format!($($arg)*);
+//        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as u32;
+//        let (h,m,s_) = (t/3600%24,t/60%60,t%60);
+//        $crate::log::log(format!("[{:02}:{:02}:{:02} {}:{}] {s}", h, m, s_, file!(), line!()))
+//    }};
+//}
 #[macro_export]
 macro_rules! debug {
+    // Match any expression that is not a literal string or format pattern (i.e., a single path/field access)
+    ($expr:expr) => {{
+        // Capture the expression text manually via stringify
+        let s = format!("{} = {:?}", stringify!($expr), &$expr);
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as u32;
+        let (h,m,s_) = (t/3600%24,t/60%60,t%60);
+        $crate::log::log(format!("[{:02}:{:02}:{:02} {}:{}] {}", h, m, s_, file!(), line!(), s))
+    }};
+    // Format-style variadic
     ($($arg:tt)*) => {{
         let s = format!($($arg)*);
-        let t = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as u32;
-        let h = t / 3600 % 24;
-        let m = t / 60 % 60;
-        let s_sec = t % 60;
-        let s2 = format!("[{:02}:{:02}:{:02} {}:{}] {s}", h, m, s_sec, file!(), line!());
-        $crate::log::log(s2);
-    }}
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as u32;
+        let (h,m,s_) = (t/3600%24,t/60%60,t%60);
+        $crate::log::log(format!("[{:02}:{:02}:{:02} {}:{}] {s}", h, m, s_, file!(), line!()))
+    }};
 }
 
 #[derive(Clone)]
