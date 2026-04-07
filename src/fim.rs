@@ -34,12 +34,10 @@ pub struct FimRequest {
     pub input_suffix: String,
     pub input_extra: Vec<ExtraContext>,
     pub prompt: String,
-
     pub n_indent: usize,
     pub n_predict: u32,
     pub stop: Vec<String>,
     pub top_k: u32,
-
     pub top_p: f32,
     pub samplers: Vec<String>,
     pub t_max_prompt_ms: u32,
@@ -331,10 +329,12 @@ pub fn fim_try_hint_inner(
     let completions: Vec<FimResponse> = all_completions.into_iter().map(|(r, _)| r).collect();
     debug!("all completions: {completions:?}");
     let completion = completions.get(completions_idx).cloned();
-    state
-        .fim_state
-        .write()
-        .set_completion_cycle(completions, completions_idx);
+    if state.fim_state.read().completion_cycle.is_empty() {
+        state
+            .fim_state
+            .write()
+            .set_completion_cycle(completions, completions_idx);
+    }
 
     debug!("completions_idx: {completions_idx:?}");
 

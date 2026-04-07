@@ -25,20 +25,20 @@ dynamically change n_predict during each FIM call (number of tokens to predict)
 01. when debugging is disabled the lttw.log file is still created/cleared, this
     shouldn't happen
 20. easier to use debugging system (like debug! macro)
-
-^^^^^^^^^ DONE
-
 05. completion cycling
 New keymaps; use CTRL-j and CTRL-k from insert mode to cycle through the
 completions options. Now whenever we compile autocompletions from previous
 nearby autocompletions, we should keep a list of all the autocompletions
 (ordered from longest to shortest) and start by displaying the first FIM but
 then allow cycling through these
-
 05. regenerate
 New keymaps; Ctrl+l from insert move to regenerate the completion at the
 location. NOTE add this to the list of completions at this location, so one can
 cycle back through them if necessary. 
+
+^^^^^^^^^ DONE
+
+05. regeneration removes everything but most recent 
 
 05. single_line_prediction_within_line
  - Option to ONLY show the first line of code completions unless you're in an empty line
