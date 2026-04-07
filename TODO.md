@@ -1,12 +1,11 @@
-
-^^^^^^^^^ DONE
-
 05. single_line_prediction_within_line
  - Option to ONLY show the first line of code completions unless you're in an empty line
      -> could still predict more, but just dont show it
 set the fim request `stop` value '\n' when inside a new line if a new config option
 single_line_prediction_within_line is set to true (default is true). Integrate
 this logic into get_dynamic_n_predict
+
+^^^^^^^^^ DONE
 
 03. integrate git diff system into extra_inputs 
      - git diff --no-ext-diff --unified=0

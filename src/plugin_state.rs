@@ -50,6 +50,8 @@ pub struct PluginState {
     pub fim_worker_debounce_seq: Arc<AtomicU64>,
     pub fim_worker_debounce_last_spawn: Arc<RwLock<Instant>>,
     pub fim_worker_semaphore: Arc<tokio::sync::Semaphore>,
+    pub fim_worker_generating_for_pos: Arc<RwLock<Option<(u64, usize, usize)>>>,
+
     pub extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
     #[allow(dead_code)]
     pub inst_ns: Option<u32>, // Namespace for instruction extmarks
@@ -136,6 +138,7 @@ impl PluginState {
             fim_worker_debounce_seq: Arc::new(AtomicU64::new(0)),
             fim_worker_debounce_last_spawn: Arc::new(RwLock::new(Instant::now())),
             fim_worker_semaphore: Arc::new(Semaphore::new(max_req)),
+            fim_worker_generating_for_pos: Arc::new(RwLock::new(None)),
             extmark_ns,
             enabled: Arc::new(AtomicBool::new(enable_at_startup)),
             autocmd_ids: Arc::new(RwLock::new(Vec::new())),

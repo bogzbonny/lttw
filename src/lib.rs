@@ -36,7 +36,7 @@ use {
     },
     //nvim_oxi::{conversion::FromObject, Dictionary, Function},
     nvim_oxi::{Dictionary, Function},
-    plugin_state::{get_state, init_state},
+    plugin_state::{get_state, init_state, PluginState},
     std::{
         sync::atomic::Ordering,
         time::{Duration, Instant},
@@ -451,12 +451,7 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
     let buf_id = get_current_buffer_id();
     state.set_allow_comment_fim_cur_pos(buf_id, new_x, new_y);
 
-    state.fim_state.write().clear();
-
-    // Clear virtual text from display
-    if let Some(ns_id) = state.extmark_ns {
-        clear_buf_namespace_objects(ns_id)?
-    }
+    fim_hide_inner(&state)?;
 
     // immediately start a new FIM request skipping the debounce
     fim_try_hint_skip_debounce()?;
@@ -467,11 +462,11 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
 /// FIM hide function - clears the FIM hint from display
 fn fim_hide() -> LttwResult<()> {
     let state = get_state();
-    //state
-    //    .debug_manager
-    //    .read()
-    //    .log("fim_hide", "Hiding FIM hint");
+    fim_hide_inner(&state)?;
+    Ok(())
+}
 
+fn fim_hide_inner(state: &PluginState) -> LttwResult<()> {
     // Clear virtual text using nvim_buf_clear_namespace()
     if let Some(ns_id_val) = state.extmark_ns {
         clear_buf_namespace_objects(ns_id_val)?

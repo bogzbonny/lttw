@@ -485,20 +485,35 @@ async fn spawn_fim_completion_worker(
 
     debug!("Spawning worker for ({cursor_x}, {cursor_y})");
 
-    fim_completion(
-        state,
-        ctx,
-        cursor_x,
-        cursor_y,
-        buffer_id,
-        filename,
-        buffer_lines,
-        prev,
-        do_render,
-        force_regenerate,
-        retry,
-    )
-    .await?;
+    let skip = if let Some((gbuf_id, gpos_x, gpos_y)) = *state.fim_worker_generating_for_pos.read()
+        && gbuf_id == buffer_id
+        && gpos_x == cursor_x
+        && gpos_y == cursor_y
+    {
+        debug!("already currently generating for this position, skipping request");
+        true
+    } else {
+        false
+    };
+
+    if !skip {
+        *state.fim_worker_generating_for_pos.write() = Some((buffer_id, cursor_x, cursor_y));
+        fim_completion(
+            state.clone(),
+            ctx,
+            cursor_x,
+            cursor_y,
+            buffer_id,
+            filename,
+            buffer_lines,
+            prev,
+            do_render,
+            force_regenerate,
+            retry,
+        )
+        .await?;
+        *state.fim_worker_generating_for_pos.write() = None;
+    }
 
     drop(permit);
     Ok(())
@@ -663,6 +678,7 @@ pub async fn fim_completion(
         //    .read()
         //    .log("sending msg", format!("{request:#?}"));
         // Send request without holding locks
+
         let Ok(response_text) = send_request(&request, endpoint_fim, model, api_key).await else {
             // TODO log error
             return;
