@@ -12,6 +12,7 @@ use {
         context::chunk_similarity, get_state, plugin_state::PluginState, utils::random_range,
         LttwResult,
     },
+    std::collections::VecDeque,
     std::sync::{atomic::Ordering, Arc},
     std::time::{Duration, Instant},
 };
@@ -151,7 +152,7 @@ pub struct Chunk {
 #[derive(Debug, Clone)]
 pub struct RingBuffer {
     chunks: Vec<Chunk>,
-    pub queued: Vec<Chunk>,
+    pub queued: VecDeque<Chunk>,
     n_evict: usize,
     ring_n_chunks: usize,
     ring_queue_length: usize,
@@ -163,7 +164,7 @@ impl RingBuffer {
     pub fn new(ring_n_chunks: usize, chunk_size: usize, ring_queue_length: usize) -> Self {
         Self {
             chunks: Vec::new(),
-            queued: Vec::new(),
+            queued: VecDeque::new(),
             n_evict: 0,
             ring_n_chunks,
             ring_queue_length,
@@ -224,7 +225,7 @@ impl RingBuffer {
             self.queued.remove(0);
         }
 
-        self.queued.push(Chunk {
+        self.queued.push_back(Chunk {
             data: chunk.to_vec(),
             chunk_str,
             time: Instant::now(),
@@ -239,11 +240,8 @@ impl RingBuffer {
             return;
         }
 
-        // take from the tail of the queue (most recently added / relevant) and add to the ring buffer
-        // NOTE it may make sense to actually take it from the front.. less relevant things will be
-        // added first however the more relavent things (added last) will be in the ring buffer for
-        // longer (get evicted last). I DONT KNOW - should do trial and error TODO
-        if let Some(chunk) = self.queued.pop() {
+        // take from the front of the queue (oldest, but in order) and add to the ring buffer
+        if let Some(chunk) = self.queued.pop_front() {
             let chunk_data = chunk.data.clone();
             // evict similar from the live buffer BEFORE adding the new chunk
             // this prevents evicting the chunk we're about to add

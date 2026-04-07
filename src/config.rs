@@ -124,7 +124,7 @@ impl Default for LttwConfig {
             keymap_inst_continue: "<leader>llc".to_string(),
             keymap_inst_accept: "<Tab>".to_string(),
             keymap_inst_cancel: "<Esc>".to_string(),
-            diff_tracking_enabled: false,
+            diff_tracking_enabled: true,
             no_fim_in_comments: true,
             enable_at_startup: true,
             debug_enabled_at_startup: false,

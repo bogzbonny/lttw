@@ -68,7 +68,8 @@ pub struct PluginState {
 
     // File content storage - stores the most recent content of each open buffer
     // Used for calculating diffs on file save
-    pub file_contents: Arc<RwLock<HashMap<String, String>>>,
+    // key is filename, value is contents, None is there is a file but we haven't read it once yet
+    pub file_contents: Arc<RwLock<HashMap<String, Option<String>>>>,
 
     // FIM completion channel for async worker communication
     pub fim_completion_tx: Arc<RwLock<Option<mpsc::Sender<FimCompletionMessage>>>>,

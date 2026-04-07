@@ -673,15 +673,6 @@ fn on_buf_enter_gather_chunks() -> LttwResult<()> {
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
         ring_buffer_lock.pick_chunk(&state, &lines, filename.clone())?;
-
-        // Track file content for future diff comparison if diff tracking is enabled
-        if state.config.read().diff_tracking_enabled {
-            let content = lines.join("\n");
-            {
-                let mut file_contents_lock = state.file_contents.write();
-                file_contents_lock.insert(filename.clone(), content);
-            }
-        }
     }
 
     Ok(())
@@ -697,15 +688,6 @@ fn on_buf_leave() -> LttwResult<()> {
         let filename = get_buf_filename().unwrap_or_default();
 
         debug!("Leaving buffer with {} lines: {}", lines.len(), filename,);
-
-        // Track file content for future diff comparison if diff tracking is enabled
-        if state.config.read().diff_tracking_enabled {
-            let content = lines.join("\n");
-            {
-                let mut file_contents_lock = state.file_contents.write();
-                file_contents_lock.insert(filename.clone(), content);
-            }
-        }
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
@@ -730,55 +712,56 @@ fn on_buf_write_post() -> LttwResult<()> {
         let mut ring_buffer_lock = state.ring_buffer.write();
         ring_buffer_lock.pick_chunk(&state, &lines, filename.clone())?;
 
-        // Track file content for future diff comparison if diff tracking is enabled
         if state.config.read().diff_tracking_enabled {
-            // Convert lines to string for diff comparison
-            let new_content = lines.join("\n");
+            if !state.file_contents.read().contains_key(&filename) {
+                state.file_contents.write().insert(filename, None);
+            }
 
-            // Get saved content for this file
-            let diff_chunks = {
-                let old_content = state.file_contents.read().get(&filename).cloned();
+            for (filename_, old_content) in state.file_contents.read().iter() {
+                // Track file content for future diff comparison if diff tracking is enabled
+                // Convert lines to string for diff comparison
+                let new_content = lines.join("\n");
 
-                // Calculate diff between saved content and current content
-                if let Some(ref old_content) = old_content {
-                    calculate_diff_between_contents(&filename, old_content, &new_content)?
-                } else {
-                    // No previous content - return empty
-                    Vec::new()
-                }
-            };
+                // Get saved content for this file
+                let diff_chunks = {
+                    // Calculate diff between saved content and current content
+                    if let Some(old_content) = old_content {
+                        calculate_diff_between_contents(filename_, old_content, &new_content)?
+                    } else {
+                        // No previous content - return empty
+                        Vec::new()
+                    }
+                };
 
-            // Save the current file content for future diff comparison
-            state
-                .file_contents
-                .write()
-                .insert(filename.clone(), new_content);
+                // TODO should check ALL the files that we've ever looked at.
 
-            debug!("diff_chunks: {:#?}", diff_chunks);
+                // Save the current file content for future diff comparison
+                state
+                    .file_contents
+                    .write()
+                    .insert(filename_.clone(), Some(new_content));
 
-            // Process diff chunks
-            if !diff_chunks.is_empty() {
-                // Assign sequential IDs to new chunks and evaluate changes
+                debug!("diff_chunks: {:#?}", diff_chunks);
 
-                // Apply changes to ring buffer in a separate locked section
-                let mut ring_buffer_lock = state.ring_buffer.write();
+                // Process diff chunks
+                if !diff_chunks.is_empty() {
+                    // Apply changes to ring buffer in a separate locked section
+                    let mut ring_buffer_lock = state.ring_buffer.write();
 
-                // Perform additions (after removals)
-                // TODO delete old intersecting chunks too
-                for chunk in &diff_chunks {
-                    let ring_chunk = chunk.to_ring_chunk();
-                    ring_buffer_lock.queued.push(ring_chunk);
-                    debug!("diff_chunk_added Added to queued: {}", chunk.filepath,);
+                    // Perform additions (after removals)
+                    // TODO delete old intersecting chunks too
+                    for chunk in &diff_chunks {
+                        //let ring_chunk = chunk.to_ring_chunk();
+                        let content = chunk
+                            .content
+                            .split('\n')
+                            .map(|s| s.to_string())
+                            .collect::<Vec<_>>();
+                        ring_buffer_lock.pick_chunk_inner(&content, chunk.filepath.clone())?;
+                        debug!("diff_chunk_added Added to queued: {}", chunk.filepath,);
+                    }
                 }
             }
-        } else {
-            // Small file or diff tracking disabled - just track content if enabled
-            let filename = get_buf_filename().unwrap_or_default();
-            let new_content = lines.join("\n");
-            state
-                .file_contents
-                .write()
-                .insert(filename.clone(), new_content);
         }
     }
 

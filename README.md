@@ -60,7 +60,6 @@ lua require('llama').setup()
 
 ## Key Differences from llama.vim
 
- - process ring buffer queue from most recent updates to oldest (instead of oldest to newest)
  - continious ring buffer updating (when in normal mode/ inactive) instead of
    just capping it at 1 chunk per second
  - picking ring buffer chunks to the queue doesn't evict similar chunks from the live buffer

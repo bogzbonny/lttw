@@ -1,6 +1,8 @@
 05. single_line_prediction_within_line
  - Option to ONLY show the first line of code completions unless you're in an empty line
      -> could still predict more, but just dont show it
+ - Option to ONLY accept single line inline suggestions if typing within a fully
+   closed bracket system within a line example: "#[derive(Debug, Cl[CURSOR], Default)]"
 set the fim request `stop` value '\n' when inside a new line if a new config option
 single_line_prediction_within_line is set to true (default is true). Integrate
 this logic into get_dynamic_n_predict
@@ -8,8 +10,12 @@ this logic into get_dynamic_n_predict
 ^^^^^^^^^ DONE
 
 03. integrate git diff system into extra_inputs 
+     - DONE if we use a super simple approach were we don't calculate any of this biz
+       and just evict like normal, the queue ordering should probably be
+       rectified to process in order again (instead of popping) 
      - git diff --no-ext-diff --unified=0
          -> use unified=0 for concise chunks
+
      - because we're just saving the file changes we do not need to actually 
        calculate removed diffs, just calculate the new diffs and add those to
        the queue HOWEVER we should probably remove other diff segments by
@@ -35,6 +41,7 @@ this logic into get_dynamic_n_predict
      - When using a normal chunks for eviction:
         - evict git-diff chunks by comparing the chunk similarity to the
           git-diff chunks UPDATED information.
+
 
 integrate a new system which keeps track of diff chunks each time there is a
 filesave. the diff of a single file may contain several small diff chunks if
@@ -68,22 +75,7 @@ filename in the PluginState and then everytime BufWritePost is executed we
 compare all the files we have to what we've previously saved and calculate the
 diff based on that
 
-05. integrate in LSP Completions into input_prefix
-     - OPTIONAL mini lag for these completions like 100ms so we're not generating
-       them ruthlessly - however I want to try with this at 0ms, it may be fine!
-     - automatically put the llm completion if the user hasn't moved up or down
-       through the completions - HOWEVER if the user has moved up or down
-       through the completions, then add the completion as the next on the list
-       from whatever the users current position is in the completions list
-     - supplement the llm completions with suggestions from the LSP completions
-     - order the suggested completions randomly as to no constantly get it wrong
-       if the first option is typically wrong for some letters
-     - MAYBE also just provide the LSP completion as an option immediately until
-       the LLM response comes in. I noticed with ALE (from insert mode go C-X
-       then C-O) it gives a suggestion with a `...` in it which is probably
-       where the cursor should just be inserted if the completion is accepted
-       (removing the ... keeping it in insert mode THUS triggering the next
-       completion).
+------------------------
 
 05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
      - use regular completions/ endpoint not infill endpoint
@@ -104,7 +96,25 @@ diff based on that
      - OPTION ONCE no more errors - save file to regenerate diagnostics
      - OPTION ONCE no more errors, go to the next file with errors in a new tab
 
-------------------------
+05. integrate in LSP Completions into input_prefix
+     - OPTIONAL mini lag for these completions like 100ms so we're not generating
+       them ruthlessly - however I want to try with this at 0ms, it may be fine!
+     - automatically put the llm completion if the user hasn't moved up or down
+       through the completions - HOWEVER if the user has moved up or down
+       through the completions, then add the completion as the next on the list
+       from whatever the users current position is in the completions list
+     - supplement the llm completions with suggestions from the LSP completions
+     - I WOULD actually scan all the nearby text and order them
+       alphanumerically but then set the index AT any matches to nearby text
+        - this will be useful in situations like structs with RwLocks for
+          instance... chances are you might want to type RwLock
+        - if no matches choose a random position
+     - MAYBE also just provide the LSP completion as an option immediately until
+       the LLM response comes in. I noticed with ALE (from insert mode go C-X
+       then C-O) it gives a suggestion with a `...` in it which is probably
+       where the cursor should just be inserted if the completion is accepted
+       (removing the ... keeping it in insert mode THUS triggering the next
+       completion).
 
 20. integrate definitions of all nearby objects 
      - add to extra_input
@@ -144,12 +154,8 @@ local query_string = [[
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
 
-
 20. better global error printing/handling
     https://github.com/noib3/nvim-oxi/issues/231
-
-20. Option to ONLY accept single line inline suggestions if typing within a fully
-    closed bracket system within a line example: "#[derive(Debug, Cl[CURSOR], Default)]"
 
 40. instruction system LOW priority can use CodeCompanion for now
 

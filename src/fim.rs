@@ -26,6 +26,8 @@ use {
     std::time::{Duration, Instant},
 };
 
+//testing
+
 /// FIM completion request
 #[derive(Debug, Clone, Serialize)]
 pub struct FimRequest {
@@ -34,9 +36,9 @@ pub struct FimRequest {
     pub input_suffix: String,
     pub input_extra: Vec<ExtraContext>,
     pub prompt: String,
-    pub n_indent: usize,
-    pub n_predict: u32,
     pub stop: Vec<String>,
+    pub n_predict: u32,
+    pub n_indent: usize,
     pub top_k: u32,
     pub top_p: f32,
     pub samplers: Vec<String>,
