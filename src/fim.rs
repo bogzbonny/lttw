@@ -329,9 +329,13 @@ pub fn fim_try_hint_inner(
         }
     }
     let completions: Vec<FimResponse> = all_completions.into_iter().map(|(r, _)| r).collect();
-    let completion = completions.get(completions_idx);
-
     debug!("all completions: {completions:?}");
+    let completion = completions.get(completions_idx).cloned();
+    state
+        .fim_state
+        .write()
+        .set_completion_cycle(completions, completions_idx);
+
     debug!("completions_idx: {completions_idx:?}");
 
     let mut prev_for_next_fim: Option<Vec<String>> = None;
@@ -343,7 +347,7 @@ pub fn fim_try_hint_inner(
                 state.clone(),
                 pos_x,
                 pos_y,
-                completion,
+                &completion,
                 ctx.line_cur.clone(),
             )?;
 
@@ -386,8 +390,6 @@ pub fn fim_try_hint_inner(
                 buffer_id,
                 filename,
                 virtual_lines,
-                completions,
-                completions_idx,
                 prev_for_next_fim,
                 skip_debounce,
                 false, // do not render
@@ -406,8 +408,6 @@ pub fn fim_try_hint_inner(
                 buffer_id,
                 filename,
                 lines,
-                completions,
-                completions_idx,
                 prev_for_next_fim,
                 skip_debounce,
                 true, // do attempt to render
@@ -433,8 +433,6 @@ async fn spawn_fim_completion_worker(
     buffer_id: u64,
     filename: String,
     buffer_lines: Vec<String>,
-    completions: Vec<FimResponse>,
-    completions_idx: usize,
     prev: Option<Vec<String>>, // speculative FIM content
     skip_debounce: bool,
     do_render: bool,
@@ -495,8 +493,6 @@ async fn spawn_fim_completion_worker(
         buffer_id,
         filename,
         buffer_lines,
-        completions,
-        completions_idx,
         prev,
         do_render,
         force_regenerate,
@@ -521,8 +517,6 @@ pub async fn fim_completion(
     buffer_id: u64,
     filename: String,
     lines: Vec<String>,
-    mut completions: Vec<FimResponse>,
-    mut completions_idx: usize,
     prev: Option<Vec<String>>, // speculative FIM content
     do_render: bool,
     force_regenerate: bool,
@@ -567,14 +561,12 @@ pub async fn fim_completion(
     if ctx.line_cur_suffix.len() > state.config.read().max_line_suffix as usize {
         return Ok(());
     }
-    debug!("yo");
     if prev.is_none() {
         // the first request should be quick - we will launch a speculative request after this one is displayed
         t_max_predict_ms = 250 // TODO parameterize this
     }
 
     let hashes = compute_hashes(&ctx);
-    debug!("yo");
 
     // if we already have a cached completion for one of the hashes, don't send a request
     if !force_regenerate && state.config.read().auto_fim {
@@ -585,7 +577,6 @@ pub async fn fim_completion(
             }
         }
     }
-    debug!("yo");
 
     // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
     // This prevents redundant context from cluttering the ring buffer
@@ -594,13 +585,11 @@ pub async fn fim_completion(
     let ring_chunk_size_half = (ring_chunk_size / 2) as usize;
     let start_line = pos_y.saturating_sub(ring_chunk_size_half);
     let end_line = (pos_y + ring_chunk_size_half).min(lines.len());
-    debug!("yo");
 
     // Safety: ensure we have valid range and enough lines
     if start_line >= end_line || start_line >= lines.len() {
         return Ok(());
     }
-    debug!("yo");
     let text = &lines[start_line..end_line];
     {
         let mut rb = state.ring_buffer.write();
@@ -610,11 +599,9 @@ pub async fn fim_completion(
             rb.evict_similar_from_live(chunk, 0.5); // TODO parameterize this
         }
     }
-    debug!("yo");
 
     // Build request
     let extra = state.ring_buffer.read().get_extra();
-    debug!("yo");
 
     let request = FimRequest {
         id_slot: 0,
@@ -649,26 +636,20 @@ pub async fn fim_completion(
         ],
     };
 
-    debug!("yo");
-
     let Ok(tx) = state.get_fim_completion_tx() else {
         // TODO log error
         return Ok(());
     };
-    debug!("yo");
 
     let last_pick = state.fim_state.read().get_last_pick_buf_id_pos_y();
     let state_ = state.clone();
 
-    debug!("yo");
     // get the next 10 lines past pos_y for tail filtering
     let end = (pos_y + 11).min(lines.len());
     let ten_lines = lines
         .get(pos_y + 1..end)
         .map(|s| s.to_vec())
         .unwrap_or_default();
-
-    debug!("yo");
 
     let state__ = state.clone();
     let handle = tokio::spawn(async move {
@@ -681,8 +662,6 @@ pub async fn fim_completion(
             // TODO log error
             return;
         };
-
-        debug!("response text raw {}", &response_text);
 
         // Parse response
         let Ok(mut response) = serde_json::from_str::<FimResponse>(&response_text) else {
@@ -704,7 +683,6 @@ pub async fn fim_completion(
             .split('\n')
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
-        debug!("\tcontent: {content:#?}\n\tten_lines: {ten_lines:#?}");
         let content = filter_tail(&content, &ten_lines).join("\n");
         let content = content
             .strip_prefix(&current_line_prefix)
@@ -720,26 +698,12 @@ pub async fn fim_completion(
             }
         }
 
-        // Send result through channel
-        let new_idx = if completions.is_empty() {
-            completions.push(response);
-            0
-        } else {
-            completions.insert(completions_idx + 1, response);
-            completions_idx + 1
-        };
-
-        if do_render {
-            completions_idx = new_idx;
-        }
-
         let msg = FimCompletionMessage {
             buffer_id,
             ctx,
             cursor_x: pos_x,
             cursor_y: pos_y,
-            completions,
-            completions_idx,
+            completion: response,
             do_render,
             retry,
         };
@@ -1107,6 +1071,7 @@ pub fn fim_cycle_next() -> LttwResult<()> {
         };
         completion
     };
+    debug!(completion);
 
     // Re-display with new completion
     let (pos_x, pos_y, line_cur) = {

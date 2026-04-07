@@ -81,12 +81,11 @@ impl FimTimingsData {
 /// Message sent from async worker to main thread when completion is ready
 #[derive(Debug, Clone)]
 pub struct FimCompletionMessage {
-    buffer_id: u64,                // Buffer handle to ensure we're still in same buffer
-    ctx: LocalContext,             // All buffer lines captured at start
-    cursor_x: usize,               // Cursor position X
-    cursor_y: usize,               // Cursor position Y
-    completions: Vec<FimResponse>, // All available completions for cycling
-    completions_idx: usize,        // Index of current completion in cycle
+    buffer_id: u64,          // Buffer handle to ensure we're still in same buffer
+    ctx: LocalContext,       // All buffer lines captured at start
+    cursor_x: usize,         // Cursor position X
+    cursor_y: usize,         // Cursor position Y
+    completion: FimResponse, // All available completions for cycling
     do_render: bool,
     retry: Option<usize>, // the retry count for this completion
 }
@@ -186,9 +185,6 @@ impl FimState {
         self.content.clear();
         self.content = content;
         self.timings = timings;
-        // Reset completion cycle when a new completion is shown
-        self.completion_cycle.clear();
-        self.completion_index = 0;
     }
 
     fn clear(&mut self) {
@@ -217,6 +213,20 @@ impl FimState {
     fn set_completion_cycle(&mut self, completions: Vec<FimResponse>, idx: usize) {
         self.completion_cycle = completions;
         self.completion_index = idx;
+    }
+
+    /// Set the completion cycle list
+    fn set_completion_idx(&mut self, idx: usize) {
+        self.completion_index = idx;
+    }
+
+    /// Set the completion cycle list
+    fn push_completion_cycle(&mut self, completions: FimResponse) {
+        self.completion_cycle.push(completions);
+    }
+
+    fn push_completion_idx_to_tail(&mut self) {
+        self.set_completion_idx(self.completion_cycle.len() - 1);
     }
 
     /// Cycle to next completion
@@ -310,31 +320,32 @@ fn process_pending_display() -> LttwResult<()> {
     //    .set_completion_cycle(completions, completions_idx);
 
     // process the most recent message which has content and isn't only whitespace
+
     let mut msg = None;
     for msg_ in messages.into_iter().rev() {
         if msg_is_valid_to_display(&msg_) {
-            msg = Some(msg_);
-            break;
+            // because the msg is valie we already know that the message is for the cursor position
+            state
+                .fim_state
+                .write()
+                .push_completion_cycle(msg_.completion.clone());
+            if msg.is_none() {
+                if msg_.do_render {
+                    state.fim_state.write().push_completion_idx_to_tail();
+                }
+                msg = Some(msg_);
+            }
         }
     }
 
     let mut retry = 0;
     if let Some(msg) = msg {
-        debug!("valid message found {msg:?}",);
-        let Some(completion) = msg.completions.get(msg.completions_idx).cloned() else {
-            return Ok(());
-        };
-        state
-            .fim_state
-            .write()
-            .set_completion_cycle(msg.completions, msg.completions_idx);
-
         if msg.do_render {
             render_fim_suggestion(
                 state.clone(),
                 msg.cursor_x,
                 msg.cursor_y,
-                &completion,
+                &msg.completion,
                 msg.ctx.line_cur,
             )?;
         }
@@ -357,10 +368,7 @@ fn process_pending_display() -> LttwResult<()> {
 
 // should we abort the completion because the content has changed since we started this completion
 fn msg_is_valid_to_display(msg: &FimCompletionMessage) -> bool {
-    let Some(completion) = msg.completions.get(msg.completions_idx) else {
-        return false;
-    };
-    if completion.content.is_empty() || completion.content.trim().is_empty() {
+    if msg.completion.content.is_empty() || msg.completion.content.trim().is_empty() {
         return false;
     }
     let id = get_current_buffer_id();
