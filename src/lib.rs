@@ -317,15 +317,7 @@ fn process_pending_display() -> LttwResult<()> {
 
     debug!("Processing {} pending display messages", messages.len(),);
 
-    // XXX
-    // UPDATE the completions with ALL msgs for cursor is in valid position
-    //state
-    //    .fim_state
-    //    .write()
-    //    .set_completion_cycle(completions, completions_idx);
-
-    // process the most recent message which has content and isn't only whitespace
-
+    // accept the most recent message which has content and isn't only whitespace
     let mut msg = None;
     for msg_ in messages.into_iter().rev() {
         if msg_is_valid_to_display(&msg_) {

@@ -1,44 +1,6 @@
-10. fim_completion, option to pick more
-       // TODO option to allow picking more than one chunk from the scope here
-03. option to not predict while in comments
-Add an new feature which prevents FIM prediction while in comments 
- - new config option no_fim_in_comments (default true)
- - Use the synID() and synIDattr() functions to check the syntax ID under the cursor:
-   - need to use equivalent within nvim_oxi
- - should however ALLOW comment predictions immediately after accepting a code
-   completion, because the code completion may end in a comment, and if that's
-   the case then we want to allow for further code completions
- - everytime a completion is accepted, update a new plugin state
-   allow_comment_fim_cur_pos (Option<>) which contains the final cursor position which
-   the accept function moves the cursor to upon accepting a completion. Whenever
-   checking against code comments, ignore checking if we're in a code comment if
-   this value is set. Everytime the on_move function is triggered, check the
-   cursor pos, if the cursor pos is different from allow_comment_fim_cur_pos
-   then set allow_comment_fim_cur_pos to None.
-10. n_predict changes
-dynamically change n_predict during each FIM call (number of tokens to predict)
- - replaces existing n_predict config option
- - When in a line and there are non-whitespace characters to the right of the
-   cursor set to n_predict_inner (default value 16)
- - for at the end of a line or where there's only whitespace left to the right
-   of the cursor set to a new config param n_prefict_end (default value 256)
-01. when debugging is disabled the lttw.log file is still created/cleared, this
-    shouldn't happen
-20. easier to use debugging system (like debug! macro)
-05. completion cycling
-New keymaps; use CTRL-j and CTRL-k from insert mode to cycle through the
-completions options. Now whenever we compile autocompletions from previous
-nearby autocompletions, we should keep a list of all the autocompletions
-(ordered from longest to shortest) and start by displaying the first FIM but
-then allow cycling through these
-05. regenerate
-New keymaps; Ctrl+l from insert move to regenerate the completion at the
-location. NOTE add this to the list of completions at this location, so one can
-cycle back through them if necessary. 
 
 ^^^^^^^^^ DONE
 
-05. regeneration removes everything but most recent 
 
 05. single_line_prediction_within_line
  - Option to ONLY show the first line of code completions unless you're in an empty line
