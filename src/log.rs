@@ -8,11 +8,27 @@
 /// being debugged
 use {once_cell::sync::Lazy, parking_lot::RwLock, std::fs::OpenOptions, std::io::prelude::*};
 
+//#[macro_export]
+//macro_rules! debug {
+//    ($($arg:tt)*) => {{
+//        let s = format!($($arg)*);
+//        let s2 = format!("[{}:{}] {s}", file!(), line!());
+//        $crate::log::log(s2);
+//    }}
+//}
+
 #[macro_export]
 macro_rules! debug {
     ($($arg:tt)*) => {{
         let s = format!($($arg)*);
-        let s2 = format!("[{}:{}] {s}", file!(), line!());
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as u32;
+        let h = t / 3600 % 24;
+        let m = t / 60 % 60;
+        let s_sec = t % 60;
+        let s2 = format!("[{:02}:{:02}:{:02} {}:{}] {s}", h, m, s_sec, file!(), line!());
         $crate::log::log(s2);
     }}
 }

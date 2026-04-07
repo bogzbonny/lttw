@@ -329,6 +329,9 @@ pub fn fim_try_hint_inner(
     let completions: Vec<FimResponse> = all_completions.into_iter().map(|(r, _)| r).collect();
     let completion = completions.get(completions_idx);
 
+    debug!("all completions: {completions:?}");
+    debug!("completions_idx: {completions_idx:?}");
+
     let mut prev_for_next_fim: Option<Vec<String>> = None;
     if !force_regenerate && let Some(completion) = completion {
         let prev_content = completion.content.clone();
@@ -386,6 +389,7 @@ pub fn fim_try_hint_inner(
                 prev_for_next_fim,
                 skip_debounce,
                 false, // do not render
+                force_regenerate,
                 retry,
             )
             .await;
@@ -405,6 +409,7 @@ pub fn fim_try_hint_inner(
                 prev_for_next_fim,
                 skip_debounce,
                 true, // do attempt to render
+                force_regenerate,
                 retry,
             )
             .await;
@@ -431,6 +436,7 @@ async fn spawn_fim_completion_worker(
     prev: Option<Vec<String>>, // speculative FIM content
     skip_debounce: bool,
     do_render: bool,
+    force_regenerate: bool,
     retry: Option<usize>,
 ) -> LttwResult<()> {
     let semaphone = state.fim_worker_semaphore.clone();
@@ -491,6 +497,7 @@ async fn spawn_fim_completion_worker(
         completions_idx,
         prev,
         do_render,
+        force_regenerate,
         retry,
     )
     .await?;
@@ -516,6 +523,7 @@ pub async fn fim_completion(
     mut completions_idx: usize,
     prev: Option<Vec<String>>, // speculative FIM content
     do_render: bool,
+    force_regenerate: bool,
     retry: Option<usize>,
 ) -> LttwResult<()> {
     let (
@@ -557,15 +565,17 @@ pub async fn fim_completion(
     if ctx.line_cur_suffix.len() > state.config.read().max_line_suffix as usize {
         return Ok(());
     }
+    debug!("yo");
     if prev.is_none() {
         // the first request should be quick - we will launch a speculative request after this one is displayed
         t_max_predict_ms = 250 // TODO parameterize this
     }
 
     let hashes = compute_hashes(&ctx);
+    debug!("yo");
 
     // if we already have a cached completion for one of the hashes, don't send a request
-    if state.config.read().auto_fim {
+    if !force_regenerate && state.config.read().auto_fim {
         for hash in &hashes {
             let cache_lock = state.cache.read();
             if cache_lock.contains_key(hash) {
@@ -573,6 +583,7 @@ pub async fn fim_completion(
             }
         }
     }
+    debug!("yo");
 
     // Evict ring buffer chunks that are very similar to current FIM context (>0.5 threshold)
     // This prevents redundant context from cluttering the ring buffer
@@ -581,11 +592,13 @@ pub async fn fim_completion(
     let ring_chunk_size_half = (ring_chunk_size / 2) as usize;
     let start_line = pos_y.saturating_sub(ring_chunk_size_half);
     let end_line = (pos_y + ring_chunk_size_half).min(lines.len());
+    debug!("yo");
 
     // Safety: ensure we have valid range and enough lines
     if start_line >= end_line || start_line >= lines.len() {
         return Ok(());
     }
+    debug!("yo");
     let text = &lines[start_line..end_line];
     {
         let mut rb = state.ring_buffer.write();
@@ -595,9 +608,11 @@ pub async fn fim_completion(
             rb.evict_similar_from_live(chunk, 0.5); // TODO parameterize this
         }
     }
+    debug!("yo");
 
     // Build request
     let extra = state.ring_buffer.read().get_extra();
+    debug!("yo");
 
     let request = FimRequest {
         id_slot: 0,
@@ -632,20 +647,26 @@ pub async fn fim_completion(
         ],
     };
 
+    debug!("yo");
+
     let Ok(tx) = state.get_fim_completion_tx() else {
         // TODO log error
         return Ok(());
     };
+    debug!("yo");
 
     let last_pick = state.fim_state.read().get_last_pick_buf_id_pos_y();
     let state_ = state.clone();
 
+    debug!("yo");
     // get the next 10 lines past pos_y for tail filtering
     let end = (pos_y + 11).min(lines.len());
     let ten_lines = lines
         .get(pos_y + 1..end)
         .map(|s| s.to_vec())
         .unwrap_or_default();
+
+    debug!("yo");
 
     let state__ = state.clone();
     let handle = tokio::spawn(async move {
