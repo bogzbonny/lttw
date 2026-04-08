@@ -6,7 +6,7 @@
 ^^^^^^^^^ DONE
 
 05. integrate in LSP Completions into input_prefix
-     - use vim.lsp.Client.request directly
+     - use vim.lsp.Client.request_sync directly
           - https://neovim.io/doc/user/lsp/#_lua-module%3a-vim.lsp.client
           - https://neovim.io/doc/user/lsp/#Client%3Arequest()
           - OR for sync https://neovim.io/doc/user/lsp/#Client%3Arequest_sync()
