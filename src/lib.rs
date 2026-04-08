@@ -709,6 +709,34 @@ fn on_buf_leave() -> LttwResult<()> {
     Ok(())
 }
 
+/// Handle BufEnter event - update file contents if not already stored
+/// This only reads from disk if there's no existing content saved for this file
+fn on_buf_enter_update_file_contents() -> LttwResult<()> {
+    let state = get_state();
+
+    // Only update file contents if diff tracking is enabled
+    if !state.config.read().diff_tracking_enabled {
+        return Ok(());
+    }
+
+    let filename = get_buf_filename()?;
+
+    // If we already have content saved for this file, do nothing
+    if state.file_contents.read().contains_key(&filename) {
+        return Ok(());
+    }
+
+    let new_content = std::fs::read_to_string(&filename)?;
+
+    // Save the current file content for future diff comparison
+    state
+        .file_contents
+        .write()
+        .insert(filename.clone(), Some(new_content));
+
+    Ok(())
+}
+
 /// Handle BufWritePost event - track file content and evaluate diff chunks after saving buffer
 fn on_buf_write_post() -> LttwResult<()> {
     let state = get_state();

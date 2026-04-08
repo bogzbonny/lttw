@@ -27,6 +27,11 @@ pub struct DiagnosticTracker {
 }
 
 impl DiagnosticTracker {
+    /// Create a new empty DiagnosticTracker
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Clear all tracked diagnostics
     pub fn clear(&mut self) {
         self.diagnostics_by_buf.clear();

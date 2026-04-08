@@ -568,11 +568,8 @@ pub async fn fim_completion(
         n_predict, n_predict_inner, n_predict_end
     );
 
-    let stop = if inside_a_line && state.config.read().single_line_prediction_within_line {
-        vec!["\n".to_string()]
-    } else {
-        Vec::with_capacity(0)
-    };
+    let truncate_to_single_line =
+        inside_a_line && state.config.read().single_line_prediction_within_line;
 
     // Get local context
 
@@ -630,7 +627,7 @@ pub async fn fim_completion(
         input_extra: extra,
         prompt: ctx.middle.clone(),
         n_predict,
-        stop,
+        stop: Vec::with_capacity(0),
         n_indent: ctx.indent,
         top_k: 40,
         top_p: 0.90,
@@ -698,7 +695,16 @@ pub async fn fim_completion(
         // for full line tail removal of even the first line if the LLM is just reproducing the
         // the suffix entirely even in the first line (IF we included the prefix)
         let current_line_prefix = ctx.line_cur.chars().take(pos_x).collect::<String>();
-        let content = current_line_prefix.clone() + &response.content;
+        let mut content = current_line_prefix.clone() + &response.content;
+
+        if truncate_to_single_line {
+            content = content
+                .lines()
+                .next()
+                .map(|s| s.to_string())
+                .unwrap_or_default();
+        }
+
         let content = content
             .trim_end() // trim new excess newlines which may interfer with tail matching
             .split('\n')

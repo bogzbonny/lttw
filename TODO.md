@@ -1,7 +1,9 @@
 
-^^^^^^^^^ DONE
-
 05. write file contents on first enter of a buffer we haven't entered before 
+05. update the single line output inside line functionality to not use 'stop'
+    but just truncate the file contents
+
+^^^^^^^^^ DONE
 
 
 ------------------------

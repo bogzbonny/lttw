@@ -1,8 +1,8 @@
 use crate::{
     diagnostics::handle_diagnostic_changed,
     filetype::on_buf_enter_check_filetype,
-    fim_hide, get_state, on_buf_enter_gather_chunks, on_buf_leave, on_buf_write_post, on_move,
-    on_text_yank_post,
+    fim_hide, get_state, on_buf_enter_gather_chunks, on_buf_enter_update_file_contents,
+    on_buf_leave, on_buf_write_post, on_move, on_text_yank_post,
     ring_buffer::mode_change_maybe_start_processing_ring_updates,
     set_cur_buffer_info_in_state, set_mode_in_state,
     utils::{create_autocmd, del_autocmd},
@@ -97,6 +97,23 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
     )
     .unwrap_or(0);
     ids.push(id);
+
+    // Update file contents when buffer is first opened (only if not already stored)
+    // This runs on BufEnter and checks if diff_tracking is enabled
+    let state = get_state();
+    if state.config.read().diff_tracking_enabled {
+        let id = create_autocmd(
+            ["BufEnter"],
+            &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+                .callback(|_| {
+                    let _ = on_buf_enter_update_file_contents();
+                    false
+                })
+                .build(),
+        )
+        .unwrap_or(0);
+        ids.push(id);
+    }
 
     // Yank text for ring buffer (TextYankPost)
     let id = create_autocmd(
