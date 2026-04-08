@@ -268,31 +268,6 @@ impl FimState {
     }
 }
 
-/// Get LSP completions for the cursor position and log them
-///
-/// This is a test command to debug LSP completion behavior.
-/// It uses Neovim's built-in LSP functionality via `vim.lsp.buf_request_sync`.
-fn get_lsp_completions() -> LttwResult<()> {
-    debug!("Requesting LSP completions at current cursor position");
-
-    // Use vim.lsp.util.make_position_params() to get the correct params for the current cursor
-    // Then call vim.lsp.buf_request_sync synchronously
-    let expr = "vim.lsp.buf_request_sync(0, 'textDocument/completion', vim.lsp.util.make_position_params(0, 'utf-8'), 1000)";
-
-    let result = nvim_oxi::api::call_function::<_, nvim_oxi::Object>("lua", (expr,));
-
-    match result {
-        Ok(completions_obj) => {
-            debug!("LSP completions result: {:?}", completions_obj);
-        }
-        Err(e) => {
-            debug!("Error requesting LSP completions: {:?}", e);
-        }
-    }
-
-    Ok(())
-}
-
 /// Initialize persistent tokio runtime and completion channel
 fn init_completion_processing_thread() {
     let state = get_state();
