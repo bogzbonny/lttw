@@ -100,20 +100,18 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
 
     // Update file contents when buffer is first opened (only if not already stored)
     // This runs on BufEnter and checks if diff_tracking is enabled
-    let state = get_state();
-    if state.config.read().diff_tracking_enabled {
-        let id = create_autocmd(
-            ["BufEnter"],
-            &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-                .callback(|_| {
-                    let _ = on_buf_enter_update_file_contents();
-                    false
-                })
-                .build(),
-        )
-        .unwrap_or(0);
-        ids.push(id);
-    }
+    let id = create_autocmd(
+        ["BufEnter"],
+        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+            .callback(|_| {
+                debug!("BufEnter diff_tracking_enabled autocmd fired");
+                let _ = on_buf_enter_update_file_contents();
+                false
+            })
+            .build(),
+    )
+    .unwrap_or(0);
+    ids.push(id);
 
     // Yank text for ring buffer (TextYankPost)
     let id = create_autocmd(

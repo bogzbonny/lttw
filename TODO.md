@@ -11,9 +11,8 @@
 05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
      - :lua print(vim.inspect(vim.diagnostic.get())) 
         - DIAGNOSTIC PIPELINE IS OVERWRITTEN BY ALE! thus the diagnostic changed
-          autocmd will not be updated
-          - alternatives: just check/update the diagnostics in a loop (200ms?) 
-             - only while in normal mode 
+          autocmd will not be updated - it DOES actually work so long as we dont
+          suppress the color changes that ale has
 
         config.handlers = {
         -- Override Neovim's handling of diagnostics to run through ALE's
@@ -119,6 +118,10 @@ local query_string = [[
        - probably want to have a config option for all the words which we don't
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
+
+10. on_buf_enter_update_file_contents bug - for some reason its not triggered
+    when openning for the first time (with vf) - subsiquent switches to the
+    buffer will activate it
 
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
