@@ -5,6 +5,31 @@
 
 ^^^^^^^^^ DONE
 
+05. integrate in LSP Completions into input_prefix
+     - use vim.lsp.Client.request directly
+          - https://neovim.io/doc/user/lsp/#_lua-module%3a-vim.lsp.client
+          - https://neovim.io/doc/user/lsp/#Client%3Arequest()
+          - OR for sync https://neovim.io/doc/user/lsp/#Client%3Arequest_sync()
+     - nvim_oxi doesn't currently support lsp natively - could probably still
+       call the sync function. directly 
+     - OPTIONAL mini lag for these completions like 100ms so we're not generating
+       them ruthlessly - however I want to try with this at 0ms, it may be fine!
+     - automatically put the llm completion if the user hasn't moved up or down
+       through the completions - HOWEVER if the user has moved up or down
+       through the completions, then add the completion as the next on the list
+       from whatever the users current position is in the completions list
+     - supplement the llm completions with suggestions from the LSP completions
+     - I WOULD actually scan all the nearby text and order them
+       alphanumerically but then set the index AT any matches to nearby text
+        - this will be useful in situations like structs with RwLocks for
+          instance... chances are you might want to type RwLock
+        - if no matches choose a random position
+     - MAYBE also just provide the LSP completion as an option immediately until
+       the LLM response comes in. I noticed with ALE (from insert mode go C-X
+       then C-O) it gives a suggestion with a `...` in it which is probably
+       where the cursor should just be inserted if the completion is accepted
+       (removing the ... keeping it in insert mode THUS triggering the next
+       completion).
 
 ------------------------
 
@@ -37,7 +62,9 @@
      - OPTION ONCE no more errors - save file to regenerate diagnostics
      - OPTION ONCE no more errors, go to the next file with errors in a new tab
 
-03. git diff eviction by line number
+
+
+10. git diff extra_input eviction by line number
      - because we're just saving the file changes we do not need to actually 
        calculate removed diffs, just calculate the new diffs and add those to
        the queue HOWEVER we should probably remove other diff segments by
@@ -63,26 +90,6 @@
      - When using a normal chunks for eviction:
         - evict git-diff chunks by comparing the chunk similarity to the
           git-diff chunks UPDATED information.
-
-05. integrate in LSP Completions into input_prefix
-     - OPTIONAL mini lag for these completions like 100ms so we're not generating
-       them ruthlessly - however I want to try with this at 0ms, it may be fine!
-     - automatically put the llm completion if the user hasn't moved up or down
-       through the completions - HOWEVER if the user has moved up or down
-       through the completions, then add the completion as the next on the list
-       from whatever the users current position is in the completions list
-     - supplement the llm completions with suggestions from the LSP completions
-     - I WOULD actually scan all the nearby text and order them
-       alphanumerically but then set the index AT any matches to nearby text
-        - this will be useful in situations like structs with RwLocks for
-          instance... chances are you might want to type RwLock
-        - if no matches choose a random position
-     - MAYBE also just provide the LSP completion as an option immediately until
-       the LLM response comes in. I noticed with ALE (from insert mode go C-X
-       then C-O) it gives a suggestion with a `...` in it which is probably
-       where the cursor should just be inserted if the completion is accepted
-       (removing the ... keeping it in insert mode THUS triggering the next
-       completion).
 
 20. integrate definitions of all nearby objects 
      - add to extra_input
