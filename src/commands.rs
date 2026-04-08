@@ -2,13 +2,22 @@ use {
     crate::{
         autocmd::clear_filetype_autocommand, debug_clear, debug_disable, debug_enable,
         diagnostics::debug_output_diagnostics, disable_info, disable_plugin, enable_info,
-        enable_plugin, instruction, is_enabled, toggle_auto_fim, LttwResult,
+        enable_plugin, get_lsp_completions, instruction, is_enabled, toggle_auto_fim, LttwResult,
     },
     nvim_oxi::api::create_user_command,
 };
 
 /// Register nvim-oxi commands for the plugin
 pub fn register_commands() -> LttwResult<()> {
+    let _ = create_user_command(
+        "LttwCompl",
+        |_| -> LttwResult<()> {
+            get_lsp_completions()?;
+            Ok(())
+        },
+        &Default::default(),
+    );
+
     let _ = create_user_command(
         "LttwToggleAutoFim",
         |_| -> LttwResult<()> {

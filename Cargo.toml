@@ -9,7 +9,7 @@ path = "src/lib.rs"
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
-nvim-oxi = { version = "0.6", features = ["neovim-0-11", "test", "test-terminator", "libuv"] }
+nvim-oxi = { version = "0.6", features = ["neovim-0-11", "test", "test-terminator", "libuv", "mlua"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
