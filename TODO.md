@@ -119,7 +119,7 @@ local query_string = [[
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
 
-10. on_buf_enter_update_file_contents bug - for some reason its not triggered
+10. BUG on_buf_enter_update_file_contents - for some reason its not triggered
     when openning for the first time (with vf) - subsiquent switches to the
     buffer will activate it
 
@@ -152,3 +152,6 @@ POST RELEASE
      - the indent system for generating completions is good, however, its a bit
        annoying to not be able to autogenerate a closing } in the right position
        would be nice if there was a way to have the best of both worlds here
+     - yanked text should have a description before adding to ExtraArgs... Maybe
+       also have it located at the end near the prefix
+
