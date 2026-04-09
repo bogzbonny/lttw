@@ -308,7 +308,9 @@ fn init_completion_processing_thread() {
 }
 
 fn retrieve_lsp_completions() -> LttwResult<Vec<FimCompletionMessage>> {
-    let json_str = nvim_oxi::api::get_var::<String>("lttw_completion")?;
+    let Ok(json_str) = nvim_oxi::api::get_var::<String>("lttw_completion") else {
+        return Ok(vec![]); // no completions available, nbd
+    };
     nvim_oxi::api::del_var("lttw_completion")?; // clear the var now that we've gotten it
 
     //debug!("retrieved lsp completions: {}", json_str);
@@ -351,6 +353,11 @@ fn retrieve_lsp_completions() -> LttwResult<Vec<FimCompletionMessage>> {
             // only keep if strips the prefix
             let mut text = comp.text.strip_prefix(&line_chars).map(|s| s.to_string())?;
 
+            // TODO use some of these autocompletion details better rather than just
+            // truncating
+            // - it would be nice to be able to accept Some_fn(...) and keep the closing backet
+            // - something which only takes one arg, should automatically be filled in eg.
+            //    typing Ok[CUR]some_var  then pressing tab should autocomplete to Ok(some_var)
             if let Some(pos) = text.find("$0") {
                 text.truncate(pos);
             }

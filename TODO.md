@@ -66,6 +66,12 @@
      - OPTION ONCE no more errors - save file to regenerate diagnostics
      - OPTION ONCE no more errors, go to the next file with errors in a new tab
 
+05. Integrate in better usage of lsp autocompletions
+     - // TODO use some of these autocompletion details better rather than just
+       // truncating
+       // - it would be nice to be able to accept Some_fn(...) and keep the closing backet
+       // - something which only takes one arg, should automatically be filled in eg.
+       //    typing Ok[CUR]some_var  then pressing tab should autocomplete to Ok(some_var)
 
 10. git diff extra_input eviction by line number
      - because we're just saving the file changes we do not need to actually 
