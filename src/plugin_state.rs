@@ -4,8 +4,9 @@ use {
         ring_buffer, Error, FimCompletionMessage, FimState, LttwResult,
     },
     ahash::{HashMap, HashMapExt},
+    dashmap::DashMap,
     nvim_oxi::api::create_namespace,
-    parking_lot::RwLock,
+    parking_lot::{RwLock, RwLockReadGuard},
     std::{
         sync::{
             atomic::{AtomicBool, AtomicI64, AtomicU64},
@@ -72,7 +73,10 @@ pub struct PluginState {
     // File content storage - stores the most recent content of each open buffer
     // Used for calculating diffs on file save
     // key is filename, value is contents, None is there is a file but we haven't read it once yet
-    pub file_contents: Arc<RwLock<HashMap<String, Option<String>>>>,
+    file_contents: Arc<RwLock<HashMap<String, Option<String>>>>,
+
+    // keep statistics on all the words for ordering all LSP completions
+    word_statistics: Arc<DashMap<String, u64>>,
 
     // FIM completion channel for async worker communication
     pub fim_completion_tx: Arc<RwLock<Option<mpsc::Sender<FimCompletionMessage>>>>,
@@ -111,7 +115,6 @@ impl PluginState {
 
         // Create a multi-threaded tokio runtime
         let runtime = match tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(4) // TODO parameterize this
             .enable_all()
             .build()
         {
@@ -155,6 +158,7 @@ impl PluginState {
             diagnostics: Arc::new(RwLock::new(DiagnosticTracker::default())),
 
             file_contents: Arc::new(RwLock::new(HashMap::new())),
+            word_statistics: Arc::new(DashMap::new()),
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(RwLock::new(None)),
             pending_display: Arc::new(RwLock::new(Vec::new())),
@@ -213,5 +217,140 @@ impl PluginState {
     /// Get the allow comment FIM cursor position
     pub fn get_allow_comment_fim_cur_pos(&self) -> Option<(u64, usize, usize)> {
         *self.allow_comment_fim_cur_pos.read()
+    }
+
+    pub fn has_file_contents(&self, filename: &str) -> bool {
+        self.file_contents.read().contains_key(filename)
+    }
+
+    // sets the filecontents also takes statistics on all the contents if this is the first time
+    // adding the contents.
+    pub fn set_file_contents(&self, filename: String, new_content: String) {
+        self.file_contents
+            .write()
+            .insert(filename.clone(), Some(new_content.clone()));
+
+        // dispatch a non-blocking thread to count word statistics on the file contents
+        let rt = self.tokio_runtime.clone();
+        let ws = self.word_statistics.clone();
+        rt.read().spawn(async move {
+            add_word_statistics(ws, new_content);
+        });
+    }
+
+    pub fn adjust_word_statistics_for_diff(&self, diff_content: Vec<String>) {
+        // dispatch a non-blocking thread to count word statistics on the file contents
+        let rt = self.tokio_runtime.clone();
+        let ws = self.word_statistics.clone();
+        rt.read().spawn(async move {
+            diff_word_statistics(ws, diff_content);
+        });
+    }
+
+    /// set the file contents bypassing calculating word statistics
+    pub fn set_file_contents_bypass_word_stats(&self, filename: String, new_content: String) {
+        self.file_contents
+            .write()
+            .insert(filename.clone(), Some(new_content));
+    }
+
+    pub fn set_file_contents_empty(&self, filename: String) {
+        self.file_contents.write().insert(filename.clone(), None);
+    }
+
+    pub fn file_contents_read(&self) -> RwLockReadGuard<'_, HashMap<String, Option<String>>> {
+        self.file_contents.read()
+    }
+
+    pub fn get_word_statistic_usage(&self, word: &str) -> u64 {
+        self.word_statistics.get(word).map(|v| *v).unwrap_or(0)
+    }
+
+    pub fn debug_word_statistics(&self) {
+        self.word_statistics.iter().for_each(|r| {
+            debug!("{}: {}", r.key(), r.value());
+        });
+    }
+}
+
+// add_word_statistics takes all the content then separates out all the Identifiers (words
+// which must begin with a letter or underscore but then may also include numbers afterwords).
+// The identifiers are then added to the word_statistics adding one for each word that exists
+pub fn add_word_statistics(word_stats: Arc<DashMap<String, u64>>, content: String) {
+    debug!("add_word_statistics");
+    let mut current_word = String::new();
+
+    for ch in content.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            if ch.is_numeric() && current_word.is_empty() {
+                continue;
+            }
+            current_word.push(ch);
+        } else if !current_word.is_empty() {
+            *word_stats.entry(current_word.clone()).or_insert(0) += 1;
+            current_word.clear();
+        }
+    }
+
+    // Handle last word if any
+    if !current_word.is_empty() {
+        *word_stats.entry(current_word).or_insert(0) += 1;
+    }
+}
+
+pub fn sub_word_statistics(word_stats: Arc<DashMap<String, u64>>, content: String) {
+    debug!("sub_word_statistics");
+    let mut current_word = String::new();
+
+    for ch in content.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            if ch.is_numeric() && current_word.is_empty() {
+                continue;
+            }
+            current_word.push(ch);
+        } else if !current_word.is_empty() {
+            *word_stats.entry(current_word.clone()).or_insert(0) = word_stats
+                .entry(current_word.clone())
+                .or_insert(0)
+                .saturating_sub(1);
+            current_word.clear();
+        }
+    }
+
+    // Handle last word if any
+    if !current_word.is_empty() {
+        *word_stats.entry(current_word.clone()).or_insert(0) = word_stats
+            .entry(current_word.clone())
+            .or_insert(0)
+            .saturating_sub(1);
+    }
+}
+
+// strips a completion down to its identifier for comparison in the word statistics
+pub fn strip_to_first_identifier(s: &str) -> String {
+    let mut out = String::new();
+    for ch in s.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            if ch.is_numeric() && out.is_empty() {
+                continue;
+            }
+            out.push(ch);
+        } else if !out.is_empty() {
+            return out;
+        }
+    }
+    out
+}
+
+// diff_word_statistics takes in a diff string and modifies
+// the word statistics accordingly
+pub fn diff_word_statistics(word_stats: Arc<DashMap<String, u64>>, diff_content: Vec<String>) {
+    for line in diff_content {
+        // ignore all other lines (such as @@ lines)
+        if let Some(line) = line.strip_prefix('+') {
+            add_word_statistics(word_stats.clone(), line.to_string());
+        } else if let Some(line) = line.strip_prefix('-') {
+            sub_word_statistics(word_stats.clone(), line.to_string());
+        }
     }
 }

@@ -1997,6 +1997,7 @@ name = "lttw"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "dashmap",
  "gix",
  "gix-diff",
  "gix-hash 0.14.2",

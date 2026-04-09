@@ -322,3 +322,38 @@ Our approach should be to simply save the most recent buffers we encounter by
 filename in the PluginState and then everytime BufWritePost is executed we
 compare all the files we have to what we've previously saved and calculate the
 diff based on that
+
+05. write file contents on first enter of a buffer we haven't entered before 
+05. update the single line output inside line functionality to not use 'stop'
+    but just truncate the file contents
+05. integrate in LSP Completions into input_prefix
+     - use vim.lsp.Client.request_sync directly
+          - https://neovim.io/doc/user/lsp/#_lua-module%3a-vim.lsp.client
+          - https://neovim.io/doc/user/lsp/#Client%3Arequest()
+          - OR for sync https://neovim.io/doc/user/lsp/#Client%3Arequest_sync()
+     - nvim_oxi doesn't currently support lsp natively - could probably still
+       call the sync function. directly 
+     - OPTIONAL mini lag for these completions like 100ms so we're not generating
+       them ruthlessly - however I want to try with this at 0ms, it may be fine!
+     - automatically put the llm completion if the user hasn't moved up or down
+       through the completions - HOWEVER if the user has moved up or down
+       through the completions, then add the completion as the next on the list
+       from whatever the users current position is in the completions list
+     - supplement the llm completions with suggestions from the LSP completions
+     - I WOULD actually scan all the nearby text and order them
+       alphanumerically but then set the index AT any matches to nearby text
+        - this will be useful in situations like structs with RwLocks for
+          instance... chances are you might want to type RwLock
+        - if no matches choose a random position
+     - MAYBE also just provide the LSP completion as an option immediately until
+       the LLM response comes in. I noticed with ALE (from insert mode go C-X
+       then C-O) it gives a suggestion with a `...` in it which is probably
+       where the cursor should just be inserted if the completion is accepted
+       (removing the ... keeping it in insert mode THUS triggering the next
+       completion).
+01. lsp completions - do not do any on empty string
+01. use sort order for the items coming in 
+     - keep a passive map of all words in the files to sort by most common 
+       for the top of the list
+01. deadlock bug hiding in the lsp completion system 
+     - seems to have come up in this refactor to include word statistics

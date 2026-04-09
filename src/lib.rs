@@ -22,6 +22,7 @@ pub mod filetype;
 pub mod fim;
 pub mod instruction;
 pub mod keymap;
+pub mod lsp_completion;
 pub mod plugin_state;
 pub mod ring_buffer;
 pub mod utils;
@@ -29,14 +30,13 @@ pub mod utils;
 pub use error::{Error, LttwResult};
 
 use {
-    ahash::HashSet,
     diagnostics::{debug_output_diagnostics, handle_diagnostic_changed},
     diff_chunk::calculate_diff_between_contents,
     fim::{
         fim_cycle_next, fim_cycle_prev, fim_try_hint, fim_try_hint_skip_debounce,
         render_fim_suggestion, FimAcceptType, FimResponse, FimTimings,
     },
-    //nvim_oxi::{conversion::FromObject, Dictionary, Function},
+    lsp_completion::retrieve_lsp_completions,
     nvim_oxi::{Dictionary, Function},
     plugin_state::{get_state, init_state, PluginState},
     std::{
@@ -307,110 +307,6 @@ fn init_completion_processing_thread() {
     );
 }
 
-fn retrieve_lsp_completions() -> LttwResult<Vec<FimCompletionMessage>> {
-    let Ok(json_str) = nvim_oxi::api::get_var::<String>("lttw_completion") else {
-        return Ok(vec![]); // no completions available, nbd
-    };
-    nvim_oxi::api::del_var("lttw_completion")?; // clear the var now that we've gotten it
-
-    //debug!("retrieved lsp completions: {}", json_str);
-
-    let response: utils::CompletionResponse = serde_json::from_str(&json_str)?;
-    //debug!("response: {:?}", response);
-
-    let (pos_x, pos_y) = (response.pos_x, response.pos_y);
-    let (x, y) = get_pos();
-    if pos_x != x || pos_y != y {
-        debug!("retrieve_lsp_completions");
-        return Ok(vec![]);
-    };
-    if get_current_buffer_id() != response.buffer_id {
-        debug!("retrieve_lsp_completions");
-        return Ok(vec![]);
-    }
-    debug!("retrieve_lsp_completions");
-    let line_cur = get_buf_line(pos_y);
-    let mut seen = HashSet::default();
-    let filtered_comps: Vec<FimCompletionMessage> = response
-        .items
-        .into_iter()
-        .filter_map(|comp| {
-            if comp.start_char > pos_x || comp.start_line != pos_y {
-                return None;
-            }
-
-            let line_chars = line_cur
-                .chars()
-                .skip(comp.start_char)
-                .take(pos_x - comp.start_char)
-                .collect::<String>();
-
-            // Only complete partially written text
-            if line_chars.is_empty() {
-                return None;
-            }
-
-            // only keep if strips the prefix
-            let mut text = comp.text.strip_prefix(&line_chars).map(|s| s.to_string())?;
-
-            // TODO use some of these autocompletion details better rather than just
-            // truncating
-            // - it would be nice to be able to accept Some_fn(...) and keep the closing backet
-            // - something which only takes one arg, should automatically be filled in eg.
-            //    typing Ok[CUR]some_var  then pressing tab should autocomplete to Ok(some_var)
-            if let Some(pos) = text.find("$0") {
-                text.truncate(pos);
-            }
-            if let Some(pos) = text.find("${") {
-                text.truncate(pos);
-            }
-            if let Some(pos) = text.find("$1") {
-                text.truncate(pos);
-            }
-            if let Some(pos) = text.find("$2") {
-                text.truncate(pos);
-            }
-            // discard multiline
-            if let Some(pos) = text.find('\n') {
-                text.truncate(pos);
-            }
-
-            // filter out duplicates
-            if seen.contains(&text) {
-                return None;
-            }
-            seen.insert(text.clone());
-
-            let fim_resp = FimResponse {
-                content: text,
-                timings: None,
-                tokens_cached: 0,
-                truncated: false,
-            };
-
-            Some(FimCompletionMessage {
-                buffer_id: response.buffer_id,
-                line_cur: line_cur.clone(),
-                cursor_x: pos_x,
-                cursor_y: pos_y,
-                completion: fim_resp, // All available completions for cycling
-                do_render: true,
-                retry: None,
-            })
-        })
-        .collect();
-
-    // save in caches
-    //let hashes = compute_hashes(&ctx.prefix, &ctx.middle, &ctx.suffix);
-    //let mut cache_lock = state.cache.write();
-    //for hash in &hashes {
-    //    cache_lock.insert(hash.clone(), resp.clone());
-    //}
-    debug!("retrieve_lsp_completions");
-
-    Ok(filtered_comps)
-}
-
 /// NOTE this occurs on the neovim thread
 /// Process pending FIM display queue - drains and displays messages on the main thread
 fn process_pending_display() -> LttwResult<()> {
@@ -422,21 +318,28 @@ fn process_pending_display() -> LttwResult<()> {
         return Ok(());
     }
 
-    let mut messages = match retrieve_lsp_completions() {
+    // Take all pending messages (clear the queue)
+    let queued_messages: Vec<FimCompletionMessage> = {
+        let Some(mut pending_queue) = state.pending_display.try_write() else {
+            return Ok(());
+        };
+        std::mem::take(&mut *pending_queue)
+    };
+
+    //debug!("process_pending_display");
+    let mut messages = match retrieve_lsp_completions(&state) {
         Ok(c) => c,
         Err(e) => {
             debug!(e);
             Vec::new()
         }
     };
+    //debug!("process_pending_display");
 
-    // Take all pending messages (clear the queue)
-    let queued_messages: Vec<FimCompletionMessage> = {
-        let mut pending_queue = state.pending_display.write();
-        std::mem::take(&mut *pending_queue)
-    };
+    //debug!("process_pending_display");
 
     messages.extend(queued_messages);
+    //debug!("process_pending_display");
 
     if messages.is_empty() {
         return Ok(());
@@ -832,6 +735,7 @@ fn on_buf_leave() -> LttwResult<()> {
 /// Handle BufEnter event - update file contents if not already stored
 /// This only reads from disk if there's no existing content saved for this file
 fn on_buf_enter_update_file_contents() -> LttwResult<()> {
+    debug!("on_buf_enter_update_file_contents");
     let state = get_state();
 
     // Only update file contents if diff tracking is enabled
@@ -842,17 +746,14 @@ fn on_buf_enter_update_file_contents() -> LttwResult<()> {
     let filename = get_buf_filename()?;
 
     // If we already have content saved for this file, do nothing
-    if state.file_contents.read().contains_key(&filename) {
+    if state.has_file_contents(&filename) {
         return Ok(());
     }
 
     let new_content = std::fs::read_to_string(&filename)?;
 
     // Save the current file content for future diff comparison
-    state
-        .file_contents
-        .write()
-        .insert(filename.clone(), Some(new_content));
+    state.set_file_contents(filename.clone(), new_content);
 
     Ok(())
 }
@@ -875,13 +776,13 @@ fn on_buf_write_post() -> LttwResult<()> {
         }
 
         if state.config.read().diff_tracking_enabled {
-            let has_file = state.file_contents.read().contains_key(&filename);
+            let has_file = state.has_file_contents(&filename);
             if !has_file {
-                state.file_contents.write().insert(filename, None);
+                state.set_file_contents_empty(filename);
             }
 
             let mut to_write = Vec::new();
-            for (filename_, old_content) in state.file_contents.read().iter() {
+            for (filename_, old_content) in state.file_contents_read().iter() {
                 // get the new file contents from the filesystem
                 let Ok(new_content) = std::fs::read_to_string(filename_) else {
                     continue;
@@ -918,17 +819,24 @@ fn on_buf_write_post() -> LttwResult<()> {
                         debug!("diff_chunk_added Added to queued: {}", chunk.filepath,);
                     }
                 }
+
+                // process word statistics for diff chunks
+                for c in diff_chunks {
+                    state.adjust_word_statistics_for_diff(c.content);
+                }
             }
 
             for (filename_, new_content) in to_write.into_iter() {
                 // Save the current file content for future diff comparison
-                state
-                    .file_contents
-                    .write()
-                    .insert(filename_.clone(), Some(new_content));
+                state.set_file_contents_bypass_word_stats(filename_.clone(), new_content);
             }
         }
     }
 
     Ok(())
+}
+
+pub fn debug_word_statistics() {
+    let state = get_state();
+    state.debug_word_statistics();
 }

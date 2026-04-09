@@ -338,7 +338,7 @@ pub fn fim_try_hint_inner(
         && !lch.is_whitespace()
     {
         // trigger the async lsp completion
-        if let Err(e) = crate::utils::trigger_lsp_completions_async() {
+        if let Err(e) = crate::lsp_completion::trigger_lsp_completions_async() {
             debug!(e)
         }
     }

@@ -1,24 +1,14 @@
 use {
     crate::{
         autocmd::clear_filetype_autocommand, debug_clear, debug_disable, debug_enable,
-        diagnostics::debug_output_diagnostics, disable_info, disable_plugin, enable_info,
-        enable_plugin, instruction, is_enabled, toggle_auto_fim, LttwResult,
+        debug_word_statistics, diagnostics::debug_output_diagnostics, disable_info, disable_plugin,
+        enable_info, enable_plugin, instruction, is_enabled, toggle_auto_fim, LttwResult,
     },
     nvim_oxi::api::create_user_command,
 };
 
 /// Register nvim-oxi commands for the plugin
 pub fn register_commands() -> LttwResult<()> {
-    let _ = create_user_command(
-        "LttwCompl",
-        |_| -> LttwResult<()> {
-            //crate::utils::get_lsp_completions()?;
-            crate::utils::get_lsp_completions_async()?;
-            Ok(())
-        },
-        &Default::default(),
-    );
-
     let _ = create_user_command(
         "LttwToggleAutoFim",
         |_| -> LttwResult<()> {
@@ -34,6 +24,15 @@ pub fn register_commands() -> LttwResult<()> {
             // manual disabling also removes the filetype check autocommand
             clear_filetype_autocommand()?;
             let _ = disable_plugin();
+            Ok(())
+        },
+        &Default::default(),
+    );
+
+    let _ = create_user_command(
+        "LttwDebugWordStats",
+        |_| -> LttwResult<()> {
+            debug_word_statistics();
             Ok(())
         },
         &Default::default(),
