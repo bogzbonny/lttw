@@ -6,19 +6,19 @@
 
 use {
     crate::{
+        Error, FimCompletionMessage, FimTimingsData, LTTW_FIM_HIGHLIGHT, LttwResult,
         cache::compute_hashes,
-        context::get_local_context,
         context::LocalContext,
+        context::get_local_context,
         debug,
         filetype::should_be_enabled,
         fim_accept_inner, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
-        plugin_state::{get_state, PluginState},
+        plugin_state::{PluginState, get_state},
         ring_buffer::ExtraContext,
         utils::{
             clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input, is_in_comment,
             set_buf_extmark, set_buf_extmark_top_right,
         },
-        Error, FimCompletionMessage, FimTimingsData, LttwResult, LTTW_FIM_HIGHLIGHT,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition},
     serde::{Deserialize, Serialize},
@@ -267,7 +267,7 @@ pub fn fim_try_hint_inner(
     //
     let mut char_indices = pm.char_indices().collect::<Vec<_>>();
     char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
-                                         // its never used
+    // its never used
     let char_len = char_indices.len() - 1;
 
     let max_iters = 128; // TODO parameterize this

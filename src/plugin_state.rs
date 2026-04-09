@@ -1,7 +1,7 @@
 use {
     crate::{
-        cache, config, debug, diagnostics::DiagnosticTracker, instruction::InstructionRequestState,
-        ring_buffer, Error, FimCompletionMessage, FimState, LttwResult,
+        Error, FimCompletionMessage, FimState, LttwResult, cache, config, debug,
+        diagnostics::DiagnosticTracker, instruction::InstructionRequestState, ring_buffer,
     },
     ahash::{HashMap, HashMapExt},
     dashmap::DashMap,
@@ -9,14 +9,14 @@ use {
     parking_lot::{RwLock, RwLockReadGuard},
     std::{
         sync::{
-            atomic::{AtomicBool, AtomicI64, AtomicU64},
             Arc, OnceLock,
+            atomic::{AtomicBool, AtomicI64, AtomicU64},
         },
         time::Instant,
     },
     tokio::{
         runtime::Runtime,
-        sync::{mpsc, Semaphore},
+        sync::{Semaphore, mpsc},
     },
 };
 
@@ -112,6 +112,11 @@ impl PluginState {
         // Create namespaces for extmarks
         let extmark_ns = Some(create_namespace("lttw_fim"));
         let inst_ns = Some(create_namespace("lttw_inst"));
+
+        // Initialize tracing subscriber if debug is enabled
+        if debug_enabled_at_startup {
+            let _ = crate::log::init_tracing_subscriber("./lttw.log".to_string(), true);
+        }
 
         // Create a multi-threaded tokio runtime
         let runtime = match tokio::runtime::Builder::new_multi_thread()

@@ -9,6 +9,9 @@ pub const LTTW_FIM_HIGHLIGHT: &str = "LttwFIM";
 #[macro_use]
 pub mod log; // note, must be first for the macro to work throughout
 
+// Export tracing macros (debug will be redefined in log.rs)
+pub use tracing::{error, info, warn};
+
 pub mod autocmd;
 pub mod cache;
 pub mod commands;
@@ -33,12 +36,12 @@ use {
     diagnostics::{debug_output_diagnostics, handle_diagnostic_changed},
     diff_chunk::calculate_diff_between_contents,
     fim::{
-        fim_cycle_next, fim_cycle_prev, fim_try_hint, fim_try_hint_skip_debounce,
-        render_fim_suggestion, FimAcceptType, FimResponse, FimTimings,
+        FimAcceptType, FimResponse, FimTimings, fim_cycle_next, fim_cycle_prev, fim_try_hint,
+        fim_try_hint_skip_debounce, render_fim_suggestion,
     },
     lsp_completion::retrieve_lsp_completions,
     nvim_oxi::{Dictionary, Function},
-    plugin_state::{get_state, init_state, PluginState},
+    plugin_state::{PluginState, get_state, init_state},
     std::{
         sync::atomic::Ordering,
         time::{Duration, Instant},

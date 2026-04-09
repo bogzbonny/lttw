@@ -9,11 +9,11 @@
 ///       currently happening.
 use {
     crate::{
-        context::chunk_similarity, get_state, plugin_state::PluginState, utils::random_range,
-        LttwResult,
+        LttwResult, context::chunk_similarity, get_state, plugin_state::PluginState,
+        utils::random_range,
     },
     std::collections::VecDeque,
-    std::sync::{atomic::Ordering, Arc},
+    std::sync::{Arc, atomic::Ordering},
     std::time::{Duration, Instant},
 };
 

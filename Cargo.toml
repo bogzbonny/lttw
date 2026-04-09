@@ -24,3 +24,5 @@ gix-diff = { version = "0.61", features = ["blob-experimental"] }
 gix = { version = "0.81", features = ["blob-diff", "index"] }
 gix-hash = "0.14"
 dashmap = "6.1.0"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }

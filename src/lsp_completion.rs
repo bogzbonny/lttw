@@ -1,8 +1,9 @@
 use {
     crate::{
+        PluginState,
         plugin_state::strip_to_first_identifier,
         utils::{self, get_buf_line, get_current_buffer_id, get_pos},
-        PluginState, {FimCompletionMessage, FimResponse, LttwResult},
+        {FimCompletionMessage, FimResponse, LttwResult},
     },
     ahash::HashSet,
 };
