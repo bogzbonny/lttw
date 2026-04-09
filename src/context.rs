@@ -17,6 +17,10 @@ pub struct LocalContext {
     pub line_cur: String,
 }
 
+//pub fn get_local_context_for_lsp_completion(cur_line: String, start_x: usize, cursor_x: usize) -> LocalContext {
+
+//}
+
 /// TODO review translation in greater detail
 /// Compute local context at a specified position
 ///

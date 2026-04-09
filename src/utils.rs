@@ -294,15 +294,19 @@ pub fn is_in_comment(mut pos_x: usize, pos_y: usize, at_eol: bool) -> LttwResult
     Ok(is_comment)
 }
 
-// TODO could add URI but seems maybe unnecessary
 #[derive(Deserialize, Debug)]
-struct CompletionItemAsync {
-    text: String,
-    start_char: usize,
-    start_line: usize,
-    pos_x: usize,
-    pos_y: usize,
-    buffer_id: usize,
+pub struct CompletionResponse {
+    pub items: Vec<CompletionItem>,
+    pub pos_x: usize,
+    pub pos_y: usize,
+    pub buffer_id: u64,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CompletionItem {
+    pub text: String,
+    pub start_char: usize,
+    pub start_line: usize,
 }
 
 /// Get LSP completions for the cursor position and log them
@@ -311,7 +315,7 @@ struct CompletionItemAsync {
 /// It uses Neovim's built-in LSP functionality via `vim.lsp.buf_request_sync`.
 // TODO make async by using buf_request_all with a handler
 // TODO make '500' here a param, (500ms max wait time for the result)
-pub fn get_lsp_completions_async() -> LttwResult<()> {
+pub fn trigger_lsp_completions_async() -> LttwResult<()> {
     assert_not_tokio_worker();
     debug!("Requesting LSP completions at current cursor position");
 
@@ -322,12 +326,13 @@ pub fn get_lsp_completions_async() -> LttwResult<()> {
     // NOTE we filter the content in lua before sending to rust and if we didn't we would be
     // encoding/decoding a huge amount of information (descriptions etc.)
     // NOTE must -1 from pos_y (line) as of dumb (1,0) indexing
-    let e = nvim_oxi::api::command(
+    nvim_oxi::api::command(
         r#"lua
 local bufnr = vim.api.nvim_get_current_buf()
 local pos = vim.api.nvim_win_get_cursor(0)
 local pos_y_ = math.max(0, pos[1] - 1)
 local pos_x_ = pos[2]
+
 vim.lsp.buf_request_all(bufnr, 'textDocument/completion', vim.lsp.util.make_position_params(0, 'utf-8'),
   function(responses)
     local items = {}
@@ -337,15 +342,56 @@ vim.lsp.buf_request_all(bufnr, 'textDocument/completion', vim.lsp.util.make_posi
           table.insert(items, {
             text = it.textEdit and it.textEdit.newText or it.insertText or it.label,
             start_char = it.textEdit and it.textEdit.range.start.character or 0,
-            start_line = it.textEdit and it.textEdit.range.start.line or 0,
-            pos_x = pos_x_,
-            pos_y = pos_y_,
-            buffer_id = bufnr
+            start_line = it.textEdit and it.textEdit.range.start.line or 0
           })
         end
       end
     end
-    vim.g.lttw_completion = vim.json.encode(items)
+    local result = {
+      items = items,
+      pos_x = pos_x_,
+      pos_y = pos_y_,
+      buffer_id = bufnr
+    }
+    vim.g.lttw_completion = vim.json.encode(result)
+  end)
+"#,
+    )?;
+    Ok(())
+}
+
+pub fn get_lsp_completions_async() -> LttwResult<()> {
+    assert_not_tokio_worker();
+    debug!("Requesting LSP completions at current cursor position");
+
+    let e = nvim_oxi::api::command(
+        r#"lua
+local bufnr = vim.api.nvim_get_current_buf()
+local pos = vim.api.nvim_win_get_cursor(0)
+local pos_y_ = math.max(0, pos[1] - 1)
+local pos_x_ = pos[2]
+
+vim.lsp.buf_request_all(bufnr, 'textDocument/completion', vim.lsp.util.make_position_params(0, 'utf-8'),
+  function(responses)
+    local items = {}
+    for _, resp in ipairs(responses) do
+      if resp.result and resp.result.items then
+        for _, it in ipairs(resp.result.items) do
+          table.insert(items, {
+            text = it.textEdit and it.textEdit.newText or it.insertText or it.label,
+            start_char = it.textEdit and it.textEdit.range.start.character or 0,
+            start_line = it.textEdit and it.textEdit.range.start.line or 0
+          })
+        end
+      end
+    end
+    local result = {
+      items = items,
+      pos_x = pos_x_,
+      pos_y = pos_y_,
+      buffer_id = bufnr
+    }
+    vim.g.lttw_completion = vim.json.encode(result)
   end)
 "#,
     );
@@ -353,10 +399,8 @@ vim.lsp.buf_request_all(bufnr, 'textDocument/completion', vim.lsp.util.make_posi
         debug!(e);
     }
 
-    // thread sleep 1 second XXX
-    std::thread::sleep(std::time::Duration::from_millis(1000)); // XXX
+    std::thread::sleep(std::time::Duration::from_millis(1000));
 
-    // Read the global variable using nvim_oxi::api::get_var with String type
     let json_str = match nvim_oxi::api::get_var::<String>("lttw_completion") {
         Ok(s) => s,
         Err(e) => {
@@ -364,142 +408,142 @@ vim.lsp.buf_request_all(bufnr, 'textDocument/completion', vim.lsp.util.make_posi
             return Ok(());
         }
     };
-    let comps: Vec<CompletionItemAsync> = match serde_json::from_str(&json_str) {
+
+    let response: CompletionResponse = match serde_json::from_str(&json_str) {
         Ok(d) => d,
         Err(e) => {
             debug!(e);
             return Ok(());
         }
     };
-    //debug!("LSP completions result: {:?}", comps);
 
-    // filter by everything that matches the current line up the current position
     let (pos_x, pos_y) = get_pos();
     let line = get_buf_line(pos_y);
-    let mut filtered_comps: Vec<String> = Vec::with_capacity(comps.len());
-    for comp in comps.into_iter() {
-        // get the line characters from start_char to pos_x
-        let start_char = comp.start_char;
-        if start_char > pos_x {
-            continue;
-        }
-        if comp.start_line != pos_y {
-            continue;
-        }
-        // using chars()
-        let line_chars = line
-            .chars()
-            .skip(start_char)
-            .take(pos_x - start_char)
-            .collect::<String>();
-        if comp.text.starts_with(&line_chars) {
-            debug!(comp);
-            // remove all everything past and including "$0"
-            // This is often used for bracket positions
+    let filtered_comps: Vec<String> = response
+        .items
+        .into_iter()
+        .filter_map(|comp| {
+            if comp.start_char > pos_x || comp.start_line != pos_y {
+                return None;
+            }
+
+            let line_chars = line
+                .chars()
+                .skip(comp.start_char)
+                .take(pos_x - comp.start_char)
+                .collect::<String>();
+
+            if !comp.text.starts_with(&line_chars) {
+                return None;
+            }
+
             let mut text = comp.text;
             if let Some(pos) = text.find("$0") {
                 text.truncate(pos);
             }
-            // sometimes func inputs take the form of ${n:var} where n is a number and var is variable name
-            // truncate all after the first input
             if let Some(pos) = text.find("${") {
                 text.truncate(pos);
             }
-            filtered_comps.push(text);
-        }
-    }
+
+            Some(text)
+        })
+        .collect();
+
+    debug!("LSP pos_x: {:?}", response.pos_x);
+    debug!("LSP pos_y: {:?}", response.pos_y);
+    debug!("LSP buffer_id: {:?}", response.buffer_id);
     debug!("LSP filtered_comps: {:?}", filtered_comps);
 
     Ok(())
 }
 
-// TODO delete eventually
-#[derive(Deserialize, Debug)]
-struct CompletionItem {
-    text: String,
-    start_char: usize,
-    start_line: usize,
-}
+//// TODO delete eventually
+//#[derive(Deserialize, Debug)]
+//struct CompletionItem {
+//    text: String,
+//    start_char: usize,
+//    start_line: usize,
+//}
 
-/// Get LSP completions for the cursor position and log them
-///
-/// This is a test command to debug LSP completion behavior.
-/// It uses Neovim's built-in LSP functionality via `vim.lsp.buf_request_sync`.
-// TODO make async by using buf_request_all with a handler
-// TODO make '500' here a param, (500ms max wait time for the result)
-pub fn get_lsp_completions() -> LttwResult<()> {
-    assert_not_tokio_worker();
-    debug!("Requesting LSP completions at current cursor position");
+///// Get LSP completions for the cursor position and log them
+/////
+///// This is a test command to debug LSP completion behavior.
+///// It uses Neovim's built-in LSP functionality via `vim.lsp.buf_request_sync`.
+//// TODO make async by using buf_request_all with a handler
+//// TODO make '500' here a param, (500ms max wait time for the result)
+//pub fn get_lsp_completions() -> LttwResult<()> {
+//    assert_not_tokio_worker();
+//    debug!("Requesting LSP completions at current cursor position");
 
-    // For testing directly in neovim
-    // :lua vim.print(vim.lsp.buf_request_sync(0, 'textDocument/completion', vim.lsp.util.make_position_params(0, 'utf-8'), 1000))
+//    // For testing directly in neovim
+//    // :lua vim.print(vim.lsp.buf_request_sync(0, 'textDocument/completion', vim.lsp.util.make_position_params(0, 'utf-8'), 1000))
 
-    // get the completions through LUA.
-    // NOTE we filter the content in lua before sending to rust and if we didn't we would be
-    // encoding/decoding a huge amount of information (descriptions etc.)
-    let _ = nvim_oxi::api::command(
-        "lua local r = vim.lsp.buf_request_sync(0, 'textDocument/completion', \
-        vim.lsp.util.make_position_params(0, 'utf-8'), 500); vim.g.lttw_completion \
-        = vim.json.encode(vim.tbl_map(function(it) return { text = it.textEdit.newText, \
-        start_char = it.textEdit.range.start.character, \
-        start_line = it.textEdit.range.start.line } end, r[1].result.items))",
-    );
+//    // get the completions through LUA.
+//    // NOTE we filter the content in lua before sending to rust and if we didn't we would be
+//    // encoding/decoding a huge amount of information (descriptions etc.)
+//    let _ = nvim_oxi::api::command(
+//        "lua local r = vim.lsp.buf_request_sync(0, 'textDocument/completion', \
+//        vim.lsp.util.make_position_params(0, 'utf-8'), 500); vim.g.lttw_completion \
+//        = vim.json.encode(vim.tbl_map(function(it) return { text = it.textEdit.newText, \
+//        start_char = it.textEdit.range.start.character, \
+//        start_line = it.textEdit.range.start.line } end, r[1].result.items))",
+//    );
 
-    // Read the global variable using nvim_oxi::api::get_var with String type
-    let json_str = match nvim_oxi::api::get_var::<String>("lttw_completion") {
-        Ok(s) => s,
-        Err(e) => {
-            debug!(e);
-            return Ok(());
-        }
-    };
-    let comps: Vec<CompletionItem> = match serde_json::from_str(&json_str) {
-        Ok(d) => d,
-        Err(e) => {
-            debug!(e);
-            return Ok(());
-        }
-    };
-    //debug!("LSP completions result: {:?}", comps);
+//    // Read the global variable using nvim_oxi::api::get_var with String type
+//    let json_str = match nvim_oxi::api::get_var::<String>("lttw_completion") {
+//        Ok(s) => s,
+//        Err(e) => {
+//            debug!(e);
+//            return Ok(());
+//        }
+//    };
+//    let comps: Vec<CompletionItem> = match serde_json::from_str(&json_str) {
+//        Ok(d) => d,
+//        Err(e) => {
+//            debug!(e);
+//            return Ok(());
+//        }
+//    };
+//    //debug!("LSP completions result: {:?}", comps);
 
-    // filter by everything that matches the current line up the current position
-    let (pos_x, pos_y) = get_pos();
-    let line = get_buf_line(pos_y);
-    let mut filtered_comps: Vec<String> = Vec::with_capacity(comps.len());
-    for comp in comps.into_iter() {
-        // get the line characters from start_char to pos_x
-        let start_char = comp.start_char;
-        if start_char > pos_x {
-            continue;
-        }
-        if comp.start_line != pos_y {
-            continue;
-        }
-        // using chars()
-        let line_chars = line
-            .chars()
-            .skip(start_char)
-            .take(pos_x - start_char)
-            .collect::<String>();
-        if comp.text.starts_with(&line_chars) {
-            // remove all everything past and including "$0"
-            // This is often used for bracket positions
-            let mut text = comp.text;
-            if let Some(pos) = text.find("$0") {
-                text.truncate(pos);
-            }
-            // sometimes func inputs take the form of ${n:var} where n is a number and var is variable name
-            // truncate all after the first input
-            if let Some(pos) = text.find("${") {
-                text.truncate(pos);
-            }
-            filtered_comps.push(text);
-        }
-    }
-    debug!("LSP filtered_comps: {:?}", filtered_comps);
+//    // filter by everything that matches the current line up the current position
+//    let (pos_x, pos_y) = get_pos();
+//    let line = get_buf_line(pos_y);
+//    let mut filtered_comps: Vec<String> = Vec::with_capacity(comps.len());
+//    for comp in comps.into_iter() {
+//        // get the line characters from start_char to pos_x
+//        let start_char = comp.start_char;
+//        if start_char > pos_x {
+//            continue;
+//        }
+//        if comp.start_line != pos_y {
+//            continue;
+//        }
+//        // using chars()
+//        let line_chars = line
+//            .chars()
+//            .skip(start_char)
+//            .take(pos_x - start_char)
+//            .collect::<String>();
+//        if comp.text.starts_with(&line_chars) {
+//            // remove all everything past and including "$0"
+//            // This is often used for bracket positions
+//            let mut text = comp.text;
+//            if let Some(pos) = text.find("$0") {
+//                text.truncate(pos);
+//            }
+//            // sometimes func inputs take the form of ${n:var} where n is a number and var is variable name
+//            // truncate all after the first input
+//            if let Some(pos) = text.find("${") {
+//                text.truncate(pos);
+//            }
+//            filtered_comps.push(text);
+//        }
+//    }
+//    debug!("LSP filtered_comps: {:?}", filtered_comps);
 
-    Ok(())
-}
+//    Ok(())
+//}
 
 // --------------------------
 

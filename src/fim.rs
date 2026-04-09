@@ -676,16 +676,23 @@ pub async fn fim_completion(
         //    .log("sending msg", format!("{request:#?}"));
         // Send request without holding locks
 
-        let Ok(response_text) = send_request(&request, endpoint_fim, model, api_key).await else {
-            // TODO log error
-            return;
+        let response_text = match send_request(&request, endpoint_fim, model, api_key).await {
+            Ok(response_text) => response_text,
+            Err(e) => {
+                debug!(e);
+                return;
+            }
         };
 
         // Parse response
-        let Ok(mut response) = serde_json::from_str::<FimResponse>(&response_text) else {
-            // TODO log error
-            return;
+        let mut response = match serde_json::from_str::<FimResponse>(&response_text) {
+            Ok(r) => r,
+            Err(e) => {
+                debug!(e);
+                return;
+            }
         };
+
         debug!("resp: {response:#?}");
 
         // compare the tail of the content to the lines and filter out any matching with the
@@ -735,12 +742,8 @@ pub async fn fim_completion(
             retry,
         };
 
-        if let Err(_e) = tx.send(msg).await {
-            // TODO log error
-            //debug_manager.log(
-            //    "spawn_fim_worker",
-            //    &[&format!("Failed to send completion message: {}", e)],
-            //);
+        if let Err(e) = tx.send(msg).await {
+            debug!(e);
         }
     });
 

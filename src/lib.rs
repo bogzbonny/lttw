@@ -29,6 +29,7 @@ pub mod utils;
 pub use error::{Error, LttwResult};
 
 use {
+    ahash::HashSet,
     context::LocalContext,
     diagnostics::{debug_output_diagnostics, handle_diagnostic_changed},
     diff_chunk::calculate_diff_between_contents,
@@ -300,6 +301,75 @@ fn init_completion_processing_thread() {
             nvim_oxi::schedule(|_| process_pending_display());
         },
     );
+}
+
+fn retrieve_lsp_completions() -> LttwResult<Vec<FimCompletionMessage>> {
+    let json_str = nvim_oxi::api::get_var::<String>("lttw_completion")?;
+
+    let response: utils::CompletionResponse = serde_json::from_str(&json_str)?;
+
+    let (pos_x, pos_y) = (response.pos_x, response.pos_y);
+    let (x, y) = get_pos();
+    if pos_x != y || pos_y != x {
+        return Ok(vec![]);
+    };
+    if get_current_buffer_id() != response.buffer_id {
+        return Ok(vec![]);
+    }
+    let line = get_buf_line(pos_y);
+    let mut seen = HashSet::default();
+    let filtered_comps: Vec<FimCompletionMessage> = response
+        .items
+        .into_iter()
+        .filter_map(|comp| {
+            if comp.start_char > pos_x || comp.start_line != pos_y {
+                return None;
+            }
+
+            let line_chars = line
+                .chars()
+                .skip(comp.start_char)
+                .take(pos_x - comp.start_char)
+                .collect::<String>();
+
+            if !comp.text.starts_with(&line_chars) {
+                return None;
+            }
+
+            let mut text = comp.text;
+            if let Some(pos) = text.find("$0") {
+                text.truncate(pos);
+            }
+            if let Some(pos) = text.find("${") {
+                text.truncate(pos);
+            }
+
+            // filter out duplicates
+            if seen.contains(&comp.text) {
+                return None;
+            }
+            seen.insert(comp.text.clone());
+
+            let fim_resp = FimResponse {
+                content: comp.text,
+                timings: None,
+                tokens_cached: 0,
+                truncated: false,
+            };
+
+            Some(FimCompletionMessage {
+                buffer_id: response.buffer_id,
+                ctx: LocalContext, // All buffer lines captured at start
+                cursor_x: pos_x,
+                cursor_y: pos_y,
+                completion: fim_resp, // All available completions for cycling
+                do_render: true,
+                retry: None,
+            })
+        })
+        .collect();
+
+    Ok(filtered_comps)
 }
 
 /// NOTE this occurs on the neovim thread
