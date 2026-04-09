@@ -309,17 +309,24 @@ fn init_completion_processing_thread() {
 
 fn retrieve_lsp_completions() -> LttwResult<Vec<FimCompletionMessage>> {
     let json_str = nvim_oxi::api::get_var::<String>("lttw_completion")?;
+    nvim_oxi::api::del_var("lttw_completion")?; // clear the var now that we've gotten it
+
+    //debug!("retrieved lsp completions: {}", json_str);
 
     let response: utils::CompletionResponse = serde_json::from_str(&json_str)?;
+    //debug!("response: {:?}", response);
 
     let (pos_x, pos_y) = (response.pos_x, response.pos_y);
     let (x, y) = get_pos();
-    if pos_x != y || pos_y != x {
+    if pos_x != x || pos_y != y {
+        debug!("retrieve_lsp_completions");
         return Ok(vec![]);
     };
     if get_current_buffer_id() != response.buffer_id {
+        debug!("retrieve_lsp_completions");
         return Ok(vec![]);
     }
+    debug!("retrieve_lsp_completions");
     let line_cur = get_buf_line(pos_y);
     let mut seen = HashSet::default();
     let filtered_comps: Vec<FimCompletionMessage> = response
@@ -372,6 +379,14 @@ fn retrieve_lsp_completions() -> LttwResult<Vec<FimCompletionMessage>> {
             })
         })
         .collect();
+
+    // save in caches
+    //let hashes = compute_hashes(&ctx.prefix, &ctx.middle, &ctx.suffix);
+    //let mut cache_lock = state.cache.write();
+    //for hash in &hashes {
+    //    cache_lock.insert(hash.clone(), resp.clone());
+    //}
+    debug!("retrieve_lsp_completions");
 
     Ok(filtered_comps)
 }

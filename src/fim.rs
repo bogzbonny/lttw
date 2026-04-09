@@ -319,7 +319,7 @@ pub fn fim_try_hint_inner(
         // if it was longer than 128 characters and the user is accepting this line by line.
         if *recache {
             // use the original ctx to compute the hashes
-            let hashes = compute_hashes(&ctx);
+            let hashes = compute_hashes(&ctx.prefix, &ctx.middle, &ctx.suffix);
             let mut cache_lock = state.cache.write();
             for hash in &hashes {
                 cache_lock.insert(hash.clone(), resp.clone());
@@ -328,6 +328,12 @@ pub fn fim_try_hint_inner(
     }
     let completions: Vec<FimResponse> = all_completions.into_iter().map(|(r, _)| r).collect();
     debug!("all completions: {completions:?}");
+    if completions.is_empty() {
+        // trigger the async lsp completion
+        if let Err(e) = crate::utils::trigger_lsp_completions_async() {
+            debug!(e)
+        }
+    }
     let completion = completions.get(completions_idx).cloned();
     if state.fim_state.read().completion_cycle.is_empty() {
         state
@@ -583,7 +589,7 @@ pub async fn fim_completion(
         t_max_predict_ms = 250 // TODO parameterize this
     }
 
-    let hashes = compute_hashes(&ctx);
+    let hashes = compute_hashes(&ctx.prefix, &ctx.middle, &ctx.suffix);
 
     // if we already have a cached completion for one of the hashes, don't send a request
     if !force_regenerate && state.config.read().auto_fim {
@@ -1302,7 +1308,8 @@ mod tests {
             ..Default::default()
         };
 
-        let hashes = compute_hashes(&ctx);
+        let hashes = compute_hashes(&ctx.prefix, &ctx.middle, &ctx.suffix);
+
         assert!(!hashes.is_empty());
     }
 
@@ -1516,7 +1523,7 @@ mod tests {
             indent: 4,
         };
 
-        let hashes = compute_hashes(&ctx);
+        let hashes = compute_hashes(&ctx.prefix, &ctx.middle, &ctx.suffix);
 
         // Verify we generated multiple hashes (prefix has newlines)
         assert!(

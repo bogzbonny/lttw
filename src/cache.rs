@@ -4,7 +4,7 @@
 // eviction policy to manage memory usage and improve performance.
 
 use {
-    crate::{context::LocalContext, fim::FimResponse, utils::hash_input},
+    crate::{fim::FimResponse, utils::hash_input},
     ahash::{HashMap, HashMapExt},
     serde::{Deserialize, Serialize},
     std::collections::VecDeque,
@@ -94,17 +94,17 @@ impl Cache {
 }
 
 /// Compute hashes for caching
-pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
+pub fn compute_hashes(prefix: &str, middle: &str, suffix: &str) -> Vec<String> {
     let max_hashes = 3; // TODO parameterize this
     let mut hashes = Vec::with_capacity(max_hashes + 1);
 
     // Primary hash
-    let primary = format!("{}{}Î{}", ctx.prefix, ctx.middle, ctx.suffix);
+    let primary = format!("{}{}Î{}", prefix, middle, suffix);
     let hash = hash_input(&primary);
     hashes.push(hash);
 
     // Truncated prefix hashes (up to 3 levels)
-    let mut prefix_trim = ctx.prefix.clone();
+    let mut prefix_trim = prefix.to_string();
     let re = match regex::Regex::new(r"^[^\n]*\n") {
         Ok(r) => r,
         Err(_) => return hashes, // Return partial hashes on regex error
@@ -115,7 +115,7 @@ pub fn compute_hashes(ctx: &LocalContext) -> Vec<String> {
             break;
         }
 
-        let inp = format!("{}{}Î{}", prefix_trim, ctx.middle, ctx.suffix);
+        let inp = format!("{}{}Î{}", prefix_trim, middle, suffix);
         let hash = hash_input(&inp);
         hashes.push(hash);
     }
