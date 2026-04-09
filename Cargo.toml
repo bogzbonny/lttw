@@ -26,3 +26,6 @@ gix-hash = "0.14"
 dashmap = "6.1.0"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }
+tracing-opentelemetry = "0.20.0"
+opentelemetry = "0.20.0"
+opentelemetry-jaeger = "0.18.0"

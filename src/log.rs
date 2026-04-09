@@ -6,7 +6,11 @@
 /// information will be written.
 /// The debug filepath is specified at the top of the main file of the package
 /// being debugged
-use {once_cell::sync::Lazy, parking_lot::RwLock, std::fs::OpenOptions, std::io::prelude::*};
+use {
+    once_cell::sync::Lazy, parking_lot::RwLock, std::fs::OpenOptions, std::io::prelude::*,
+    tracing_subscriber::Layer, tracing_subscriber::filter::LevelFilter,
+    tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt,
+};
 
 // Track if tracing has been initialized to avoid duplicate initialization
 static TRACING_INITIALIZED: once_cell::sync::OnceCell<()> = once_cell::sync::OnceCell::new();
@@ -37,14 +41,23 @@ pub fn init_tracing_subscriber(
         .append(true)
         .open(file_path)?;
 
-    tracing_subscriber::fmt()
+    // Build the file writer layer for debug logging
+    let file_layer = tracing_subscriber::fmt::layer()
         .with_writer(file)
         .with_target(false)
         .with_line_number(true)
         .with_file(true)
         .with_thread_names(false)
         .with_ansi(false)
-        .init();
+        .with_filter(LevelFilter::DEBUG);
+
+    // Build the subscriber with file layer and max level DEBUG
+    let subscriber = tracing_subscriber::Registry::default()
+        .with(file_layer)
+        .with(LevelFilter::DEBUG);
+
+    // Set as global default - this might fail if already set (e.g., in tests)
+    let _ = tracing::subscriber::set_global_default(subscriber);
 
     // Mark tracing as initialized
     let _ = TRACING_INITIALIZED.set(());
