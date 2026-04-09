@@ -140,10 +140,11 @@ async fn ring_update() -> LttwResult<bool> {
 // -----------------------------
 
 /// A chunk of text from the buffer
+// TODO combine data and chunk_str maybe seems redundant to store twice
 #[derive(Debug, Clone)]
 pub struct Chunk {
-    pub data: Vec<String>,
-    pub chunk_str: String,
+    pub data: Vec<String>, // all the lines seperated
+    pub chunk_str: String, // all the lines combined (same as data)
     pub time: Instant,
     pub filename: String,
 }

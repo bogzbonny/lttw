@@ -913,12 +913,8 @@ fn on_buf_write_post() -> LttwResult<()> {
                     // TODO delete old intersecting chunks too
                     for chunk in &diff_chunks {
                         //let ring_chunk = chunk.to_ring_chunk();
-                        let content = chunk
-                            .content
-                            .split('\n')
-                            .map(|s| s.to_string())
-                            .collect::<Vec<_>>();
-                        ring_buffer_lock.pick_chunk_inner(&content, chunk.filepath.clone())?;
+                        ring_buffer_lock
+                            .pick_chunk_inner(&chunk.content, chunk.filepath.clone())?;
                         debug!("diff_chunk_added Added to queued: {}", chunk.filepath,);
                     }
                 }

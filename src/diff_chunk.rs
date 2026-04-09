@@ -28,7 +28,7 @@ pub struct DiffChunk {
     /// Number of lines in the new hunk
     pub new_lines: u32,
     /// The diff content (unified diff format)
-    pub content: String,
+    pub content: Vec<String>,
     /// Timestamp when this diff was created
     pub time: Instant,
 }
@@ -41,7 +41,7 @@ impl DiffChunk {
         old_lines: u32,
         new_start: u32,
         new_lines: u32,
-        content: &str,
+        content: Vec<String>,
     ) -> Self {
         Self {
             filepath: filepath.to_string(),
@@ -49,17 +49,16 @@ impl DiffChunk {
             old_lines,
             new_start,
             new_lines,
-            content: content.to_string(),
+            content,
             time: Instant::now(),
         }
     }
 
     /// Convert this diff chunk into a RingBuffer Chunk for processing
     pub fn to_ring_chunk(&self) -> Chunk {
-        let lines: Vec<String> = self.content.lines().map(|s| s.to_string()).collect();
         Chunk {
-            data: lines,
-            chunk_str: self.content.clone(),
+            data: self.content.clone(),
+            chunk_str: self.content.join("\n"),
             time: self.time,
             filename: self.filepath.clone(),
         }
@@ -105,7 +104,7 @@ pub fn calculate_diff_between_contents(
             old_lines,
             new_start,
             new_lines,
-            &diff_output,
+            diff_lines.into_iter().map(|s| s.to_string()).collect(),
         ));
     }
 
@@ -170,7 +169,10 @@ mod tests {
             old_lines: 5,
             new_start: 12,
             new_lines: 7,
-            content: "@@ -10,5 +12,7 @@\n+line1\n+line2\n-context\n".to_string(),
+            content: "@@ -10,5 +12,7 @@\n+line1\n+line2\n-context\n"
+                .lines()
+                .map(|s| s.to_string())
+                .collect(),
             time: Instant::now(),
         };
 
