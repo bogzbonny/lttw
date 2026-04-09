@@ -1,6 +1,5 @@
 ^^^^^^^^^ DONE
 
-01. remove matching suffix from LSP completions 
 
 10. tracing support
 integrate in the tracing and tracing-opentelemetry crates into this library.
@@ -10,16 +9,27 @@ during startup.  Ensure that when debugging is enabled that the new tracing
 system will still write all the debug information into the `./lttw.log` file
 just like the existing debug system works.
 
-10. BUG on_buf_enter_update_file_contents - for some reason its not triggered
+01. BUG on_buf_enter_update_file_contents - for some reason its not triggered
     when openning for the first time (with vf) - subsiquent switches to the
     buffer will activate it
 
+01. remove matching suffix from LSP completions 
+
 05. Integrate in better usage of lsp autocompletions
-     - // TODO use some of these autocompletion details better rather than just
-       // truncating
-       // - it would be nice to be able to accept Some_fn(...) and keep the closing backet
-       // - something which only takes one arg, should automatically be filled in eg.
-       //    typing Ok[CUR]some_var  then pressing tab should autocomplete to Ok(some_var)
+     - TODO use some of these autocompletion details better rather than just
+       truncating
+     - it would be nice to be able to accept Some_fn(...) and keep the closing backet
+       - maybe just using the … character as the marker (nice for viewing) and
+         then put the cursor there.
+       - example: 
+         newText = "build_info_string(${1:timings}, ${2:tokens_cached},
+         ${3:truncated}, ${4:ring_chunks}, ${5:ring_n_chunks},
+         ${6:ring_n_evict}, ${7:ring_queued}, ${8:ring_queue_length},
+         ${9:cache_size}, ${10:max_cache_keys})$0",
+       
+     - NEW CONFIG OPTION something which only takes one arg, should
+       automatically be filled in eg. typing Ok[CUR]some_var  then pressing tab
+       should autocomplete to Ok(some_var)
 
 ------------------------
 
@@ -150,6 +160,7 @@ POST RELEASE
        predict what comes next. (lines that start with if, else, let would also
        be good predictors). ALSO be sure that (excluding whitespace) beyond the
        ident being the same the other characters must match 
+     - only predict small things (such as a few characters, or .. ONE 
 
 50. Offline/Online mode for getting responses locally or over the web
 
