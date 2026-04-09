@@ -4,8 +4,8 @@ use {
         ring_buffer, Error, FimCompletionMessage, FimState, LttwResult,
     },
     ahash::{HashMap, HashMapExt},
-    dashmap::DashMap,
     nvim_oxi::api::create_namespace,
+    papaya::HashMap as PapayaMap,
     parking_lot::{RwLock, RwLockReadGuard},
     std::{
         sync::{
@@ -77,7 +77,7 @@ pub struct PluginState {
     file_contents: Arc<RwLock<HashMap<String, Option<String>>>>,
 
     // keep statistics on all the words for ordering all LSP completions
-    word_statistics: Arc<DashMap<String, u64>>,
+    word_statistics: Arc<PapayaMap<String, u64>>,
 
     // FIM completion channel for async worker communication
     pub fim_completion_tx: Arc<RwLock<Option<mpsc::Sender<FimCompletionMessage>>>>,
@@ -169,7 +169,7 @@ impl PluginState {
             diagnostics: Arc::new(RwLock::new(DiagnosticTracker::default())),
 
             file_contents: Arc::new(RwLock::new(HashMap::new())),
-            word_statistics: Arc::new(DashMap::new()),
+            word_statistics: Arc::new(PapayaMap::new()),
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(RwLock::new(None)),
             pending_display: Arc::new(RwLock::new(Vec::new())),
@@ -275,15 +275,15 @@ impl PluginState {
 
     pub fn get_word_statistic_usage(&self, word: &str) -> u64 {
         self.word_statistics
-            .try_get(word)
-            .try_unwrap()
-            .map(|v| *v)
-            .unwrap_or(0)
+            .pin()
+            .get(word)
+            .copied()
+            .unwrap_or(0u64)
     }
 
     pub fn debug_word_statistics(&self) {
-        self.word_statistics.iter().for_each(|r| {
-            debug!("{}: {}", r.key(), r.value());
+        self.word_statistics.pin().iter().for_each(|(k, v)| {
+            debug!("{}: {}", k, v);
         });
     }
 }
@@ -291,10 +291,12 @@ impl PluginState {
 // add_word_statistics takes all the content then separates out all the Identifiers (words
 // which must begin with a letter or underscore but then may also include numbers afterwords).
 // The identifiers are then added to the word_statistics adding one for each word that exists
-pub fn add_word_statistics(word_stats: Arc<DashMap<String, u64>>, content: String) {
+pub fn add_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, content: String) {
     debug!("add_word_statistics");
     let mut current_word = String::new();
 
+    let stats = word_stats.pin();
+
     for ch in content.chars() {
         if ch.is_ascii_alphanumeric() || ch == '_' {
             if ch.is_numeric() && current_word.is_empty() {
@@ -302,21 +304,22 @@ pub fn add_word_statistics(word_stats: Arc<DashMap<String, u64>>, content: Strin
             }
             current_word.push(ch);
         } else if !current_word.is_empty() {
-            *word_stats.entry(current_word.clone()).or_insert(0) += 1;
+            let _ = *stats.update_or_insert(current_word.clone(), |v| v + 1, 0);
             current_word.clear();
         }
     }
 
     // Handle last word if any
     if !current_word.is_empty() {
-        *word_stats.entry(current_word).or_insert(0) += 1;
+        let _ = *stats.update_or_insert(current_word.clone(), |v| v + 1, 0);
     }
 }
 
-pub fn sub_word_statistics(word_stats: Arc<DashMap<String, u64>>, content: String) {
+pub fn sub_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, content: String) {
     debug!("sub_word_statistics");
     let mut current_word = String::new();
 
+    let stats = word_stats.pin();
     for ch in content.chars() {
         if ch.is_ascii_alphanumeric() || ch == '_' {
             if ch.is_numeric() && current_word.is_empty() {
@@ -324,20 +327,14 @@ pub fn sub_word_statistics(word_stats: Arc<DashMap<String, u64>>, content: Strin
             }
             current_word.push(ch);
         } else if !current_word.is_empty() {
-            *word_stats.entry(current_word.clone()).or_insert(0) = word_stats
-                .entry(current_word.clone())
-                .or_insert(0)
-                .saturating_sub(1);
+            let _ = *stats.update_or_insert(current_word.clone(), |v| v.saturating_sub(1), 0);
             current_word.clear();
         }
     }
 
     // Handle last word if any
     if !current_word.is_empty() {
-        *word_stats.entry(current_word.clone()).or_insert(0) = word_stats
-            .entry(current_word.clone())
-            .or_insert(0)
-            .saturating_sub(1);
+        let _ = *stats.update_or_insert(current_word.clone(), |v| v.saturating_sub(1), 0);
     }
 }
 
@@ -359,7 +356,7 @@ pub fn strip_to_first_identifier(s: &str) -> String {
 
 // diff_word_statistics takes in a diff string and modifies
 // the word statistics accordingly
-pub fn diff_word_statistics(word_stats: Arc<DashMap<String, u64>>, diff_content: Vec<String>) {
+pub fn diff_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, diff_content: Vec<String>) {
     for line in diff_content {
         // ignore all other lines (such as @@ lines)
         if let Some(line) = line.strip_prefix('+') {

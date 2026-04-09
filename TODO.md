@@ -2,6 +2,8 @@
 
 00. lock condition
 
+01. remove matching suffix from LSP completions 
+
 10. tracing support
 integrate in the tracing and tracing-opentelemetry crates into this library.
 Replace all instances of this crates `debug!` with the tracing `debug!` macro.

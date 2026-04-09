@@ -21,7 +21,6 @@ rand = {version = "0.10", features = ["thread_rng"]}
 parking_lot = "0.12"
 ahash = "0.8.12"
 gix-diff = { version = "0.61", features = ["blob-experimental", "sha1"]}
-dashmap = "6.1.0"
 tracing = "0.1.41"
 tracing-core = "0.1.28"
 tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }
@@ -41,4 +40,5 @@ opentelemetry-otlp = { version = "0.31.0", features = [
 ] }
 opentelemetry-stdout = { version = "0.31.0", features = ["trace", "metrics"] }
 tracing-appender = "0.2.4"
+papaya = "0.2.4"
 
