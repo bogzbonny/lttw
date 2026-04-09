@@ -4,4 +4,5 @@
 /tests-integration/target
 /.ralph
 lttw.log
+lttw.log*
 

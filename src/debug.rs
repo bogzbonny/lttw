@@ -16,7 +16,8 @@ impl DebugManager {
     pub fn new(enabled: bool) -> Self {
         // Only clear the log file on startup if debug is enabled
         if enabled {
-            log::reset_log_file("./lttw.log".to_string());
+            //log::reset_log_file("./lttw.log".to_string());
+            //crate::otel::init_tracing_subscriber();
         }
 
         Self { enabled }
@@ -29,26 +30,9 @@ impl DebugManager {
         Self { enabled }
     }
 
-    /// Clear the log file
-    pub fn clear(&mut self) {
-        if !self.enabled {
-            return;
-        }
-        log::clear()
-    }
-
     /// Enable or disable logging
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
-
-        // If enabling, also enable the log system
-        if enabled {
-            log::enable();
-            // Don't re-initialize tracing if already initialized
-            // Tracing is a global singleton and can only be initialized once
-        } else {
-            log::disable();
-        }
     }
 
     /// Check if logging is enabled

@@ -1,9 +1,8 @@
 use {
     crate::{
-        PluginState,
         plugin_state::strip_to_first_identifier,
         utils::{self, get_buf_line, get_current_buffer_id, get_pos},
-        {FimCompletionMessage, FimResponse, LttwResult},
+        PluginState, {FimCompletionMessage, FimResponse, LttwResult},
     },
     ahash::HashSet,
 };
@@ -134,8 +133,11 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimComple
             seen.insert(text.clone());
 
             // NOTE use the full suggestion here, NOT the prefix stripped text!
+            debug!("hi");
             let ident = strip_to_first_identifier(&comp.text);
+            debug!(ident);
             let usage = state.get_word_statistic_usage(&ident);
+            debug!(usage);
 
             let fim_resp = FimResponse {
                 content: text,

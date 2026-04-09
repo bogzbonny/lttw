@@ -9,11 +9,11 @@
 ///       currently happening.
 use {
     crate::{
-        LttwResult, context::chunk_similarity, get_state, plugin_state::PluginState,
-        utils::random_range,
+        context::chunk_similarity, get_state, plugin_state::PluginState, utils::random_range,
+        LttwResult,
     },
     std::collections::VecDeque,
-    std::sync::{Arc, atomic::Ordering},
+    std::sync::{atomic::Ordering, Arc},
     std::time::{Duration, Instant},
 };
 
@@ -27,6 +27,10 @@ pub fn setup_ring_buffer_timer() -> LttwResult<()> {
     // This follows the same pattern used elsewhere in the codebase
     let rt = state.tokio_runtime.clone();
     let state_ = state.clone();
+
+    //tracing::span!("ring_buffer_timer");
+
+    let _span = tracing::span!(tracing::Level::ERROR, "my span");
 
     let timer_handle = rt.read().spawn(async move {
         let mut interval = tokio::time::interval(dur);

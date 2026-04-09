@@ -26,6 +26,7 @@ pub mod fim;
 pub mod instruction;
 pub mod keymap;
 pub mod lsp_completion;
+pub mod otel;
 pub mod plugin_state;
 pub mod ring_buffer;
 pub mod utils;
@@ -36,12 +37,12 @@ use {
     diagnostics::{debug_output_diagnostics, handle_diagnostic_changed},
     diff_chunk::calculate_diff_between_contents,
     fim::{
-        FimAcceptType, FimResponse, FimTimings, fim_cycle_next, fim_cycle_prev, fim_try_hint,
-        fim_try_hint_skip_debounce, render_fim_suggestion,
+        fim_cycle_next, fim_cycle_prev, fim_try_hint, fim_try_hint_skip_debounce,
+        render_fim_suggestion, FimAcceptType, FimResponse, FimTimings,
     },
     lsp_completion::retrieve_lsp_completions,
     nvim_oxi::{Dictionary, Function},
-    plugin_state::{PluginState, get_state, init_state},
+    plugin_state::{get_state, init_state, PluginState},
     std::{
         sync::atomic::Ordering,
         time::{Duration, Instant},
@@ -141,6 +142,8 @@ fn lttw_setup(c: nvim_oxi::Object) {
     // Initialize plugin state
     init_state(c);
 
+    //init_otel();
+
     // Initialize persistent tokio runtime and completion channel
     init_completion_processing_thread();
 
@@ -159,7 +162,20 @@ fn lttw_setup(c: nvim_oxi::Object) {
 
     // Initialize the LttwFIM highlight group to match Comment
     let _ = init_fim_highlight();
+
+    let _span = tracing::info_span!("test_span", foo = "bar").entered();
+    tracing::info!("Hello from telemetry");
 }
+
+//fn init_otel() {
+//    let state = get_state();
+//    if state.debug_manager.read().enabled {
+//        let rt = state.tokio_runtime.clone();
+//        rt.read().spawn(async move {
+//            crate::otel::init_tracing_subscriber();
+//        });
+//    }
+//}
 
 // ---------------------------
 
@@ -285,9 +301,16 @@ fn init_completion_processing_thread() {
     let state_ = state.clone();
     let rt = state.tokio_runtime.clone();
     rt.read().spawn(async move {
+        let _gaurd = otel::init();
         while let Some(msg) = rx.recv().await {
             debug!("pending_queue msg");
-            state_.pending_display.write().push(msg);
+            //state_.pending_display.write().push(msg);
+            // do try write here for when we occassionally lock up (we will just lose the odd
+            // message)
+            let Some(mut pending_queue) = state_.pending_display.try_write() else {
+                continue;
+            };
+            pending_queue.push(msg);
         }
     });
 
@@ -523,13 +546,6 @@ fn debug_enable() -> LttwResult<()> {
 fn debug_disable() -> LttwResult<()> {
     let state = get_state();
     state.debug_manager.write().enabled = true;
-    Ok(())
-}
-
-/// Debug clear function
-fn debug_clear() -> LttwResult<()> {
-    let state = get_state();
-    state.debug_manager.write().clear();
     Ok(())
 }
 

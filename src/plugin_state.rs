@@ -1,7 +1,7 @@
 use {
     crate::{
-        Error, FimCompletionMessage, FimState, LttwResult, cache, config, debug,
-        diagnostics::DiagnosticTracker, instruction::InstructionRequestState, ring_buffer,
+        cache, config, debug, diagnostics::DiagnosticTracker, instruction::InstructionRequestState,
+        ring_buffer, Error, FimCompletionMessage, FimState, LttwResult,
     },
     ahash::{HashMap, HashMapExt},
     dashmap::DashMap,
@@ -9,14 +9,14 @@ use {
     parking_lot::{RwLock, RwLockReadGuard},
     std::{
         sync::{
-            Arc, OnceLock,
             atomic::{AtomicBool, AtomicI64, AtomicU64},
+            Arc, OnceLock,
         },
         time::Instant,
     },
     tokio::{
         runtime::Runtime,
-        sync::{Semaphore, mpsc},
+        sync::{mpsc, Semaphore},
     },
 };
 
@@ -38,6 +38,7 @@ pub fn get_state() -> Arc<PluginState> {
 #[derive(Clone)]
 pub struct PluginState {
     pub config: Arc<RwLock<config::LttwConfig>>,
+    //pub otel_guard: Arc<RwLock<Option<crate::otel::OtelGuard>>>,
     pub cache: Arc<RwLock<cache::Cache>>,
     pub ring_buffer: Arc<RwLock<ring_buffer::RingBuffer>>,
     pub debug_manager: Arc<RwLock<debug::DebugManager>>,
@@ -114,9 +115,9 @@ impl PluginState {
         let inst_ns = Some(create_namespace("lttw_inst"));
 
         // Initialize tracing subscriber if debug is enabled
-        if debug_enabled_at_startup {
-            let _ = crate::log::init_tracing_subscriber("./lttw.log".to_string(), true);
-        }
+        //if debug_enabled_at_startup {
+        //    let _ = crate::log::init_tracing_subscriber("./lttw.log".to_string(), true);
+        //}
 
         // Create a multi-threaded tokio runtime
         let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -128,6 +129,11 @@ impl PluginState {
                 panic!("Failed to create tokio runtime: {}", e);
             }
         };
+
+        //runtime.spawn(async move {
+        //    let _guard = crate::otel::init_tracing_subscriber();
+        //    tokio::time::sleep(std::time::Duration::from_secs(60 * 10)).await;
+        //});
 
         Self {
             config: Arc::new(RwLock::new(config)),
@@ -268,7 +274,11 @@ impl PluginState {
     }
 
     pub fn get_word_statistic_usage(&self, word: &str) -> u64 {
-        self.word_statistics.get(word).map(|v| *v).unwrap_or(0)
+        self.word_statistics
+            .try_get(word)
+            .try_unwrap()
+            .map(|v| *v)
+            .unwrap_or(0)
     }
 
     pub fn debug_word_statistics(&self) {

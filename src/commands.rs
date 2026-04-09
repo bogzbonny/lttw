@@ -1,8 +1,8 @@
 use {
     crate::{
-        LttwResult, autocmd::clear_filetype_autocommand, debug_clear, debug_disable, debug_enable,
-        debug_word_statistics, diagnostics::debug_output_diagnostics, disable_info, disable_plugin,
-        enable_info, enable_plugin, instruction, is_enabled, toggle_auto_fim,
+        autocmd::clear_filetype_autocommand, debug_disable, debug_enable, debug_word_statistics,
+        diagnostics::debug_output_diagnostics, disable_info, disable_plugin, enable_info,
+        enable_plugin, instruction, is_enabled, toggle_auto_fim, LttwResult,
     },
     nvim_oxi::api::create_user_command,
 };
@@ -113,7 +113,7 @@ pub fn register_commands() -> LttwResult<()> {
     let _ = create_user_command(
         "LttwDebugClear",
         |_| -> LttwResult<()> {
-            debug_clear()?;
+            //debug_clear()?; // XXX
             Ok(())
         },
         &Default::default(),
