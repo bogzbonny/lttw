@@ -734,7 +734,7 @@ pub async fn fim_completion(
 
         let msg = FimCompletionMessage {
             buffer_id,
-            ctx,
+            line_cur: ctx.line_cur,
             cursor_x: pos_x,
             cursor_y: pos_y,
             completion: response,

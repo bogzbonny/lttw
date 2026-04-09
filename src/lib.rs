@@ -30,7 +30,6 @@ pub use error::{Error, LttwResult};
 
 use {
     ahash::HashSet,
-    context::LocalContext,
     diagnostics::{debug_output_diagnostics, handle_diagnostic_changed},
     diff_chunk::calculate_diff_between_contents,
     fim::{
@@ -84,10 +83,11 @@ impl FimTimingsData {
 /// Message sent from async worker to main thread when completion is ready
 #[derive(Debug, Clone)]
 pub struct FimCompletionMessage {
-    buffer_id: u64,          // Buffer handle to ensure we're still in same buffer
-    ctx: LocalContext,       // All buffer lines captured at start
-    cursor_x: usize,         // Cursor position X
-    cursor_y: usize,         // Cursor position Y
+    buffer_id: u64, // Buffer handle to ensure we're still in same buffer
+    //ctx: LocalContext,       // All buffer lines captured at start
+    line_cur: String, // the current line where the completion was calculated (without completion)
+    cursor_x: usize,  // Cursor position X
+    cursor_y: usize,  // Cursor position Y
     completion: FimResponse, // All available completions for cycling
     do_render: bool,
     retry: Option<usize>, // the retry count for this completion
@@ -298,7 +298,11 @@ fn init_completion_processing_thread() {
         Duration::from_millis(50), // repeat
         |_| {
             // Need this so that it executes on the main thread (or else extmarks won't display)
-            nvim_oxi::schedule(|_| process_pending_display());
+            nvim_oxi::schedule(|_| {
+                if let Err(e) = process_pending_display() {
+                    debug!("process_pending_display() error: {}", e);
+                }
+            });
         },
     );
 }
@@ -316,7 +320,7 @@ fn retrieve_lsp_completions() -> LttwResult<Vec<FimCompletionMessage>> {
     if get_current_buffer_id() != response.buffer_id {
         return Ok(vec![]);
     }
-    let line = get_buf_line(pos_y);
+    let line_cur = get_buf_line(pos_y);
     let mut seen = HashSet::default();
     let filtered_comps: Vec<FimCompletionMessage> = response
         .items
@@ -326,7 +330,7 @@ fn retrieve_lsp_completions() -> LttwResult<Vec<FimCompletionMessage>> {
                 return None;
             }
 
-            let line_chars = line
+            let line_chars = line_cur
                 .chars()
                 .skip(comp.start_char)
                 .take(pos_x - comp.start_char)
@@ -345,13 +349,13 @@ fn retrieve_lsp_completions() -> LttwResult<Vec<FimCompletionMessage>> {
             }
 
             // filter out duplicates
-            if seen.contains(&comp.text) {
+            if seen.contains(&text) {
                 return None;
             }
-            seen.insert(comp.text.clone());
+            seen.insert(text.clone());
 
             let fim_resp = FimResponse {
-                content: comp.text,
+                content: text,
                 timings: None,
                 tokens_cached: 0,
                 truncated: false,
@@ -359,7 +363,7 @@ fn retrieve_lsp_completions() -> LttwResult<Vec<FimCompletionMessage>> {
 
             Some(FimCompletionMessage {
                 buffer_id: response.buffer_id,
-                ctx: LocalContext, // All buffer lines captured at start
+                line_cur: line_cur.clone(),
                 cursor_x: pos_x,
                 cursor_y: pos_y,
                 completion: fim_resp, // All available completions for cycling
@@ -383,11 +387,22 @@ fn process_pending_display() -> LttwResult<()> {
         return Ok(());
     }
 
+    let mut messages = match retrieve_lsp_completions() {
+        Ok(c) => c,
+        Err(e) => {
+            debug!(e);
+            Vec::new()
+        }
+    };
+
     // Take all pending messages (clear the queue)
-    let messages: Vec<FimCompletionMessage> = {
+    let queued_messages: Vec<FimCompletionMessage> = {
         let mut pending_queue = state.pending_display.write();
         std::mem::take(&mut *pending_queue)
     };
+
+    messages.extend(queued_messages);
+
     if messages.is_empty() {
         return Ok(());
     }
@@ -420,7 +435,7 @@ fn process_pending_display() -> LttwResult<()> {
                 msg.cursor_x,
                 msg.cursor_y,
                 &msg.completion,
-                msg.ctx.line_cur,
+                msg.line_cur,
             )?;
         }
         retry = msg.retry.unwrap_or(0);
@@ -455,7 +470,7 @@ fn msg_is_valid_to_display(msg: &FimCompletionMessage) -> bool {
         return false;
     };
     let curr_line = get_buf_line(y);
-    if curr_line != msg.ctx.line_cur {
+    if curr_line != msg.line_cur {
         return false;
     }
 
