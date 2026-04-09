@@ -1,7 +1,5 @@
 ^^^^^^^^^ DONE
 
-00. lock condition
-
 01. remove matching suffix from LSP completions 
 
 10. tracing support
@@ -141,6 +139,17 @@ local query_string = [[
 
 ------------------------
 POST RELEASE
+
+30. Small Statistic completion predictions: 
+     - we're definately in HLM territory here
+     - predict and complete small little things such as: 
+     - let askldfj String[CUR] should predict " = " 
+       instead of "StringBuilder" (lsp) because "String = " probably comes up 
+       more than "StringBuilder" in the codebase. 
+     - use the first Identity (word) in the line and the last identity of the line to 
+       predict what comes next. (lines that start with if, else, let would also
+       be good predictors). ALSO be sure that (excluding whitespace) beyond the
+       ident being the same the other characters must match 
 
 50. Offline/Online mode for getting responses locally or over the web
 
