@@ -1,5 +1,24 @@
 ^^^^^^^^^ DONE
 
+10. tracing support
+integrate in the tracing and tracing-opentelemetry crates into this library.
+Replace all instances of this crates `debug!` with the tracing `debug!` macro.
+If config.debug_enabled_at_startup is disabled, then telemetry should NOT start
+during startup.  Ensure that when debugging is enabled that the new tracing
+system will still write all the debug information into the `./lttw.log` file
+just like the existing debug system works.
+
+10. BUG on_buf_enter_update_file_contents - for some reason its not triggered
+    when openning for the first time (with vf) - subsiquent switches to the
+    buffer will activate it
+
+05. Integrate in better usage of lsp autocompletions
+     - // TODO use some of these autocompletion details better rather than just
+       // truncating
+       // - it would be nice to be able to accept Some_fn(...) and keep the closing backet
+       // - something which only takes one arg, should automatically be filled in eg.
+       //    typing Ok[CUR]some_var  then pressing tab should autocomplete to Ok(some_var)
+
 ------------------------
 
 05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
@@ -31,14 +50,7 @@
      - OPTION ONCE no more errors - save file to regenerate diagnostics
      - OPTION ONCE no more errors, go to the next file with errors in a new tab
 
-05. Integrate in better usage of lsp autocompletions
-     - // TODO use some of these autocompletion details better rather than just
-       // truncating
-       // - it would be nice to be able to accept Some_fn(...) and keep the closing backet
-       // - something which only takes one arg, should automatically be filled in eg.
-       //    typing Ok[CUR]some_var  then pressing tab should autocomplete to Ok(some_var)
-
-10. git diff extra_input eviction by line number
+20. git diff extra_input eviction by line number
      - because we're just saving the file changes we do not need to actually 
        calculate removed diffs, just calculate the new diffs and add those to
        the queue HOWEVER we should probably remove other diff segments by
@@ -100,15 +112,11 @@ local query_string = [[
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
 
-10. More sophisticated diff statistics 
+10. More sophisticated statistics for lsp completion priority
      - beyond doing the global statistics, we could also do some quick stats on
        the nearby environment to wherever the completion is taking place. Nearby
        guys should have a high statistical weighting as compared to the global
        stats. This would be good for variable names.
-
-10. BUG on_buf_enter_update_file_contents - for some reason its not triggered
-    when openning for the first time (with vf) - subsiquent switches to the
-    buffer will activate it
 
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
