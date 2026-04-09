@@ -143,7 +143,10 @@ pub fn handle_diagnostic_changed(_arg: nvim_oxi::Object) -> LttwResult<()> {
     // Read the global variable using nvim_oxi::api::get_var with String type
     let json_str = match nvim_oxi::api::get_var::<String>("lttw_diagnostics") {
         Ok(s) => s,
-        Err(_) => String::new(),
+        Err(e) => {
+            debug!(e);
+            String::new()
+        }
     };
 
     if json_str.is_empty() || json_str == "[]" {

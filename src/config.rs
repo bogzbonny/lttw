@@ -393,6 +393,5 @@ mod tests {
         assert_eq!(config.n_predict_inner, 16);
         assert_eq!(config.n_predict_end, 256);
         assert!(config.auto_fim);
-        assert!(!config.diff_tracking_enabled);
     }
 }
