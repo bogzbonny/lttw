@@ -2,9 +2,6 @@
 05. write file contents on first enter of a buffer we haven't entered before 
 05. update the single line output inside line functionality to not use 'stop'
     but just truncate the file contents
-
-^^^^^^^^^ DONE
-
 05. integrate in LSP Completions into input_prefix
      - use vim.lsp.Client.request_sync directly
           - https://neovim.io/doc/user/lsp/#_lua-module%3a-vim.lsp.client
@@ -30,6 +27,13 @@
        where the cursor should just be inserted if the completion is accepted
        (removing the ... keeping it in insert mode THUS triggering the next
        completion).
+01. lsp completions - do not do any on empty string
+
+^^^^^^^^^ DONE
+
+01. use sort order for the items coming in 
+     - keep a passive map of all words in the files to sort by most common 
+       for the top of the list
 
 ------------------------
 
@@ -61,7 +65,6 @@
        response
      - OPTION ONCE no more errors - save file to regenerate diagnostics
      - OPTION ONCE no more errors, go to the next file with errors in a new tab
-
 
 
 10. git diff extra_input eviction by line number
@@ -144,6 +147,8 @@ local query_string = [[
 
 40. README gif of homer with the bird
      - link it to https://www.youtube.com/watch?v=R_rF4kcqLkI
+
+40. Beefy arms link up LLM + LSP 
 
 ------------------------
 POST RELEASE

@@ -343,15 +343,28 @@ fn retrieve_lsp_completions() -> LttwResult<Vec<FimCompletionMessage>> {
                 .take(pos_x - comp.start_char)
                 .collect::<String>();
 
-            if !comp.text.starts_with(&line_chars) {
+            // Only complete partially written text
+            if line_chars.is_empty() {
                 return None;
             }
 
-            let mut text = comp.text;
+            // only keep if strips the prefix
+            let mut text = comp.text.strip_prefix(&line_chars).map(|s| s.to_string())?;
+
             if let Some(pos) = text.find("$0") {
                 text.truncate(pos);
             }
             if let Some(pos) = text.find("${") {
+                text.truncate(pos);
+            }
+            if let Some(pos) = text.find("$1") {
+                text.truncate(pos);
+            }
+            if let Some(pos) = text.find("$2") {
+                text.truncate(pos);
+            }
+            // discard multiline
+            if let Some(pos) = text.find('\n') {
                 text.truncate(pos);
             }
 

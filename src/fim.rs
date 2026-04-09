@@ -328,7 +328,15 @@ pub fn fim_try_hint_inner(
     }
     let completions: Vec<FimResponse> = all_completions.into_iter().map(|(r, _)| r).collect();
     debug!("all completions: {completions:?}");
-    if completions.is_empty() {
+
+    // only trigger completions when not on a whitespace line and also
+    // not when there is whitespace left of the cursor (eg. after a space)
+    let left_char = ctx.line_cur.chars().nth(pos_x.saturating_sub(1));
+    if completions.is_empty()
+        && !ctx.line_cur.trim().is_empty()
+        && let Some(lch) = left_char
+        && !lch.is_whitespace()
+    {
         // trigger the async lsp completion
         if let Err(e) = crate::utils::trigger_lsp_completions_async() {
             debug!(e)
