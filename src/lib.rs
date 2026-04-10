@@ -79,6 +79,27 @@ impl FimTimingsData {
     }
 }
 
+/// Message to be passed for displaying
+#[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
+pub enum DisplayMessage {
+    ClearFIM,
+    CompletionMsg(FimCompletionMessage),
+    Msgs(Vec<DisplayMessage>),
+}
+
+impl From<FimCompletionMessage> for DisplayMessage {
+    fn from(msg: FimCompletionMessage) -> Self {
+        DisplayMessage::CompletionMsg(msg)
+    }
+}
+
+impl From<Vec<DisplayMessage>> for DisplayMessage {
+    fn from(msgs: Vec<DisplayMessage>) -> Self {
+        DisplayMessage::Msgs(msgs)
+    }
+}
+
 /// Message sent from async worker to main thread when completion is ready
 #[derive(Debug, Clone)]
 pub struct FimCompletionMessage {
@@ -301,7 +322,7 @@ fn init_completion_processing_and_tracing_thread(
     let state = get_state();
 
     // Create channel for completion messages
-    let (tx, mut rx) = mpsc::channel::<FimCompletionMessage>(16);
+    let (tx, mut rx) = mpsc::channel::<DisplayMessage>(16);
     *state.fim_completion_tx.write() = Some(tx);
 
     // Spawn a task that receives completion messages and adds them to the pending display queue
@@ -359,7 +380,7 @@ fn process_pending_display() -> LttwResult<()> {
     }
 
     // Take all pending messages (clear the queue)
-    let queued_messages: Vec<FimCompletionMessage> = {
+    let queued_messages: Vec<DisplayMessage> = {
         let Some(mut pending_queue) = state.pending_display.try_write() else {
             return Ok(());
         };
@@ -386,9 +407,34 @@ fn process_pending_display() -> LttwResult<()> {
 
     info!("Processing {} pending display messages", messages.len(),);
 
-    // accept the most recent message which has content and isn't only whitespace
+    // accept the most recent (last) message which has content and isn't only whitespace
     let mut msg_to_render = None;
-    for msg_ in messages.into_iter().rev() {
+    let mut do_clear = false;
+    let mut disp_msgs = Vec::new();
+    for msg_ in messages.into_iter() {
+        match msg_ {
+            DisplayMessage::ClearFIM => {
+                do_clear = true;
+            }
+            DisplayMessage::CompletionMsg(msg_) => {
+                disp_msgs.push(msg_);
+            }
+            DisplayMessage::Msgs(msgs_inner) => {
+                for msg_ in msgs_inner {
+                    match msg_ {
+                        DisplayMessage::ClearFIM => {
+                            do_clear = true;
+                        }
+                        DisplayMessage::CompletionMsg(msg_) => {
+                            disp_msgs.push(msg_);
+                        }
+                        DisplayMessage::Msgs(_msgs) => {} // only allow for depth of 1
+                    }
+                }
+            }
+        }
+    }
+    for msg_ in disp_msgs.into_iter() {
         if msg_is_valid_to_display(&msg_) {
             // because the msg is valid we already know that the message is for the cursor position
             let is_unique = state
@@ -405,6 +451,9 @@ fn process_pending_display() -> LttwResult<()> {
         }
     }
 
+    if do_clear {
+        fim_hide()?;
+    }
     let mut retry = 0;
     if let Some(msg) = msg_to_render {
         info!("valid message about to render: {:?}", msg);
@@ -714,7 +763,7 @@ fn on_move() -> LttwResult<()> {
     }
 
     info!("Cursor moved");
-    fim_hide()?;
+    //fim_hide()?; //
     fim_try_hint(None)?;
     Ok(())
 }

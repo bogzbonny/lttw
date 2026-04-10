@@ -1,7 +1,7 @@
 use {
     crate::{
-        Error, FimCompletionMessage, FimState, LttwResult, cache, config,
-        diagnostics::DiagnosticTracker, instruction::InstructionRequestState, ring_buffer,
+        cache, config, diagnostics::DiagnosticTracker, instruction::InstructionRequestState,
+        ring_buffer, DisplayMessage, Error, FimState, LttwResult,
     },
     ahash::{HashMap, HashMapExt},
     nvim_oxi::api::create_namespace,
@@ -9,14 +9,14 @@ use {
     parking_lot::{RwLock, RwLockReadGuard},
     std::{
         sync::{
-            Arc, OnceLock,
             atomic::{AtomicBool, AtomicI64, AtomicU64},
+            Arc, OnceLock,
         },
         time::Instant,
     },
     tokio::{
         runtime::Runtime,
-        sync::{Semaphore, mpsc},
+        sync::{mpsc, Semaphore},
     },
 };
 
@@ -82,9 +82,9 @@ pub struct PluginState {
     word_statistics: Arc<PapayaMap<String, u64>>,
 
     // FIM completion channel for async worker communication
-    pub fim_completion_tx: Arc<RwLock<Option<mpsc::Sender<FimCompletionMessage>>>>,
+    pub fim_completion_tx: Arc<RwLock<Option<mpsc::Sender<DisplayMessage>>>>,
     // Pending display queue - holds messages waiting to be rendered on main thread
-    pub pending_display: Arc<RwLock<Vec<FimCompletionMessage>>>,
+    pub pending_display: Arc<RwLock<Vec<DisplayMessage>>>,
     // Persistent tokio runtime for async operations
     pub tokio_runtime: Arc<RwLock<Runtime>>,
 }
@@ -168,7 +168,7 @@ impl PluginState {
         }
     }
     #[tracing::instrument]
-    pub fn get_fim_completion_tx(&self) -> LttwResult<mpsc::Sender<FimCompletionMessage>> {
+    pub fn get_fim_completion_tx(&self) -> LttwResult<mpsc::Sender<DisplayMessage>> {
         let fim_completion_tx_lock = self.fim_completion_tx.read();
         fim_completion_tx_lock
             .clone()

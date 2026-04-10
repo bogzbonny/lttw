@@ -17,7 +17,8 @@ use {
             self, clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input,
             is_in_comment, set_buf_extmark, set_buf_extmark_top_right,
         },
-        Error, FimCompletionMessage, FimTimingsData, LttwResult, LTTW_FIM_HIGHLIGHT,
+        DisplayMessage, Error, FimCompletionMessage, FimTimingsData, LttwResult,
+        LTTW_FIM_HIGHLIGHT,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition},
     serde::{Deserialize, Serialize},
@@ -275,11 +276,6 @@ pub fn fim_try_hint_inner(
         } else {
             (Vec::new(), 0)
         };
-        // -----------------
-
-        let mut completions: Vec<FimResponse> =
-            all_completions.into_iter().map(|(c, _)| c).collect();
-        info!("all completions: {} found", completions.len());
 
         let tx = match state.get_fim_completion_tx() {
             Ok(tx) => tx,
@@ -288,6 +284,10 @@ pub fn fim_try_hint_inner(
                 return;
             }
         };
+        let mut msgs: Vec<DisplayMessage> = vec![DisplayMessage::ClearFIM];
+        let mut completions: Vec<FimResponse> =
+            all_completions.into_iter().map(|(c, _)| c).collect();
+        info!("all completions: {} found", completions.len());
 
         //let final_completion = completions.take(completions_idx).cloned();
         let mut final_completion = None;
@@ -310,10 +310,7 @@ pub fn fim_try_hint_inner(
                     do_render: !force_regenerate,
                     retry: None,
                 };
-                info!("cache sending message {:?}", msg);
-                if let Err(e) = tx.send(msg).await {
-                    error!(e)
-                }
+                msgs.push(msg.into());
             }
         }
 
@@ -336,10 +333,7 @@ pub fn fim_try_hint_inner(
                     do_render: true,
                     retry: None,
                 };
-                info!("cache sending message {:?}", msg);
-                if let Err(e) = tx.send(msg).await {
-                    error!(e)
-                }
+                msgs.push(msg.into());
 
                 // run async speculative FIM in the background for this position
                 // TODO should this just always run even when no hint is shown?
@@ -348,6 +342,11 @@ pub fn fim_try_hint_inner(
                     prev_for_next_fim = Some(vec![prev_content]);
                 }
             }
+        }
+
+        info!("cache sending message {:?}", msgs);
+        if let Err(e) = tx.send(msgs.into()).await {
+            error!(e)
         }
 
         if let Some(content) = prev_for_next_fim.clone() {
@@ -829,7 +828,7 @@ pub async fn fim_completion(
             retry,
         };
 
-        if let Err(e) = tx.send(msg).await {
+        if let Err(e) = tx.send(msg.into()).await {
             info!(e);
         }
     });

@@ -2,7 +2,7 @@ use {
     crate::{
         plugin_state::strip_to_first_identifier,
         utils::{self, filter_tail_chars, get_buf_line, get_current_buffer_id, get_pos},
-        PluginState, {FimCompletionMessage, FimResponse, LttwResult},
+        DisplayMessage, PluginState, {FimCompletionMessage, FimResponse, LttwResult},
     },
     ahash::HashSet,
     regex::Regex,
@@ -61,7 +61,7 @@ vim.lsp.buf_request_all(bufnr, 'textDocument/completion', vim.lsp.util.make_posi
 }
 
 #[tracing::instrument(skip(state))]
-pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimCompletionMessage>> {
+pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<DisplayMessage>> {
     let Ok(json_str) = nvim_oxi::api::get_var::<String>("lttw_completion") else {
         return Ok(vec![]); // no completions available, nbd
     };
@@ -179,7 +179,7 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimComple
     // sort the completions from least common to most common
     // NOTE later FimCompletionMessages are considered higher priority
     filtered_comps.sort_by(|a, b| a.1.cmp(&b.1));
-    let filtered_comps: Vec<_> = filtered_comps.into_iter().map(|x| x.0).collect();
+    let filtered_comps: Vec<_> = filtered_comps.into_iter().map(|x| x.0.into()).collect();
 
     // save in caches
     //let hashes = compute_hashes(&ctx.prefix, &ctx.middle, &ctx.suffix);
