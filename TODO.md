@@ -5,13 +5,11 @@ If config.debug_enabled_at_startup is disabled, then telemetry should NOT start
 during startup.  Ensure that when debugging is enabled that the new tracing
 system will still write all the debug information into the `./lttw.log` file
 just like the existing debug system works.
-
-^^^^^^^^^ DONE
-
-
 01. BUG on_buf_enter_update_file_contents - for some reason its not triggered
     when openning for the first time (with vf) - subsiquent switches to the
     buffer will activate it
+
+^^^^^^^^^ DONE
 
 01. remove matching suffix from LSP completions 
 
