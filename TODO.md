@@ -26,12 +26,14 @@ just like the existing debug system works.
 01. This situation is for some reason not putting things inside: 
        if let Err(...)e = fim_hide();
      comp.text = "Err($1)$0" - need to strip the final $0
-
-^^^^^^^^^ DONE
-
 01. Allow for suffix trimming IFF A SINGLE character is removed at the end. 
     Eg. if match is Option<String> and the suffix is String then the suffix is a
     match up to that character. 
+
+^^^^^^^^^ DONE
+
+00. bracket matching suffix removal goes to the end of the line
+
 
 00. feeling a bit slow should probably NOT initiate the infill until a pause has
     completed. Test by holding the backspace on code vs comment

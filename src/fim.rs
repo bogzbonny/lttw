@@ -996,7 +996,7 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
         } else {
             ""
         };
-        let (suggestion_text, new_suffix, use_inline) =
+        let (suggestion_text, new_suffix, use_infill) =
             trim_suggestion_and_suffix_on_curr_line(&suggestion_text, suffix);
 
         let suggestion_text = if let Some(new_suffix) = new_suffix {
@@ -1015,7 +1015,7 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
         let suggestion_virt_text = vec![(suggestion_text, LTTW_FIM_HIGHLIGHT.to_string())];
         suggestion_opts.virt_text(suggestion_virt_text);
 
-        let suggestion_pos = if content.len() == 1 && use_inline {
+        let suggestion_pos = if content.len() == 1 && use_infill {
             ExtmarkVirtTextPosition::Inline
         } else {
             ExtmarkVirtTextPosition::Overlay
@@ -1296,13 +1296,18 @@ pub fn accept_fim_suggestion(
         } else {
             ""
         };
-        let (first_line, new_suffix, is_inline) =
+        let (first_line, new_suffix, infill) =
             trim_suggestion_and_suffix_on_curr_line(&first_line, suffix);
-        let inline = if is_inline {
+
+        // NOTE even though when we get a new suffix (under a partial bracket match) we
+        // don't render the content with infill but we still are rendering "inline"
+        // so we still need to calculate the final location upon acceptance
+        let inline = if infill || new_suffix.is_some() {
             Some(prefix.len() + first_line.len())
         } else {
             None
         };
+
         let suffix = if let Some(suffix) = new_suffix {
             suffix
         } else {
