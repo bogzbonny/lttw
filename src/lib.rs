@@ -84,6 +84,7 @@ impl FimTimingsData {
 #[allow(clippy::large_enum_variant)]
 pub enum DisplayMessage {
     ClearFIM,
+    TriggerLSPCompletion,
     CompletionMsg(FimCompletionMessage),
     Msgs(Vec<DisplayMessage>),
 }
@@ -410,11 +411,16 @@ fn process_pending_display() -> LttwResult<()> {
     // accept the most recent (last) message which has content and isn't only whitespace
     let mut msg_to_render = None;
     let mut do_clear = false;
+    let mut trigger_lsp_completions = false;
     let mut disp_msgs = Vec::new();
     for msg_ in messages.into_iter() {
         match msg_ {
             DisplayMessage::ClearFIM => {
                 do_clear = true;
+            }
+
+            DisplayMessage::TriggerLSPCompletion => {
+                trigger_lsp_completions = true;
             }
             DisplayMessage::CompletionMsg(msg_) => {
                 disp_msgs.push(msg_);
@@ -425,6 +431,9 @@ fn process_pending_display() -> LttwResult<()> {
                         DisplayMessage::ClearFIM => {
                             do_clear = true;
                         }
+                        DisplayMessage::TriggerLSPCompletion => {
+                            trigger_lsp_completions = true;
+                        }
                         DisplayMessage::CompletionMsg(msg_) => {
                             disp_msgs.push(msg_);
                         }
@@ -434,6 +443,13 @@ fn process_pending_display() -> LttwResult<()> {
             }
         }
     }
+    if trigger_lsp_completions {
+        // trigger the async lsp completion
+        if let Err(e) = crate::lsp_completion::trigger_lsp_completions_async() {
+            error!("trigger_lsp_completions_async error: {}", e)
+        }
+    }
+
     for msg_ in disp_msgs.into_iter() {
         if msg_is_valid_to_display(&msg_) {
             // because the msg is valid we already know that the message is for the cursor position

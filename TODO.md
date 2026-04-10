@@ -1,27 +1,5 @@
-00. feeling a bit slow should probably NOT initiate the infill until a pause has
-    completed. Test by holding the backspace on code vs comment
-      - THE ISSUE is that there actually the cache computation which doesn't
-        happen async
-         - DONE
-      - there is currently NO ignoring repeated keystrokes for cache completion 
-        OR LSP completion - should add a small delay using a last keystroke biz. 
-         - maybe use "try_read" on the "last move time" and just skip the
-           completion if its we can't try
-      - DONE - ONLY compute the next_var at the time when we know we'll need it when
-        processing a completion. (use Option Option)
-      - on my computer the key repeat rate is about 66 ms maybe make this special debouce
-        80ms? - or fold lsp into the other debounce?
-05. ensure that when messages come in they aren't duplicating existing messages
-    already around 
-05. telemetry doesn't work if tracing logfile is disabled (it should)
-00. regression on typing maintaining the same thing on the screen due to moving
-    the cache logic into async. 
-     - now the LSP is being computed all the time (maybe the issue) 
-     - the whole group of commits is not being written (only the most recent one
-       is being sent through a message.
 
 ^^^^^^^^^ DONE
-
 
 01. LSP rematch options eg. Ok() is predicted a decent amount which should
     probably re rerouted to Ok(()) (config option this) 
@@ -29,10 +7,6 @@
     it would almost make sense to have it just be 'let mut '[truncated]
      - having a predictable reusable pattern for this is funny though
      - maybe this is one for the rematch routine
-
-01. reduce flicker - on_move fim_hide should actually take place inside of
-    try_fim_hint as the first message sent in (modify messages to be able to
-    take in alternative biz)
 
 ------------------------
 

@@ -239,23 +239,23 @@ pub fn fim_try_hint_inner(
         }
     };
 
-    // TRIGGER LSP COMPLETION
-    //
-    // only trigger completions when not on a whitespace line and also
-    // not when there is whitespace left of the cursor (eg. after a space)
-    let lsp_completion_enabled = state.config.read().lsp_completions;
-    let line_cur = lines.get(pos_y).cloned().unwrap_or_default();
-    let left_char = line_cur.chars().nth(pos_x.saturating_sub(1));
-    if lsp_completion_enabled
-        && !line_cur.trim().is_empty()
-        && let Some(lch) = left_char
-        && !lch.is_whitespace()
-    {
-        // trigger the async lsp completion
-        if let Err(e) = crate::lsp_completion::trigger_lsp_completions_async() {
-            info!("trigger_lsp_completions_async error: {}", e)
-        }
-    }
+    //// TRIGGER LSP COMPLETION
+    ////
+    //// only trigger completions when not on a whitespace line and also
+    //// not when there is whitespace left of the cursor (eg. after a space)
+    //let lsp_completion_enabled = state.config.read().lsp_completions;
+    //let line_cur = lines.get(pos_y).cloned().unwrap_or_default();
+    //let left_char = line_cur.chars().nth(pos_x.saturating_sub(1));
+    //if lsp_completion_enabled
+    //    && !line_cur.trim().is_empty()
+    //    && let Some(lch) = left_char
+    //    && !lch.is_whitespace()
+    //{
+    //    // trigger the async lsp completion
+    //    if let Err(e) = crate::lsp_completion::trigger_lsp_completions_async() {
+    //        info!("trigger_lsp_completions_async error: {}", e)
+    //    }
+    //}
 
     // Spawn a FIM in the background nomatter what
     // either a speculative-fim as though the completion was accepted
@@ -284,6 +284,24 @@ pub fn fim_try_hint_inner(
                 return;
             }
         };
+
+        // TRIGGER LSP COMPLETION
+        //
+        // only trigger completions when not on a whitespace line and also
+        // not when there is whitespace left of the cursor (eg. after a space)
+        if all_completions.is_empty() {
+            let lsp_completion_enabled = state.config.read().lsp_completions;
+            let left_char = ctx.line_cur.chars().nth(pos_x.saturating_sub(1));
+            if lsp_completion_enabled
+                && !ctx.line_cur.trim().is_empty()
+                && let Some(lch) = left_char
+                && !lch.is_whitespace()
+                && let Err(e) = tx.send(DisplayMessage::TriggerLSPCompletion).await
+            {
+                error!(e);
+            }
+        }
+
         let mut msgs: Vec<DisplayMessage> = vec![DisplayMessage::ClearFIM];
         let mut completions: Vec<FimResponse> =
             all_completions.into_iter().map(|(c, _)| c).collect();
@@ -301,7 +319,7 @@ pub fn fim_try_hint_inner(
                 }
                 let msg = FimCompletionMessage {
                     buffer_id,
-                    line_cur: line_cur.clone(),
+                    line_cur: ctx.line_cur.clone(),
                     cursor_x: pos_x,
                     cursor_y: pos_y,
                     completion: c,
@@ -326,7 +344,7 @@ pub fn fim_try_hint_inner(
             if !prev_content.is_empty() {
                 let msg = FimCompletionMessage {
                     buffer_id,
-                    line_cur,
+                    line_cur: ctx.line_cur.clone(),
                     cursor_x: pos_x,
                     cursor_y: pos_y,
                     completion,

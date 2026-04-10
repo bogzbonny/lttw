@@ -1,112 +1,3 @@
-
-You are in the middle of the task of translating the codebase provided under
-`llama.vim/` into a new neovim plugin written in ENTIRELY rust using neovim
-bindings through the use of the nvim-oxi crate. NOTE there is not, nor should
-there EVER be ANY lua code in this project, all plugin functionality is achieved
-PURELY by using nvim-oxi 
-
-Evaluate all code, function by function within the origin codebase
-(`llama.vim/`) and make sure they both exist and are actually usable. Fill in
-any gaps if there are "work in progress" implementations.
-
-You are allowed to look at nvim-oxi docs. 
-
-Be sure to update the readme and installation instructions based on how a
-nvim-oxi neovim plugin is supposed to be installed (read the docs). 
-
-Also be sure to write full integration tests for FIM using `#[nvim_oxi::test]`
-which spawns a neovim instance with the text code. NOTE the llama-server IS
-currently running so you can expect results from llama.cpp 
-
---------------
-
-You are in the middle of the task of translating the codebase provided under
-`llama.vim/` into a new neovim plugin written in ENTIRELY rust using neovim
-bindings through the use of the nvim-oxi crate. NOTE there is not, nor should
-there EVER be ANY lua code in this project, all plugin functionality is achieved
-PURELY by using nvim-oxi 
-
-Evaluate all code, function by function within the origin codebase
-(`llama.vim/`) and make sure they both exist and are actually usable. Fill in
-any gaps if there are "work in progress" implementations. As a part of this
-process resolve all Clippy warnings, there is lots of code which is never
-called, all this code should either be called somewhere or deleted if its truly
-not necessary 
-
-Be sure to write/assess full integration tests for FIM using `#[nvim_oxi::test]`
-which spawns a neovim instance with the text code. This is DIFFERENT than the
-built-in `#[test]`. You are allowed to look at nvim-oxi docs. NOTE the
-llama-server IS currently running so you can expect results from llama.cpp 
-
---------------
-
-You have been translating the codebase provided under `llama.vim/` into a new
-neovim plugin written in ENTIRELY rust using neovim bindings through the use of
-the nvim-oxi crate. NOTE there is not, nor should there EVER be ANY lua code in
-this project, all plugin functionality is achieved PURELY by using nvim-oxi 
-
-Complete the full fim integration tests for FIM which use `#[nvim_oxi::test]`
-which spawns a neovim instance with the text code. NOTE the llama-server IS
-currently running so you can expect results from llama.cpp. Currently these
-tests are incomplete they need to be completed to: 
- - ensure that FIM is activated and generates code. 
- - ensure that the ring buffer system works and allows for llm caching
-
-By writing these tests you may uncover bugs in the functionality of the
-translated code, if this is the case, fix the bugs. You may always refer to the
-original working code (written in vimscript) to understand what should be
-happening. However you should work by first trying to complete the integration tests,
-by understanding the rust code exclusively at first. 
-
---------------
-
-You have been translating the codebase provided under `llama.vim/` into a new
-neovim plugin written in ENTIRELY rust using neovim bindings through the use of
-the nvim-oxi crate. NOTE there is not, nor should there EVER be ANY lua code in
-this project, all plugin functionality is achieved PURELY by using nvim-oxi 
-
-The following issues have been identified which should be resolved:
-
- - in lib.rs there is a \x60trigger_fim\x60 function which is called within
-   setup_autocmds() however this function has not been implemented. refer to
-   `llama.vim` to understand how this function should be implemented then
-   implement it and add it to the functions defined within lib.rs `lttw()`.
-
- - fim_accept function in lib.rs is incomplete. COMPLETE the full implementation
-```
-// In a real implementation, this would:
-// 1. Set the buffer lines with the accepted content
-// 2. Move the cursor to the end of the accepted text
-// 3. Clear the FIM hint
-```
- - fim_try_hint function in lib.rs is incomplete. COMPLETE the full implementation
-```
-// This would be an async call in the real implementation
-```
- - inst_send is incomplete. COMPLETE the full implementation
-```
-// In a real implementation, this would read chunks from the response stream
-// and update visual text in real-time
-```
- - process_ring_buffer function in lib.rs is incomplete. COMPLETE the full implementation
-```
-// In a full implementation, we would send these to the server here
-// For now, just log that we processed them
-```
-
-------------
-
-You have been translating the codebase provided under `llama.vim/` into a new
-neovim plugin written in ENTIRELY rust using neovim bindings through the use of
-the nvim-oxi crate. NOTE there is not, nor should there EVER be ANY lua code in
-this project, all plugin functionality is achieved PURELY by using nvim-oxi 
-
-The issue: the worker thread created at plugin setup seems to not be actually
-displaying any fim_hint text as soon as they return, only after another
-keystroke or two will they render from the cache, explore and understand this
-issue then attempt to fix. Maybe if we just check for updates every X ms from a
-nvim schedule it would render
-
 01. fix filetype prediction logic
 01. add debounce
 01. Should not be Inline extmarks when there are no ending matches
@@ -390,3 +281,29 @@ just like the existing debug system works.
     Eg. if match is Option<String> and the suffix is String then the suffix is a
     match up to that character. 
 00. bracket matching suffix removal goes to the end of the line
+
+00. feeling a bit slow should probably NOT initiate the infill until a pause has
+    completed. Test by holding the backspace on code vs comment
+      - THE ISSUE is that there actually the cache computation which doesn't
+        happen async
+         - DONE
+      - there is currently NO ignoring repeated keystrokes for cache completion 
+        OR LSP completion - should add a small delay using a last keystroke biz. 
+         - maybe use "try_read" on the "last move time" and just skip the
+           completion if its we can't try
+      - DONE - ONLY compute the next_var at the time when we know we'll need it when
+        processing a completion. (use Option Option)
+      - on my computer the key repeat rate is about 66 ms maybe make this special debouce
+        80ms? - or fold lsp into the other debounce?
+05. ensure that when messages come in they aren't duplicating existing messages
+    already around 
+05. telemetry doesn't work if tracing logfile is disabled (it should)
+00. regression on typing maintaining the same thing on the screen due to moving
+    the cache logic into async. 
+     - now the LSP is being computed all the time (maybe the issue) 
+     - the whole group of commits is not being written (only the most recent one
+       is being sent through a message.
+01. reduce flicker - on_move fim_hide should actually take place inside of
+    try_fim_hint as the first message sent in (modify messages to be able to
+    take in alternative biz)
+00. do NOT do lsp-completion is there is a cached guy found
