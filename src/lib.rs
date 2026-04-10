@@ -467,22 +467,45 @@ fn fim_accept_inner(
     let (new_line, rest, inline_loc) =
         fim::accept_fim_suggestion(accept_type, pos_x, &line_cur, &content);
 
-    // Move the cursor to the end of the accepted text
-    let (new_x, new_y) = if let Some(rest_lines) = &rest {
-        let new_pos_y = pos_y + rest_lines.len();
-        let new_pos_x = rest_lines.last().map_or(0, |line| line.len());
-        (new_pos_x, new_pos_y)
-    } else if let Some(inline) = inline_loc {
-        (inline, pos_y)
-    } else {
-        let new_col = new_line.len();
-        (new_col, pos_y)
-    };
+    // Check if the new_line contains "…" character and find its position
+    let ellipsis_pos = new_line.find('…');
 
-    let mut combined = vec![new_line];
-    if let Some(rest_lines) = rest {
-        combined.extend(rest_lines);
-    }
+    let (new_x, new_y, combined) = if let Some(ellipsis_pos) = ellipsis_pos {
+        // Delete the "…" character
+        let mut new_line_without_ellipsis = new_line.clone();
+        new_line_without_ellipsis.remove(ellipsis_pos);
+        
+        // Calculate the position of "…" in the final output
+        // The ellipsis is at ellipsis_pos in new_line, and new_line is the first line in combined
+        let ellipsis_x = ellipsis_pos;
+        let ellipsis_y = 0; // new_line is the first line
+        
+        let mut combined = vec![new_line_without_ellipsis];
+        if let Some(rest_lines) = &rest {
+            combined.extend(rest_lines.clone());
+        }
+        
+        (ellipsis_x, pos_y + ellipsis_y, combined)
+    } else {
+        // Move the cursor to the end of the accepted text
+        let (new_x, new_y) = if let Some(rest_lines) = &rest {
+            let new_pos_y = pos_y + rest_lines.len();
+            let new_pos_x = rest_lines.last().map_or(0, |line| line.len());
+            (new_pos_x, new_pos_y)
+        } else if let Some(inline) = inline_loc {
+            (inline, pos_y)
+        } else {
+            let new_col = new_line.len();
+            (new_col, pos_y)
+        };
+
+        let mut combined = vec![new_line];
+        if let Some(rest_lines) = rest {
+            combined.extend(rest_lines);
+        }
+
+        (new_x, new_y, combined)
+    };
 
     Ok((new_x, new_y, combined))
 }
