@@ -233,6 +233,7 @@ impl FimState {
     }
 
     /// Set the completion cycle list
+    #[allow(dead_code)]
     fn set_completion_cycle(&mut self, completions: Vec<FimResponse>, idx: usize) {
         self.completion_cycle = completions;
         self.completion_index = idx;

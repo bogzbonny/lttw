@@ -293,12 +293,6 @@ pub fn fim_try_hint_inner(
         let mut final_completion = None;
 
         if state.fim_state.read().completion_cycle.is_empty() {
-            // XXX will not rerender though! need a better system than sending the message
-            //state
-            //    .fim_state
-            //    .write()
-            //    .set_completion_cycle(completions, completions_idx);
-
             // send all the messages besides the final message to display
             for (i, c) in completions.drain(..).enumerate() {
                 if i != completions_idx {
@@ -333,16 +327,6 @@ pub fn fim_try_hint_inner(
             let prev_content = completion.content.clone();
             info!("found cached prev_content ({} chars)", prev_content.len());
             if !prev_content.is_empty() {
-                // XXX delete this code
-                // must only happen on main thread
-                //render_fim_suggestion(
-                //    state.clone(),
-                //    pos_x,
-                //    pos_y,
-                //    &completion,
-                //    ctx.line_cur.clone(),
-                //)?;
-
                 let msg = FimCompletionMessage {
                     buffer_id,
                     line_cur,
@@ -1303,12 +1287,7 @@ pub fn trim_suggestion_and_suffix_on_curr_line<'a>(
     suffix: &str,
 ) -> (&'a str, Option<String>, bool) {
     // trim the first_line suffix if it is the same as the suffix
-    debug!(
-        "trim_suggestion_and_suffix_on_curr_line: suggestion: '{}', suffix: '{}'",
-        suggestion, suffix
-    );
     if suggestion.ends_with(suffix) {
-        debug!("1");
         (suggestion.trim_end_matches(suffix), None, true)
     } else {
         // check to see if the suffix should be trimmed at all if matches the suggestion if
@@ -1324,9 +1303,7 @@ pub fn trim_suggestion_and_suffix_on_curr_line<'a>(
             &suggestion[..last_char_start]
         };
 
-        debug!("sug_one_less: {}", sug_one_less);
         let new_suffix = utils::remove_matching_prefix(sug_one_less, suffix);
-        debug!("new_suffix: {}", new_suffix);
         if new_suffix.len() == suffix.len() {
             //return (suggestion, None, suggestion.len() < suffix.len());
             return (suggestion, None, true);

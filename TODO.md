@@ -14,14 +14,14 @@
 05. ensure that when messages come in they aren't duplicating existing messages
     already around 
 05. telemetry doesn't work if tracing logfile is disabled (it should)
-
-^^^^^^^^^ DONE
-
 00. regression on typing maintaining the same thing on the screen due to moving
     the cache logic into async. 
      - now the LSP is being computed all the time (maybe the issue) 
      - the whole group of commits is not being written (only the most recent one
        is being sent through a message.
+
+^^^^^^^^^ DONE
+
 
 01. LSP rematch options eg. Ok() is predicted a decent amount which should
     probably re rerouted to Ok(()) (config option this) 
