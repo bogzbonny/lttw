@@ -1,8 +1,8 @@
 use {
     crate::{
-        autocmd::clear_filetype_autocommand, debug_word_statistics,
+        LttwResult, autocmd::clear_filetype_autocommand, debug_word_statistics,
         diagnostics::debug_output_diagnostics, disable_info, disable_plugin, enable_info,
-        enable_plugin, instruction, is_enabled, toggle_auto_fim, LttwResult,
+        enable_plugin, instruction, is_enabled, toggle_auto_fim,
     },
     nvim_oxi::api::create_user_command,
 };

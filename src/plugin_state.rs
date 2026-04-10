@@ -1,7 +1,7 @@
 use {
     crate::{
-        cache, config, diagnostics::DiagnosticTracker, instruction::InstructionRequestState,
-        ring_buffer, Error, FimCompletionMessage, FimState, LttwResult,
+        Error, FimCompletionMessage, FimState, LttwResult, cache, config,
+        diagnostics::DiagnosticTracker, instruction::InstructionRequestState, ring_buffer,
     },
     ahash::{HashMap, HashMapExt},
     nvim_oxi::api::create_namespace,
@@ -9,14 +9,14 @@ use {
     parking_lot::{RwLock, RwLockReadGuard},
     std::{
         sync::{
-            atomic::{AtomicBool, AtomicI64, AtomicU64},
             Arc, OnceLock,
+            atomic::{AtomicBool, AtomicI64, AtomicU64},
         },
         time::Instant,
     },
     tokio::{
         runtime::Runtime,
-        sync::{mpsc, Semaphore},
+        sync::{Semaphore, mpsc},
     },
 };
 
@@ -168,7 +168,7 @@ impl PluginState {
         }
     }
     #[tracing::instrument]
-pub fn get_fim_completion_tx(&self) -> LttwResult<mpsc::Sender<FimCompletionMessage>> {
+    pub fn get_fim_completion_tx(&self) -> LttwResult<mpsc::Sender<FimCompletionMessage>> {
         let fim_completion_tx_lock = self.fim_completion_tx.read();
         fim_completion_tx_lock
             .clone()
@@ -189,7 +189,7 @@ pub fn get_fim_completion_tx(&self) -> LttwResult<mpsc::Sender<FimCompletionMess
     }
 
     #[tracing::instrument]
-pub fn in_insert_mode(&self) -> LttwResult<bool> {
+    pub fn in_insert_mode(&self) -> LttwResult<bool> {
         let bz = self.nvim_mode.read();
         let Some(mode_char) = bz.first() else {
             return Ok(false);
@@ -197,7 +197,7 @@ pub fn in_insert_mode(&self) -> LttwResult<bool> {
         Ok(mode_char == &b'i')
     }
     #[tracing::instrument]
-pub fn in_normal_mode(&self) -> LttwResult<bool> {
+    pub fn in_normal_mode(&self) -> LttwResult<bool> {
         let bz = self.nvim_mode.read();
         let Some(mode_char) = bz.first() else {
             return Ok(false);
@@ -206,12 +206,12 @@ pub fn in_normal_mode(&self) -> LttwResult<bool> {
     }
 
     #[tracing::instrument]
-pub fn set_cur_buffer_info(&self, info: CurrentBufferInfo) {
+    pub fn set_cur_buffer_info(&self, info: CurrentBufferInfo) {
         *self.cur_buf_info.write() = info;
     }
 
     #[tracing::instrument]
-pub fn get_cur_buffer_info(&self) -> CurrentBufferInfo {
+    pub fn get_cur_buffer_info(&self) -> CurrentBufferInfo {
         self.cur_buf_info.read().clone()
     }
 
@@ -232,7 +232,7 @@ pub fn get_cur_buffer_info(&self) -> CurrentBufferInfo {
     }
 
     #[tracing::instrument]
-pub fn has_file_contents(&self, filename: &str) -> bool {
+    pub fn has_file_contents(&self, filename: &str) -> bool {
         self.file_contents.read().contains_key(filename)
     }
 
@@ -253,7 +253,7 @@ pub fn has_file_contents(&self, filename: &str) -> bool {
     }
 
     #[tracing::instrument]
-pub fn adjust_word_statistics_for_diff(&self, diff_content: Vec<String>) {
+    pub fn adjust_word_statistics_for_diff(&self, diff_content: Vec<String>) {
         // dispatch a non-blocking thread to count word statistics on the file contents
         let rt = self.tokio_runtime.clone();
         let ws = self.word_statistics.clone();
@@ -271,17 +271,17 @@ pub fn adjust_word_statistics_for_diff(&self, diff_content: Vec<String>) {
     }
 
     #[tracing::instrument]
-pub fn set_file_contents_empty(&self, filename: String) {
+    pub fn set_file_contents_empty(&self, filename: String) {
         self.file_contents.write().insert(filename.clone(), None);
     }
 
     #[tracing::instrument]
-pub fn file_contents_read(&self) -> RwLockReadGuard<'_, HashMap<String, Option<String>>> {
+    pub fn file_contents_read(&self) -> RwLockReadGuard<'_, HashMap<String, Option<String>>> {
         self.file_contents.read()
     }
 
     #[tracing::instrument]
-pub fn get_word_statistic_usage(&self, word: &str) -> u64 {
+    pub fn get_word_statistic_usage(&self, word: &str) -> u64 {
         self.word_statistics
             .pin()
             .get(word)
@@ -290,7 +290,7 @@ pub fn get_word_statistic_usage(&self, word: &str) -> u64 {
     }
 
     #[tracing::instrument]
-pub fn debug_word_statistics(&self) {
+    pub fn debug_word_statistics(&self) {
         self.word_statistics.pin().iter().for_each(|(k, v)| {
             info!("{}: {}", k, v);
         });

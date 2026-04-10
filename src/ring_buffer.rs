@@ -9,11 +9,11 @@
 ///       currently happening.
 use {
     crate::{
-        context::chunk_similarity, get_state, plugin_state::PluginState, utils::random_range,
-        LttwResult,
+        LttwResult, context::chunk_similarity, get_state, plugin_state::PluginState,
+        utils::random_range,
     },
     std::collections::VecDeque,
-    std::sync::{atomic::Ordering, Arc},
+    std::sync::{Arc, atomic::Ordering},
     std::time::{Duration, Instant},
 };
 
@@ -197,7 +197,7 @@ impl RingBuffer {
     }
 
     #[tracing::instrument(skip(text, filename))]
-pub fn pick_chunk_inner(&mut self, text: &[String], filename: String) {
+    pub fn pick_chunk_inner(&mut self, text: &[String], filename: String) {
         // Skip if extra context is disabled
         if self.ring_n_chunks == 0 {
             return;

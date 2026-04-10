@@ -32,12 +32,12 @@ use {
     diagnostics::{debug_output_diagnostics, handle_diagnostic_changed},
     diff_chunk::calculate_diff_between_contents,
     fim::{
-        fim_cycle_next, fim_cycle_prev, fim_try_hint, fim_try_hint_skip_debounce,
-        render_fim_suggestion, FimAcceptType, FimResponse, FimTimings,
+        FimAcceptType, FimResponse, FimTimings, fim_cycle_next, fim_cycle_prev, fim_try_hint,
+        fim_try_hint_skip_debounce, render_fim_suggestion,
     },
     lsp_completion::retrieve_lsp_completions,
     nvim_oxi::{Dictionary, Function},
-    plugin_state::{get_state, init_state, PluginState},
+    plugin_state::{PluginState, get_state, init_state},
     std::{
         sync::atomic::Ordering,
         time::{Duration, Instant},

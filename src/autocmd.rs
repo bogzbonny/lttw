@@ -1,4 +1,5 @@
 use crate::{
+    LttwResult,
     diagnostics::handle_diagnostic_changed,
     filetype::on_buf_enter_check_filetype,
     fim_hide, get_state, on_buf_enter_gather_chunks, on_buf_enter_update_file_contents,
@@ -6,7 +7,6 @@ use crate::{
     ring_buffer::mode_change_maybe_start_processing_ring_updates,
     set_cur_buffer_info_in_state, set_mode_in_state,
     utils::{create_autocmd, del_autocmd},
-    LttwResult,
 };
 
 /// Setup autocmds function - creates autocmds for auto-triggering FIM and ring buffer

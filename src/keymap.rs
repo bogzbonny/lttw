@@ -1,7 +1,7 @@
 use {
     crate::{
-        fim::fim_try_hint_regenerate, fim::FimAcceptType, fim_accept, fim_cycle_next,
-        fim_cycle_prev, get_state, LttwResult,
+        LttwResult, fim::FimAcceptType, fim::fim_try_hint_regenerate, fim_accept, fim_cycle_next,
+        fim_cycle_prev, get_state,
     },
     nvim_oxi::api::{del_keymap, opts::SetKeymapOptsBuilder, set_keymap, types::Mode},
 };

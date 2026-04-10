@@ -1,18 +1,18 @@
 use {
-    opentelemetry::{global, trace::TracerProvider as _, KeyValue},
+    opentelemetry::{KeyValue, global, trace::TracerProvider as _},
     opentelemetry_sdk::{
+        Resource,
         metrics::{MeterProviderBuilder, PeriodicReader, SdkMeterProvider},
         trace::{RandomIdGenerator, Sampler, SdkTracerProvider},
-        Resource,
     },
     opentelemetry_semantic_conventions::{
-        attribute::{DEPLOYMENT_ENVIRONMENT_NAME, SERVICE_VERSION},
         SCHEMA_URL,
+        attribute::{DEPLOYMENT_ENVIRONMENT_NAME, SERVICE_VERSION},
     },
     std::str::FromStr,
     tracing_core::Level,
     tracing_opentelemetry::{MetricsLayer, OpenTelemetryLayer},
-    tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer},
+    tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt},
 };
 
 // Re-export tracing macros for use throughout the codebase
