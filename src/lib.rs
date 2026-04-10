@@ -17,7 +17,6 @@ pub mod cache;
 pub mod commands;
 pub mod config;
 pub mod context;
-pub mod debug;
 pub mod diagnostics;
 pub mod diff_chunk;
 pub mod error;
@@ -26,7 +25,6 @@ pub mod fim;
 pub mod instruction;
 pub mod keymap;
 pub mod lsp_completion;
-pub mod otel;
 pub mod plugin_state;
 pub mod ring_buffer;
 pub mod utils;
@@ -142,10 +140,18 @@ fn lttw_setup(c: nvim_oxi::Object) {
     // Initialize plugin state
     init_state(c);
 
-    //init_otel();
+    let state = get_state();
+    let (tracing_enabled, log_file, tracing_level) = {
+        let config = state.config.read();
+        (
+            config.tracing_enabled,
+            config.tracing_log_file,
+            config.tracing_level.clone(),
+        )
+    };
 
     // Initialize persistent tokio runtime and completion channel
-    init_completion_processing_thread();
+    init_completion_processing_and_tracing_thread(tracing_enabled, log_file, tracing_level);
 
     // Setup timer-based ring buffer updates (every ring_update_ms)
     let _ = ring_buffer::setup_ring_buffer_timer();
@@ -166,16 +172,6 @@ fn lttw_setup(c: nvim_oxi::Object) {
     let _span = tracing::info_span!("test_span", foo = "bar").entered();
     tracing::info!("Hello from telemetry");
 }
-
-//fn init_otel() {
-//    let state = get_state();
-//    if state.debug_manager.read().enabled {
-//        let rt = state.tokio_runtime.clone();
-//        rt.read().spawn(async move {
-//            crate::otel::init_tracing_subscriber();
-//        });
-//    }
-//}
 
 // ---------------------------
 
@@ -289,7 +285,12 @@ impl FimState {
 }
 
 /// Initialize persistent tokio runtime and completion channel
-fn init_completion_processing_thread() {
+/// also start tracing.
+fn init_completion_processing_and_tracing_thread(
+    tracing_enabled: bool,
+    log_file: bool,
+    trace_level: String,
+) {
     let state = get_state();
 
     // Create channel for completion messages
@@ -301,7 +302,11 @@ fn init_completion_processing_thread() {
     let state_ = state.clone();
     let rt = state.tokio_runtime.clone();
     rt.read().spawn(async move {
-        let _gaurd = otel::init();
+        let _gaurd = if tracing_enabled {
+            Some(log::init_tracing_subscriber(log_file, trace_level))
+        } else {
+            None
+        };
         while let Some(msg) = rx.recv().await {
             debug!("pending_queue msg");
             //state_.pending_display.write().push(msg);
@@ -534,18 +539,6 @@ fn fim_hide_inner(state: &PluginState) -> LttwResult<()> {
     }
 
     state.fim_state.write().clear();
-    Ok(())
-}
-
-fn debug_enable() -> LttwResult<()> {
-    let state = get_state();
-    state.debug_manager.write().enabled = true;
-    Ok(())
-}
-
-fn debug_disable() -> LttwResult<()> {
-    let state = get_state();
-    state.debug_manager.write().enabled = true;
     Ok(())
 }
 

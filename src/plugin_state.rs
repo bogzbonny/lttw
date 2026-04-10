@@ -35,16 +35,16 @@ pub fn get_state() -> Arc<PluginState> {
 }
 
 // State management
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PluginState {
     pub config: Arc<RwLock<config::LttwConfig>>,
     //pub otel_guard: Arc<RwLock<Option<crate::otel::OtelGuard>>>,
     pub cache: Arc<RwLock<cache::Cache>>,
     pub ring_buffer: Arc<RwLock<ring_buffer::RingBuffer>>,
-    pub debug_manager: Arc<RwLock<debug::DebugManager>>,
     pub nvim_mode: Arc<RwLock<Vec<u8>>>, // string bytes for the mode name
     pub last_move_time: Arc<RwLock<Instant>>, // (vim s:t_last_move)
     pub instruction_requests: Arc<RwLock<HashMap<i64, InstructionRequestState>>>,
+    pub tracing_enabled: Arc<AtomicBool>,
     pub enabled: Arc<AtomicBool>,
     #[allow(dead_code)]
     pub next_inst_req_id: Arc<AtomicI64>,
@@ -103,7 +103,7 @@ impl PluginState {
         //let config = config::LttwConfig::from_nvim_globals();
         let config = config::LttwConfig::from_object(obj);
         let enable_at_startup = config.enable_at_startup;
-        let debug_enabled_at_startup = config.debug_enabled_at_startup;
+        let tracing_enabled = config.tracing_enabled;
         let max_cache_keys = config.max_cache_keys as usize;
         let ring_n_chunks = config.ring_n_chunks as usize;
         let chunk_size = config.ring_chunk_size as usize;
@@ -113,11 +113,6 @@ impl PluginState {
         // Create namespaces for extmarks
         let extmark_ns = Some(create_namespace("lttw_fim"));
         let inst_ns = Some(create_namespace("lttw_inst"));
-
-        // Initialize tracing subscriber if debug is enabled
-        //if debug_enabled_at_startup {
-        //    let _ = crate::log::init_tracing_subscriber("./lttw.log".to_string(), true);
-        //}
 
         // Create a multi-threaded tokio runtime
         let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -130,11 +125,6 @@ impl PluginState {
             }
         };
 
-        //runtime.spawn(async move {
-        //    let _guard = crate::otel::init_tracing_subscriber();
-        //    tokio::time::sleep(std::time::Duration::from_secs(60 * 10)).await;
-        //});
-
         Self {
             config: Arc::new(RwLock::new(config)),
             cache: Arc::new(RwLock::new(cache::Cache::new(max_cache_keys))),
@@ -142,9 +132,6 @@ impl PluginState {
                 ring_n_chunks,
                 chunk_size,
                 ring_queue_length,
-            ))),
-            debug_manager: Arc::new(RwLock::new(debug::DebugManager::new(
-                debug_enabled_at_startup,
             ))),
             nvim_mode: Arc::new(RwLock::new(Vec::new())),
             last_move_time: Arc::new(RwLock::new(Instant::now())),
@@ -158,6 +145,7 @@ impl PluginState {
             fim_worker_semaphore: Arc::new(Semaphore::new(max_req)),
             fim_worker_generating_for_pos: Arc::new(RwLock::new(None)),
             extmark_ns,
+            tracing_enabled: Arc::new(AtomicBool::new(tracing_enabled)),
             enabled: Arc::new(AtomicBool::new(enable_at_startup)),
             autocmd_ids: Arc::new(RwLock::new(Vec::new())),
             autocmd_id_filetype_check: Arc::new(RwLock::new(None)),

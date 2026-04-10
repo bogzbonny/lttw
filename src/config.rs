@@ -81,7 +81,10 @@ pub struct LttwConfig {
 
     // Startup configuration
     pub enable_at_startup: bool,
-    pub debug_enabled_at_startup: bool,
+    pub tracing_enabled: bool,
+    pub tracing_log_file: bool,
+    pub tracing_level: String,
+
     pub disabled_filetypes: Vec<String>,
     pub enabled_filetypes: Vec<String>,
 }
@@ -127,7 +130,9 @@ impl Default for LttwConfig {
             diff_tracking_enabled: true,
             no_fim_in_comments: true,
             enable_at_startup: true,
-            debug_enabled_at_startup: false,
+            tracing_enabled: false,
+            tracing_log_file: false,
+            tracing_level: "DEBUG".to_string(),
             disabled_filetypes: Vec::new(),
             enabled_filetypes: Vec::new(),
         }
@@ -274,8 +279,14 @@ impl LttwConfig {
         if let Some(v) = get_bool("enable_at_startup") {
             config.enable_at_startup = v;
         }
-        if let Some(v) = get_bool("debug_enabled_at_startup") {
-            config.debug_enabled_at_startup = v;
+        if let Some(v) = get_bool("tracing_enabled") {
+            config.tracing_enabled = v;
+        }
+        if let Some(v) = get_bool("tracing_log_file") {
+            config.tracing_log_file = v;
+        }
+        if let Some(v) = get_string("tracing_level") {
+            config.tracing_level = v;
         }
 
         // Override array fields

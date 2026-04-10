@@ -115,6 +115,7 @@ pub fn get_dynamic_n_predict(
 
 /// Build info string from timing information
 #[allow(clippy::too_many_arguments)] // Info display requires many parameters
+#[tracing::instrument]
 pub fn build_info_string(
     timings: &FimTimings,
     tokens_cached: u64,
@@ -194,6 +195,7 @@ pub fn fim_try_hint_regenerate() -> LttwResult<()> {
 /// ### Arguments
 ///  - `skip_debounce` - whether to skip the debounce check
 ///  - `retry` - retry number for speculative FIM
+#[tracing::instrument]
 pub fn fim_try_hint_inner(
     skip_debounce: bool,
     force_regenerate: bool,
@@ -438,6 +440,7 @@ pub fn fim_try_hint_inner(
 ///
 /// NOTE this DOES NOT happens on the neovim main thread - don't call neovim functions
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument]
 async fn spawn_fim_completion_worker(
     state: Arc<PluginState>,
     ctx: LocalContext,
@@ -538,6 +541,7 @@ async fn spawn_fim_completion_worker(
 ///
 /// NOTE this DOES NOT happens on the neovim main thread - don't call neovim functions
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument]
 pub async fn fim_completion(
     state: Arc<PluginState>,
     ctx: LocalContext,
@@ -831,6 +835,7 @@ pub async fn fim_completion(
 }
 
 /// Send FIM request to the server
+#[tracing::instrument]
 pub async fn send_request(
     request: &FimRequest,
     endpoint_fim: String,
@@ -869,6 +874,7 @@ pub async fn send_request(
 /// Filters out duplicate text that already exists in the buffer
 ///
 /// NOTE this happens ON the neovim main thread
+#[tracing::instrument]
 pub fn render_fim_suggestion(
     state: Arc<PluginState>,
     pos_x: usize,
@@ -964,6 +970,7 @@ pub fn render_fim_suggestion(
 /// The info string is rendered with RightAlign positioning for right-justified display
 //
 /// NOTE this happens on the neovim main thread
+#[tracing::instrument]
 fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
     // Lock the fim_state and config to get the data we need
     let (content, extmark_ns, pos_y, pos_x, line_cur, config, timing_data) = {
@@ -1085,6 +1092,7 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
 }
 
 /// Cycle to next completion
+#[tracing::instrument]
 pub fn fim_cycle_next() -> LttwResult<()> {
     let state = get_state();
 
@@ -1129,6 +1137,7 @@ pub fn fim_cycle_next() -> LttwResult<()> {
 }
 
 /// Cycle to previous completion
+#[tracing::instrument]
 pub fn fim_cycle_prev() -> LttwResult<()> {
     let state = get_state();
 
@@ -1170,7 +1179,7 @@ pub fn fim_cycle_prev() -> LttwResult<()> {
     Ok(())
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum FimAcceptType {
     Full,
     Line,
@@ -1211,6 +1220,7 @@ pub fn trim_suggestion_curr_line<'a>(
 
 /// Accept FIM suggestion - returns the modified line
 // returns if inline should be used
+#[tracing::instrument]
 pub fn accept_fim_suggestion(
     accept_type: FimAcceptType,
     pos_x: usize,
