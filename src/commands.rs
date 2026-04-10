@@ -8,6 +8,7 @@ use {
 };
 
 /// Register nvim-oxi commands for the plugin
+#[tracing::instrument]
 pub fn register_commands() -> LttwResult<()> {
     let _ = create_user_command(
         "LttwToggleAutoFim",

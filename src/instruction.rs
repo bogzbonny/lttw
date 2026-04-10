@@ -63,6 +63,7 @@ pub struct InstResponse {
 }
 
 /// Build instruction payload
+#[tracing::instrument(skip(lines, inst, config))]
 pub fn build_instruction_payload(
     lines: &[String],
     l0: usize,
@@ -144,6 +145,7 @@ pub fn build_instruction_payload(
 }
 
 /// Send instruction request (non-streaming, for warm-up)
+#[tracing::instrument(skip(config))]
 pub async fn send_instruction_warmup(config: &LttwConfig) -> LttwResult<()> {
     // Send empty instruction to warm up the server (fire-and-forget)
     let messages = vec![
@@ -190,6 +192,7 @@ pub async fn send_instruction_warmup(config: &LttwConfig) -> LttwResult<()> {
 }
 
 /// Send instruction request (streaming)
+#[tracing::instrument(skip(messages, config))]
 pub async fn send_instruction_stream(
     messages: &[InstMessage],
     config: &LttwConfig,
@@ -227,6 +230,7 @@ pub async fn send_instruction_stream(
 }
 
 /// Send instruction request (legacy, non-streaming)
+#[tracing::instrument(skip(messages, config))]
 pub async fn send_instruction(
     messages: &[InstMessage],
     config: &LttwConfig,
@@ -237,6 +241,7 @@ pub async fn send_instruction(
 }
 
 /// Process instruction response (streaming)
+#[tracing::instrument]
 pub fn process_instruction_response(response_text: &str) -> Vec<String> {
     let mut content = String::new();
 
@@ -874,6 +879,7 @@ fn inst_cancel() -> LttwResult<()> {
 }
 
 /// Instruction rerun function - re-runs the last instruction
+#[tracing::instrument]
 pub fn inst_rerun() -> LttwResult<Option<String>> {
     let state = get_state();
     let bufnr = get_current_buffer_id();
@@ -915,6 +921,7 @@ pub fn inst_rerun() -> LttwResult<Option<String>> {
 }
 
 /// Instruction continue function - continues with a new instruction
+#[tracing::instrument]
 pub fn inst_continue() -> LttwResult<Option<String>> {
     let state = get_state();
     let bufnr = get_current_buffer_id();

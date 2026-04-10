@@ -13,6 +13,7 @@ use {
 /// It uses Neovim's built-in LSP functionality via `vim.lsp.buf_request_sync`.
 // TODO make async by using buf_request_all with a handler
 // TODO make '500' here a param, (500ms max wait time for the result)
+#[tracing::instrument]
 pub fn trigger_lsp_completions_async() -> LttwResult<()> {
     utils::assert_not_tokio_worker();
     info!("Requesting LSP completions at current cursor position");
@@ -58,6 +59,7 @@ vim.lsp.buf_request_all(bufnr, 'textDocument/completion', vim.lsp.util.make_posi
     Ok(())
 }
 
+#[tracing::instrument(skip(state))]
 pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimCompletionMessage>> {
     let Ok(json_str) = nvim_oxi::api::get_var::<String>("lttw_completion") else {
         return Ok(vec![]); // no completions available, nbd

@@ -4,6 +4,7 @@ use {
 };
 
 /// Filetype check autocmd handler - enables/disables plugin based on filetype
+#[tracing::instrument]
 pub fn on_buf_enter_check_filetype() -> LttwResult<()> {
     let is_enabled = {
         let state = get_state();
@@ -22,6 +23,7 @@ pub fn on_buf_enter_check_filetype() -> LttwResult<()> {
 }
 
 // Check if current filetype should enable/disable the plugin
+#[tracing::instrument]
 pub fn should_be_enabled() -> bool {
     let state = get_state();
     let filetype = get_current_filetype().unwrap_or_default();

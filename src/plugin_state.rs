@@ -24,11 +24,13 @@ use {
 static PLUGIN_STATE: OnceLock<Arc<PluginState>> = OnceLock::new();
 
 /// Initialize the plugin state
+#[tracing::instrument(skip(obj))]
 pub fn init_state(obj: nvim_oxi::Object) {
     PLUGIN_STATE.get_or_init(move || Arc::new(PluginState::new(obj)));
 }
 
 /// Get the plugin state (returns a clone of the Arc, no locking)
+#[tracing::instrument]
 pub fn get_state() -> Arc<PluginState> {
     //init_state();
     PLUGIN_STATE.get().unwrap().clone()
@@ -99,6 +101,7 @@ pub struct CurrentBufferInfo {
 type RingBufferTimerHandle = Option<Arc<parking_lot::Mutex<tokio::task::JoinHandle<()>>>>;
 
 impl PluginState {
+    #[tracing::instrument(skip(obj))]
     fn new(obj: nvim_oxi::Object) -> Self {
         //let config = config::LttwConfig::from_nvim_globals();
         let config = config::LttwConfig::from_object(obj);
@@ -164,13 +167,15 @@ impl PluginState {
             tokio_runtime: Arc::new(RwLock::new(runtime)),
         }
     }
-    pub fn get_fim_completion_tx(&self) -> LttwResult<mpsc::Sender<FimCompletionMessage>> {
+    #[tracing::instrument]
+pub fn get_fim_completion_tx(&self) -> LttwResult<mpsc::Sender<FimCompletionMessage>> {
         let fim_completion_tx_lock = self.fim_completion_tx.read();
         fim_completion_tx_lock
             .clone()
             .ok_or_else(|| Error::Lttw("Completion channel not initialized".to_string()))
     }
     /// Increment the debounce sequence and return the current sequence number
+    #[tracing::instrument]
     pub fn increment_debounce_sequence(&self) -> u64 {
         self.fim_worker_debounce_seq
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
@@ -178,18 +183,21 @@ impl PluginState {
     }
 
     /// Record that a worker was spawned (update last_spawn timestamp)
+    #[tracing::instrument]
     pub fn record_worker_spawn(&self) {
         *self.fim_worker_debounce_last_spawn.write() = Instant::now();
     }
 
-    pub fn in_insert_mode(&self) -> LttwResult<bool> {
+    #[tracing::instrument]
+pub fn in_insert_mode(&self) -> LttwResult<bool> {
         let bz = self.nvim_mode.read();
         let Some(mode_char) = bz.first() else {
             return Ok(false);
         };
         Ok(mode_char == &b'i')
     }
-    pub fn in_normal_mode(&self) -> LttwResult<bool> {
+    #[tracing::instrument]
+pub fn in_normal_mode(&self) -> LttwResult<bool> {
         let bz = self.nvim_mode.read();
         let Some(mode_char) = bz.first() else {
             return Ok(false);
@@ -197,33 +205,40 @@ impl PluginState {
         Ok(mode_char == &b'n')
     }
 
-    pub fn set_cur_buffer_info(&self, info: CurrentBufferInfo) {
+    #[tracing::instrument]
+pub fn set_cur_buffer_info(&self, info: CurrentBufferInfo) {
         *self.cur_buf_info.write() = info;
     }
 
-    pub fn get_cur_buffer_info(&self) -> CurrentBufferInfo {
+    #[tracing::instrument]
+pub fn get_cur_buffer_info(&self) -> CurrentBufferInfo {
         self.cur_buf_info.read().clone()
     }
 
     /// Set the allow comment FIM cursor position
+    #[tracing::instrument]
     pub fn set_allow_comment_fim_cur_pos(&self, buf_id: u64, pos_x: usize, pos_y: usize) {
         *self.allow_comment_fim_cur_pos.write() = Some((buf_id, pos_x, pos_y));
     }
     /// Set the allow comment FIM cursor position
+    #[tracing::instrument]
     pub fn clear_allow_comment_fim_cur_pos(&self) {
         *self.allow_comment_fim_cur_pos.write() = None;
     }
     /// Get the allow comment FIM cursor position
+    #[tracing::instrument]
     pub fn get_allow_comment_fim_cur_pos(&self) -> Option<(u64, usize, usize)> {
         *self.allow_comment_fim_cur_pos.read()
     }
 
-    pub fn has_file_contents(&self, filename: &str) -> bool {
+    #[tracing::instrument]
+pub fn has_file_contents(&self, filename: &str) -> bool {
         self.file_contents.read().contains_key(filename)
     }
 
     // sets the filecontents also takes statistics on all the contents if this is the first time
     // adding the contents.
+    #[tracing::instrument]
     pub fn set_file_contents(&self, filename: String, new_content: String) {
         self.file_contents
             .write()
@@ -237,7 +252,8 @@ impl PluginState {
         });
     }
 
-    pub fn adjust_word_statistics_for_diff(&self, diff_content: Vec<String>) {
+    #[tracing::instrument]
+pub fn adjust_word_statistics_for_diff(&self, diff_content: Vec<String>) {
         // dispatch a non-blocking thread to count word statistics on the file contents
         let rt = self.tokio_runtime.clone();
         let ws = self.word_statistics.clone();
@@ -247,21 +263,25 @@ impl PluginState {
     }
 
     /// set the file contents bypassing calculating word statistics
+    #[tracing::instrument]
     pub fn set_file_contents_bypass_word_stats(&self, filename: String, new_content: String) {
         self.file_contents
             .write()
             .insert(filename.clone(), Some(new_content));
     }
 
-    pub fn set_file_contents_empty(&self, filename: String) {
+    #[tracing::instrument]
+pub fn set_file_contents_empty(&self, filename: String) {
         self.file_contents.write().insert(filename.clone(), None);
     }
 
-    pub fn file_contents_read(&self) -> RwLockReadGuard<'_, HashMap<String, Option<String>>> {
+    #[tracing::instrument]
+pub fn file_contents_read(&self) -> RwLockReadGuard<'_, HashMap<String, Option<String>>> {
         self.file_contents.read()
     }
 
-    pub fn get_word_statistic_usage(&self, word: &str) -> u64 {
+    #[tracing::instrument]
+pub fn get_word_statistic_usage(&self, word: &str) -> u64 {
         self.word_statistics
             .pin()
             .get(word)
@@ -269,7 +289,8 @@ impl PluginState {
             .unwrap_or(0u64)
     }
 
-    pub fn debug_word_statistics(&self) {
+    #[tracing::instrument]
+pub fn debug_word_statistics(&self) {
         self.word_statistics.pin().iter().for_each(|(k, v)| {
             info!("{}: {}", k, v);
         });
@@ -279,6 +300,7 @@ impl PluginState {
 // add_word_statistics takes all the content then separates out all the Identifiers (words
 // which must begin with a letter or underscore but then may also include numbers afterwords).
 // The identifiers are then added to the word_statistics adding one for each word that exists
+#[tracing::instrument]
 pub fn add_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, content: String) {
     info!("add_word_statistics");
     let mut current_word = String::new();
@@ -303,6 +325,7 @@ pub fn add_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, content: Str
     }
 }
 
+#[tracing::instrument]
 pub fn sub_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, content: String) {
     info!("sub_word_statistics");
     let mut current_word = String::new();
@@ -327,6 +350,7 @@ pub fn sub_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, content: Str
 }
 
 // strips a completion down to its identifier for comparison in the word statistics
+#[tracing::instrument]
 pub fn strip_to_first_identifier(s: &str) -> String {
     let mut out = String::new();
     for ch in s.chars() {
@@ -344,6 +368,7 @@ pub fn strip_to_first_identifier(s: &str) -> String {
 
 // diff_word_statistics takes in a diff string and modifies
 // the word statistics accordingly
+#[tracing::instrument]
 pub fn diff_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, diff_content: Vec<String>) {
     for line in diff_content {
         // ignore all other lines (such as @@ lines)

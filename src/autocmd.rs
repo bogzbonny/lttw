@@ -10,6 +10,7 @@ use crate::{
 };
 
 /// Setup autocmds function - creates autocmds for auto-triggering FIM and ring buffer
+#[tracing::instrument]
 pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
     clear_non_filetype_autocommands()?;
 
@@ -177,6 +178,7 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
     Ok(())
 }
 
+#[tracing::instrument]
 pub fn setup_filetype_autocmd() -> LttwResult<()> {
     clear_filetype_autocommand()?;
     let state = get_state();
@@ -198,6 +200,7 @@ pub fn setup_filetype_autocmd() -> LttwResult<()> {
     Ok(())
 }
 
+#[tracing::instrument]
 pub fn clear_non_filetype_autocommands() -> LttwResult<()> {
     let state = get_state();
     let mut autocmd_ids_lock = state.autocmd_ids.write();
@@ -207,6 +210,7 @@ pub fn clear_non_filetype_autocommands() -> LttwResult<()> {
     Ok(())
 }
 
+#[tracing::instrument]
 pub fn clear_filetype_autocommand() -> LttwResult<()> {
     let state = get_state();
     let ft_ac_id = state.autocmd_id_filetype_check.write().take();

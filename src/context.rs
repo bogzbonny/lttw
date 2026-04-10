@@ -31,6 +31,7 @@ pub struct LocalContext {
 ///  - `prev` - Optional previous completion for this position if this is provided then a
 ///  - speculative context will be generated as though prev was an accepted completion
 ///  - `config` - Plugin configuration
+#[tracing::instrument]
 pub fn get_local_context(
     lines: &[String],
     pos_x: usize,
@@ -87,6 +88,7 @@ pub fn get_local_context(
 
 /// Get the number of leading spaces (or tabs) in a string
 /// Tabs are converted to tabstop width
+#[tracing::instrument]
 pub fn get_indent(line: &str) -> usize {
     let tabstop = 4; // Standard tabstop
     let mut count = 0;
@@ -104,6 +106,7 @@ pub fn get_indent(line: &str) -> usize {
 
 /// Compute similarity between two chunks of text
 /// Returns a value between 0.0 (no similarity) and 1.0 (high similarity)
+#[tracing::instrument]
 pub fn chunk_similarity(c0: &[String], c1: &[String]) -> f64 {
     // The regex \W+ matches one or more consecutive non-word characters (where word characters are [a-zA-Z0-9_]).
     // This effectively splits the text into tokens which are purely word characters. Example:

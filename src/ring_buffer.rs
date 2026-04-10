@@ -18,6 +18,7 @@ use {
 };
 
 /// Setup a repeating timer to process ring buffer updates using tokio
+#[tracing::instrument]
 pub fn setup_ring_buffer_timer() -> LttwResult<()> {
     let state = get_state();
     let interval = state.config.read().ring_update_ms;
@@ -59,6 +60,7 @@ pub fn setup_ring_buffer_timer() -> LttwResult<()> {
 }
 
 /// The mode has changed, maybe start processing ring updates
+#[tracing::instrument]
 pub fn mode_change_maybe_start_processing_ring_updates() -> LttwResult<()> {
     let state = get_state();
     if !state.ring_updating_active.load(Ordering::SeqCst)
@@ -74,6 +76,7 @@ pub fn mode_change_maybe_start_processing_ring_updates() -> LttwResult<()> {
 }
 
 /// start processing ring updates until none are left of the mode changes and we have to stop
+#[tracing::instrument]
 pub async fn start_processing_ring_updates() {
     let state = get_state();
     state.ring_updating_active.store(true, Ordering::SeqCst);
@@ -93,6 +96,7 @@ pub async fn start_processing_ring_updates() {
 
 /// Process ring buffer updates - moves queued chunks to active ring and sends to server
 ///  
+#[tracing::instrument]
 async fn ring_update() -> LttwResult<bool> {
     let state = get_state();
 
@@ -164,6 +168,7 @@ pub struct RingBuffer {
 
 impl RingBuffer {
     /// Create a new ring buffer with the given parameters
+    #[tracing::instrument]
     pub fn new(ring_n_chunks: usize, chunk_size: usize, ring_queue_length: usize) -> Self {
         Self {
             chunks: Vec::new(),
@@ -181,6 +186,7 @@ impl RingBuffer {
     ///  - `text` - Text to pick a chunk from
     ///  - `no_mod` - If true, don't pick chunks from buffers with pending changes
     ///  - `do_evict` - If true, evict chunks that are very similar to the new one
+    #[tracing::instrument(skip(state, text, filename))]
     pub fn pick_chunk(&mut self, state: &PluginState, text: &[String], filename: String) {
         let info = state.get_cur_buffer_info();
         if !(info.filepath == filename && info.is_loaded && info.is_readable) {
@@ -190,7 +196,8 @@ impl RingBuffer {
         self.pick_chunk_inner(text, filename);
     }
 
-    pub fn pick_chunk_inner(&mut self, text: &[String], filename: String) {
+    #[tracing::instrument(skip(text, filename))]
+pub fn pick_chunk_inner(&mut self, text: &[String], filename: String) {
         // Skip if extra context is disabled
         if self.ring_n_chunks == 0 {
             return;
@@ -232,6 +239,7 @@ impl RingBuffer {
     }
 
     /// Move the first queued chunk to the ring buffer
+    #[tracing::instrument]
     pub fn update(&mut self) {
         if self.queued.is_empty() {
             return;
@@ -253,6 +261,7 @@ impl RingBuffer {
     }
 
     /// Get extra context from the ring buffer
+    #[tracing::instrument]
     pub fn get_extra(&self) -> Vec<ExtraContext> {
         self.chunks
             .iter()
@@ -264,26 +273,31 @@ impl RingBuffer {
     }
 
     /// Get the number of chunks in the ring buffer
+    #[tracing::instrument]
     pub fn len(&self) -> usize {
         self.chunks.len()
     }
 
     /// Check if the ring buffer is empty
+    #[tracing::instrument]
     pub fn is_empty(&self) -> bool {
         self.chunks.is_empty()
     }
 
     /// Get the number of queued chunks
+    #[tracing::instrument]
     pub fn queued_len(&self) -> usize {
         self.queued.len()
     }
 
     /// Check if the queue is empty
+    #[tracing::instrument]
     pub fn queue_is_empty(&self) -> bool {
         self.queued.is_empty()
     }
 
     /// Get the number of evicted chunks
+    #[tracing::instrument]
     pub fn n_evict(&self) -> usize {
         self.n_evict
     }
@@ -371,6 +385,7 @@ impl RingBuffer {
 
     /// Get the number of chunks in the ring buffer (for testing)
     #[cfg(test)]
+    #[tracing::instrument]
     pub fn get_chunks_count(&self) -> usize {
         self.chunks.len()
     }

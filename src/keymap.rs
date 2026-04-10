@@ -1,13 +1,14 @@
 use {
     crate::{
-        LttwResult, fim::FimAcceptType, fim::fim_try_hint_regenerate, fim_accept, fim_cycle_next,
-        fim_cycle_prev, get_state,
+        fim::fim_try_hint_regenerate, fim::FimAcceptType, fim_accept, fim_cycle_next,
+        fim_cycle_prev, get_state, LttwResult,
     },
     nvim_oxi::api::{del_keymap, opts::SetKeymapOptsBuilder, set_keymap, types::Mode},
 };
 
 // Expression mapping helper functions removed - using command-based callbacks instead
 /// Setup keymaps function - maps keys to call nvim-oxi commands directly
+#[tracing::instrument]
 pub fn setup_keymaps() -> LttwResult<()> {
     // Instruction trigger
     let _ = set_keymap(
@@ -117,6 +118,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
 }
 
 /// Remove keymaps function - unmaps all plugin keymaps
+#[tracing::instrument]
 pub fn remove_keymaps() -> LttwResult<()> {
     let state = get_state();
     let config = state.config.read();

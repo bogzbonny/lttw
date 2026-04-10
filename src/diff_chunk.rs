@@ -5,11 +5,11 @@
 // On each recalculation, it compares new vs old diff chunks and updates the ring buffer.
 
 use {
-    crate::{LttwResult, ring_buffer::Chunk},
+    crate::{ring_buffer::Chunk, LttwResult},
     gix_diff::blob::{
-        Algorithm, UnifiedDiff,
         intern::InternedInput,
         unified_diff::{ConsumeBinaryHunk, ContextSize},
+        Algorithm, UnifiedDiff,
     },
     std::time::Instant,
 };
@@ -35,6 +35,7 @@ pub struct DiffChunk {
 
 impl DiffChunk {
     /// Create a new DiffChunk from hunk data
+    #[tracing::instrument]
     pub fn from_hunk_data(
         filepath: &str,
         old_start: u32,
@@ -55,6 +56,7 @@ impl DiffChunk {
     }
 
     /// Convert this diff chunk into a RingBuffer Chunk for processing
+    #[tracing::instrument]
     pub fn to_ring_chunk(&self) -> Chunk {
         Chunk {
             data: self.content.clone(),
@@ -69,6 +71,7 @@ impl DiffChunk {
 ///
 /// This function uses gix-diff to calculate line-based diffs between the old and new content.
 /// It returns diff chunks for all differences found.
+#[tracing::instrument]
 pub fn calculate_diff_between_contents(
     filepath: &str,
     old_content: &str,
@@ -112,6 +115,7 @@ pub fn calculate_diff_between_contents(
 }
 
 /// Parse hunk header to extract line numbers from a unified diff string
+#[tracing::instrument]
 fn parse_hunk_info_from_diff(diff_lines: &[&str]) -> (u32, u32, u32, u32) {
     let mut old_start: u32 = 1;
     let mut old_lines: u32 = 0;

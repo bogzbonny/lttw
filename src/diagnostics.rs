@@ -28,16 +28,19 @@ pub struct DiagnosticTracker {
 
 impl DiagnosticTracker {
     /// Create a new empty DiagnosticTracker
+    #[tracing::instrument]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Clear all tracked diagnostics
+    #[tracing::instrument]
     pub fn clear(&mut self) {
         self.diagnostics_by_buf.clear();
     }
 
     /// Add diagnostics for a buffer
+    #[tracing::instrument]
     pub fn add_diagnostics(&mut self, buffer_id: u64, diags: Vec<DiagnosticInfo>) {
         // Remove existing diagnostics for this buffer
         self.diagnostics_by_buf.remove(&buffer_id);
@@ -53,6 +56,7 @@ impl DiagnosticTracker {
     }
 
     /// Add a single diagnostic
+    #[tracing::instrument]
     pub fn add_diagnostic(&mut self, diag: DiagnosticInfo) {
         let buf_id = diag.buffer_id;
         let line = diag.line;
@@ -67,6 +71,7 @@ impl DiagnosticTracker {
     }
 
     /// Get diagnostics for a specific buffer
+    #[tracing::instrument]
     pub fn get_buffer_diagnostics(
         &self,
         buffer_id: u64,
@@ -75,6 +80,7 @@ impl DiagnosticTracker {
     }
 
     /// Get diagnostics for a specific line in a buffer
+    #[tracing::instrument]
     pub fn get_line_diagnostics(
         &self,
         buffer_id: u64,
@@ -86,6 +92,7 @@ impl DiagnosticTracker {
     }
 
     /// Get all tracked diagnostics
+    #[tracing::instrument]
     pub fn get_all_diagnostics(&self) -> Vec<&DiagnosticInfo> {
         self.diagnostics_by_buf
             .values()
@@ -95,6 +102,7 @@ impl DiagnosticTracker {
     }
 
     /// Count total diagnostics
+    #[tracing::instrument]
     pub fn count(&self) -> usize {
         self.diagnostics_by_buf
             .values()
@@ -103,6 +111,7 @@ impl DiagnosticTracker {
     }
 
     /// Count diagnostics by severity
+    #[tracing::instrument]
     pub fn count_by_severity(&self) -> HashMap<String, usize> {
         let mut counts = HashMap::new();
         for diag in self
@@ -121,6 +130,7 @@ impl DiagnosticTracker {
 ///
 /// This function is called when DiagnosticChanged autocmd fires.
 /// It retrieves diagnostics from Neovim and stores them in the tracker.
+#[tracing::instrument]
 pub fn handle_diagnostic_changed(_arg: nvim_oxi::Object) -> LttwResult<()> {
     // Get current buffer
     let buf = Buffer::current();
@@ -212,6 +222,7 @@ pub fn handle_diagnostic_changed(_arg: nvim_oxi::Object) -> LttwResult<()> {
 }
 
 /// Get diagnostics for current buffer and output with info!()
+#[tracing::instrument]
 pub fn debug_output_diagnostics(_arg: nvim_oxi::Object) -> LttwResult<()> {
     let state = get_state();
     let tracker = state.diagnostics.read();

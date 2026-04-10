@@ -141,12 +141,14 @@ impl Default for LttwConfig {
 
 impl LttwConfig {
     /// Create a new configuration with default values
+    #[tracing::instrument]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Load configuration from Neovim global variable vim.g.lttw_config
     /// This merges user config with defaults - only handles basic types supported by nvim_oxi
+    #[tracing::instrument(skip(obj))]
     pub fn from_object(obj: nvim_oxi::Object) -> Self {
         // Start with defaults
         let mut config = Self::default();
@@ -331,6 +333,7 @@ impl LttwConfig {
     }
 
     /// Check if a filetype is enabled
+    #[tracing::instrument]
     pub fn is_filetype_enabled(&self, filetype: &str) -> bool {
         // If enabled_filetypes is empty, check disabled_filetypes
         let mut enabled = !self

@@ -28,6 +28,7 @@ use {
 //     "Essentially never call neovim's functions outside of callbacks and plugin entrypoints and
 //      never call neovim's functions from another thread."
 
+#[tracing::instrument]
 pub fn assert_not_tokio_worker() {
     let t = std::thread::current();
     if let Some(n) = t.name()
@@ -45,6 +46,7 @@ pub fn assert_not_tokio_worker() {
 }
 
 // are we in insert mode
+#[tracing::instrument]
 pub fn in_insert_mode() -> LttwResult<bool> {
     assert_not_tokio_worker();
     let mode_result = api::get_mode()?;
@@ -54,6 +56,7 @@ pub fn in_insert_mode() -> LttwResult<bool> {
 }
 
 // are we in normal mode
+#[tracing::instrument]
 pub fn in_normal_mode() -> LttwResult<bool> {
     assert_not_tokio_worker();
     let mode_result = api::get_mode()?;
@@ -63,6 +66,7 @@ pub fn in_normal_mode() -> LttwResult<bool> {
 }
 
 // are we in normal mode
+#[tracing::instrument]
 pub fn get_mode_bz() -> LttwResult<Vec<u8>> {
     assert_not_tokio_worker();
     let mode_result = api::get_mode()?;
@@ -71,6 +75,7 @@ pub fn get_mode_bz() -> LttwResult<Vec<u8>> {
 
 /// Get current buffer position ([0,0]-indexed)
 /// returns x position, y position
+#[tracing::instrument]
 pub fn get_pos() -> (usize, usize) {
     assert_not_tokio_worker();
     // Safety: handle cursor error gracefully
@@ -87,6 +92,7 @@ pub fn get_pos() -> (usize, usize) {
 }
 
 /// Get buffer lines from Neovim
+#[tracing::instrument(skip(line_range))]
 pub fn get_buf_lines<R>(line_range: R) -> Vec<String>
 where
     R: RangeBounds<usize>,
@@ -102,6 +108,7 @@ where
 }
 
 /// Get buffer lines from Neovim
+#[tracing::instrument(skip(line_range, replacement))]
 pub fn set_buf_lines<R>(line_range: R, replacement: Vec<String>) -> LttwResult<()>
 where
     R: RangeBounds<usize>,
@@ -113,6 +120,7 @@ where
     Ok(())
 }
 
+#[tracing::instrument]
 pub fn set_buf_extmark(
     ns_id: u32,
     line: usize,
@@ -125,6 +133,7 @@ pub fn set_buf_extmark(
     Ok(buf.set_extmark(ns_id, line, col, opts)?)
 }
 
+#[tracing::instrument]
 pub fn set_buf_extmark_top_right(ns_id: u32, message: String) -> LttwResult<u32> {
     assert_not_tokio_worker();
 
@@ -144,6 +153,7 @@ pub fn set_buf_extmark_top_right(ns_id: u32, message: String) -> LttwResult<u32>
     Ok(buf.set_extmark(ns_id, top_line, 0, &info_opts.build())?)
 }
 
+#[tracing::instrument]
 pub fn del_buf_extmark(ns_id: u32, extmark_id: u32) -> LttwResult<()> {
     assert_not_tokio_worker();
 
@@ -153,12 +163,14 @@ pub fn del_buf_extmark(ns_id: u32, extmark_id: u32) -> LttwResult<()> {
 }
 
 /// Get buffer lines from Neovim
+#[tracing::instrument]
 pub fn get_buf_line_count() -> usize {
     assert_not_tokio_worker();
     let buf = Buffer::current();
     buf.line_count().unwrap_or(0)
 }
 
+#[tracing::instrument(skip(events, opts))]
 pub fn create_autocmd<'a, I>(events: I, opts: &CreateAutocmdOpts) -> LttwResult<u32>
 where
     I: IntoIterator<Item = &'a str>,
@@ -167,12 +179,14 @@ where
     Ok(nvim_oxi::api::create_autocmd(events, opts)?)
 }
 
+#[tracing::instrument]
 pub fn del_autocmd(id: u32) -> LttwResult<()> {
     assert_not_tokio_worker();
     nvim_oxi::api::del_autocmd(id)?;
     Ok(())
 }
 
+#[tracing::instrument]
 pub fn get_var<Var>(name: &str) -> LttwResult<Var>
 where
     Var: FromObject,
@@ -181,6 +195,7 @@ where
     Ok(nvim_oxi::api::get_var(name)?)
 }
 
+#[tracing::instrument]
 pub fn get_yanked_text() -> LttwResult<String> {
     assert_not_tokio_worker();
     // Get yanked text using vim.fn.getreg()
@@ -192,6 +207,7 @@ pub fn get_yanked_text() -> LttwResult<String> {
 
 /// Get buffer lines from Neovim
 // id, filename, is_modified, is_readable
+#[tracing::instrument]
 pub fn get_current_buffer_info() -> LttwResult<CurrentBufferInfo> {
     assert_not_tokio_worker();
     let buf = Buffer::current();
@@ -211,6 +227,7 @@ pub fn get_current_buffer_info() -> LttwResult<CurrentBufferInfo> {
 }
 
 /// Get buffer lines from Neovim
+#[tracing::instrument]
 pub fn get_buf_filename() -> LttwResult<String> {
     assert_not_tokio_worker();
     let buf = Buffer::current();
@@ -222,6 +239,7 @@ pub fn get_buf_filename() -> LttwResult<String> {
 
 /// Get buffer lines from Neovim
 /// pos_y is zero indexed
+#[tracing::instrument]
 pub fn get_buf_line(pos_y: usize) -> String {
     assert_not_tokio_worker();
     let buf = Buffer::current();
@@ -233,12 +251,14 @@ pub fn get_buf_line(pos_y: usize) -> String {
 }
 
 /// Get current buffer
+#[tracing::instrument]
 pub fn get_current_buffer_id() -> u64 {
     assert_not_tokio_worker();
     Buffer::current().handle().try_into().unwrap_or(0)
 }
 
 /// Get current buffer
+#[tracing::instrument]
 pub fn clear_buf_namespace_objects(ns_id: u32) -> LttwResult<()> {
     assert_not_tokio_worker();
     let mut buf = Buffer::current();
@@ -248,6 +268,7 @@ pub fn clear_buf_namespace_objects(ns_id: u32) -> LttwResult<()> {
 
 /// Set the window cursor,
 /// pos_x and pos_y are 0 indexed
+#[tracing::instrument]
 pub fn set_window_cursor(pos_x: usize, pos_y: usize) -> LttwResult<()> {
     assert_not_tokio_worker();
     let mut window = Window::current();
@@ -255,6 +276,7 @@ pub fn set_window_cursor(pos_x: usize, pos_y: usize) -> LttwResult<()> {
     Ok(())
 }
 
+#[tracing::instrument]
 pub fn get_current_filetype() -> LttwResult<String> {
     assert_not_tokio_worker();
     let ft = get_option_value::<String>("filetype", &OptionOpts::default())?;
@@ -264,6 +286,7 @@ pub fn get_current_filetype() -> LttwResult<String> {
 /// Check if cursor is in a comment
 /// Uses synID() and synIDattr() to determine syntax group under cursor
 /// if at eol then we must check the previous character
+#[tracing::instrument]
 pub fn is_in_comment(mut pos_x: usize, pos_y: usize, at_eol: bool) -> LttwResult<bool> {
     assert_not_tokio_worker();
 
@@ -319,6 +342,7 @@ fn is_readable(path: &Path) -> bool {
     path.exists() && fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
 }
 /// Generate a random number in the range [i0, i1]
+#[tracing::instrument]
 pub fn random_range(i0: usize, i1: usize) -> usize {
     let mut rng = rand::rng();
     // Safety: ensure valid range
@@ -329,6 +353,7 @@ pub fn random_range(i0: usize, i1: usize) -> usize {
 }
 
 /// Compute SHA256 hash of a string
+#[tracing::instrument]
 pub fn hash_input(input: &str) -> String {
     //let hash = Sha256::digest(input.as_bytes());
     let mut hasher = AHasher::default();
@@ -338,6 +363,7 @@ pub fn hash_input(input: &str) -> String {
 }
 
 /// Get current working directory
+#[tracing::instrument]
 pub fn get_current_directory() -> String {
     std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
@@ -346,6 +372,7 @@ pub fn get_current_directory() -> String {
 
 // --------------------------
 
+#[tracing::instrument]
 pub fn filter_tail<'a>(arr1: &'a [String], arr2: &[String]) -> &'a [String] {
     let n = arr1.len();
     let m = arr2.len();
