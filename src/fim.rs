@@ -217,6 +217,7 @@ pub fn fim_try_hint_inner(
 
     let (pos_x, pos_y) = get_pos();
     let state = get_state();
+    let filename = get_buf_filename()?;
     let lines = get_buf_lines(..);
     let buffer_id = get_current_buffer_id();
     let no_fim_in_comments = state.config.read().no_fim_in_comments;
@@ -236,116 +237,15 @@ pub fn fim_try_hint_inner(
         }
     };
 
-    // first things first, increment the seq at the beginning to indicate to any waiting
-    // fim_workers in the debounce period that there is a new show in town (so don't start!).
-    // We do this first because the following cache checking may take a bit of time.
-    let seq = state.increment_debounce_sequence();
-
-    // Get local context
-    let ctx = get_local_context(&lines, pos_x, pos_y, &state.config.read());
-    info!("fim_try_hint_inner for pos ({}, {})", pos_x, pos_y);
-
-    // Compute primary hash
-    let primary_hash_inp = format!("{}{}Î{}", ctx.prefix, ctx.middle, ctx.suffix);
-    let hash = hash_input(&primary_hash_inp);
-
-    // Check if the completion is cached (and update LRU order)
-    let response = state.cache.write().get(&hash);
-
-    // the bool in all_completions is "recache"
-    let mut completions_idx = 0;
-    let mut all_completions: Vec<(FimResponse, bool)> = Vec::new();
-    let find_better_completion = if let Some(resp) = response {
-        all_completions.push((resp, false));
-        false
-    } else {
-        true
-    };
-
-    // ... or if there is a cached completion nearby (128 characters behind)
-    // Looks at the previous 128 characters to see if a completion is cached.
-    let pm = format!("{}{}", ctx.prefix, ctx.middle);
-    let mut best_len = 0;
-
-    // Only search if pm has enough characters
-    if pm.len() < 2 {
-        return Ok(());
-    }
-
-    // iterate through the prefix+midde string while removing characters from the tail
+    // TRIGGER LSP COMPLETION
     //
-    let mut char_indices = pm.char_indices().collect::<Vec<_>>();
-    char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
-                                         // its never used
-    let char_len = char_indices.len() - 1;
-
-    let max_iters = 128; // TODO parameterize this
-    for i in 1..=(max_iters.min(char_len.saturating_sub(1))) {
-        let split_byte_idx = char_indices[char_len - i].0;
-        let (pm_with_less_tail, removed) = pm.split_at(split_byte_idx);
-
-        let new_prefix_middle = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
-        let hash_new = hash_input(&new_prefix_middle);
-
-        if let Some(response_) = state.cache.write().get(&hash_new) {
-            let content = &response_.content;
-            if content.is_empty() {
-                continue;
-            }
-
-            // Check that the removed text matches the beginning of the cached response
-            // NOTE 'i' always is == removed.len()
-            // don't bother if i == content.len() because then there isn't any additional
-            // predicted text
-            if content.starts_with(removed) {
-                // Found a match - use the rest of the content
-                let Some(remaining) = content.strip_prefix(removed) else {
-                    continue;
-                };
-
-                all_completions.push((
-                    FimResponse {
-                        content: remaining.to_string(),
-                        timings: response_.timings,
-                        tokens_cached: response_.tokens_cached,
-                        truncated: response_.truncated,
-                    },
-                    true,
-                )); // recache = true
-
-                // could use chars().count() but it's not to important
-                if find_better_completion && !remaining.is_empty() && remaining.len() > best_len {
-                    best_len = remaining.len();
-                    completions_idx = all_completions.len() - 1;
-                }
-            }
-        }
-    }
-
-    for all_completion in all_completions.iter() {
-        let (resp, recache) = all_completion;
-        // recache the re-found response at the new position - this way the response can still be found
-        // if it was longer than 128 characters and the user is accepting this line by line.
-        if *recache {
-            // use the original ctx to compute the hashes
-            let hashes = compute_hashes(&ctx.prefix, &ctx.middle, &ctx.suffix);
-            let mut cache_lock = state.cache.write();
-            for hash in &hashes {
-                cache_lock.insert(hash.clone(), resp.clone());
-            }
-        }
-    }
-    let completions: Vec<FimResponse> = all_completions.into_iter().map(|(r, _)| r).collect();
-    info!("all completions: {} found", completions.len());
-
-    let lsp_completion_enabled = state.config.read().lsp_completions;
-
     // only trigger completions when not on a whitespace line and also
     // not when there is whitespace left of the cursor (eg. after a space)
-    let left_char = ctx.line_cur.chars().nth(pos_x.saturating_sub(1));
+    let lsp_completion_enabled = state.config.read().lsp_completions;
+    let line_cur = lines.get(pos_y).cloned().unwrap_or_default();
+    let left_char = line_cur.chars().nth(pos_x.saturating_sub(1));
     if lsp_completion_enabled
-        && completions.is_empty()
-        && !ctx.line_cur.trim().is_empty()
+        && !line_cur.trim().is_empty()
         && let Some(lch) = left_char
         && !lch.is_whitespace()
     {
@@ -354,44 +254,168 @@ pub fn fim_try_hint_inner(
             info!("trigger_lsp_completions_async error: {}", e)
         }
     }
-    let completion = completions.get(completions_idx).cloned();
-    if state.fim_state.read().completion_cycle.is_empty() {
-        state
-            .fim_state
-            .write()
-            .set_completion_cycle(completions, completions_idx);
-    }
-
-    info!("completions_idx: {}", completions_idx);
-
-    let mut prev_for_next_fim: Option<Vec<String>> = None;
-    if !force_regenerate && let Some(completion) = completion {
-        let prev_content = completion.content.clone();
-        info!("found cached prev_content ({} chars)", prev_content.len());
-        if !prev_content.is_empty() {
-            render_fim_suggestion(
-                state.clone(),
-                pos_x,
-                pos_y,
-                &completion,
-                ctx.line_cur.clone(),
-            )?;
-
-            // run async speculative FIM in the background for this position
-            // TODO should this just always run even when no hint is shown?
-            let hint_shown = state.fim_state.read().hint_shown;
-            if hint_shown {
-                prev_for_next_fim = Some(vec![prev_content]);
-            }
-        }
-    }
-    let filename = get_buf_filename()?;
 
     // Spawn a FIM in the background nomatter what
     // either a speculative-fim as though the completion was accepted
     // or a non-speculative fim because we need a fim!
     let rt = state.tokio_runtime.clone();
     rt.read().spawn(async move {
+        // first things first, increment the seq at the beginning to indicate to any waiting
+        // fim_workers in the debounce period that there is a new show in town (so don't start!).
+        // We do this first because the following cache checking may take a bit of time.
+        let seq = state.increment_debounce_sequence();
+
+        // Get local context
+        let ctx = get_local_context(&lines, pos_x, pos_y, &state.config.read());
+        info!("fim_try_hint_inner for pos ({}, {})", pos_x, pos_y);
+
+        // Compute primary hash
+        let primary_hash_inp = format!("{}{}Î{}", ctx.prefix, ctx.middle, ctx.suffix);
+        let hash = hash_input(&primary_hash_inp);
+
+        // Check if the completion is cached (and update LRU order)
+        let response = state.cache.write().get(&hash);
+
+        // the bool in all_completions is "recache"
+        let mut completions_idx = 0;
+        let mut all_completions: Vec<(FimResponse, bool)> = Vec::new();
+        let find_better_completion = if let Some(resp) = response {
+            all_completions.push((resp, false));
+            false
+        } else {
+            true
+        };
+
+        // ... or if there is a cached completion nearby (128 characters behind)
+        // Looks at the previous 128 characters to see if a completion is cached.
+        let pm = format!("{}{}", ctx.prefix, ctx.middle);
+        let mut best_len = 0;
+
+        // Only search if pm has enough characters
+        if pm.len() < 2 {
+            return;
+        }
+
+        // iterate through the prefix+midde string while removing characters from the tail
+        //
+        let mut char_indices = pm.char_indices().collect::<Vec<_>>();
+        char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
+                                             // its never used
+        let char_len = char_indices.len() - 1;
+
+        let max_iters = 128; // TODO parameterize this
+        for i in 1..=(max_iters.min(char_len.saturating_sub(1))) {
+            let split_byte_idx = char_indices[char_len - i].0;
+            let (pm_with_less_tail, removed) = pm.split_at(split_byte_idx);
+
+            let new_prefix_middle = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
+            let hash_new = hash_input(&new_prefix_middle);
+
+            if let Some(response_) = state.cache.write().get(&hash_new) {
+                let content = &response_.content;
+                if content.is_empty() {
+                    continue;
+                }
+
+                // Check that the removed text matches the beginning of the cached response
+                // NOTE 'i' always is == removed.len()
+                // don't bother if i == content.len() because then there isn't any additional
+                // predicted text
+                if content.starts_with(removed) {
+                    // Found a match - use the rest of the content
+                    let Some(remaining) = content.strip_prefix(removed) else {
+                        continue;
+                    };
+
+                    all_completions.push((
+                        FimResponse {
+                            content: remaining.to_string(),
+                            timings: response_.timings,
+                            tokens_cached: response_.tokens_cached,
+                            truncated: response_.truncated,
+                        },
+                        true,
+                    )); // recache = true
+
+                    // could use chars().count() but it's not to important
+                    if find_better_completion && !remaining.is_empty() && remaining.len() > best_len
+                    {
+                        best_len = remaining.len();
+                        completions_idx = all_completions.len() - 1;
+                    }
+                }
+            }
+        }
+
+        for all_completion in all_completions.iter() {
+            let (resp, recache) = all_completion;
+            // recache the re-found response at the new position - this way the response can still be found
+            // if it was longer than 128 characters and the user is accepting this line by line.
+            if *recache {
+                // use the original ctx to compute the hashes
+                let hashes = compute_hashes(&ctx.prefix, &ctx.middle, &ctx.suffix);
+                let mut cache_lock = state.cache.write();
+                for hash in &hashes {
+                    cache_lock.insert(hash.clone(), resp.clone());
+                }
+            }
+        }
+        let completions: Vec<FimResponse> = all_completions.into_iter().map(|(r, _)| r).collect();
+        info!("all completions: {} found", completions.len());
+
+        let completion = completions.get(completions_idx).cloned();
+        if state.fim_state.read().completion_cycle.is_empty() {
+            state
+                .fim_state
+                .write()
+                .set_completion_cycle(completions, completions_idx);
+        }
+
+        info!("completions_idx: {}", completions_idx);
+
+        let mut prev_for_next_fim: Option<Vec<String>> = None;
+
+        // if forcing to regenerate no need to render, there is already results on the screen and
+        // rerendering would be disruptive
+        if !force_regenerate && let Some(completion) = completion {
+            let prev_content = completion.content.clone();
+            info!("found cached prev_content ({} chars)", prev_content.len());
+            if !prev_content.is_empty() {
+                // XXX delete this code
+                // must only happen on main thread
+                //render_fim_suggestion(
+                //    state.clone(),
+                //    pos_x,
+                //    pos_y,
+                //    &completion,
+                //    ctx.line_cur.clone(),
+                //)?;
+
+                let msg = FimCompletionMessage {
+                    buffer_id,
+                    line_cur,
+                    cursor_x: pos_x,
+                    cursor_y: pos_y,
+                    completion,
+                    do_render: false,
+                    retry: None,
+                };
+                let Ok(tx) = state.get_fim_completion_tx() else {
+                    // TODO log error
+                    return;
+                };
+                if let Err(e) = tx.send(msg).await {
+                    error!(e)
+                }
+
+                // run async speculative FIM in the background for this position
+                // TODO should this just always run even when no hint is shown?
+                let hint_shown = state.fim_state.read().hint_shown;
+                if hint_shown {
+                    prev_for_next_fim = Some(vec![prev_content]);
+                }
+            }
+        }
         if let Some(content) = prev_for_next_fim.clone() {
             // regenerate the context to make a speculative FIM
             let Ok((new_x, new_y, final_content)) =

@@ -1,16 +1,18 @@
-
-^^^^^^^^^ DONE
-
 00. feeling a bit slow should probably NOT initiate the infill until a pause has
     completed. Test by holding the backspace on code vs comment
+      - THE ISSUE is that there actually the cache computation which doesn't
+        happen async
+         - DONE
       - there is currently NO ignoring repeated keystrokes for cache completion 
         OR LSP completion - should add a small delay using a last keystroke biz. 
          - maybe use "try_read" on the "last move time" and just skip the
            completion if its we can't try
-      - ONLY compute the next_var at the time when we know we'll need it when
+      - DONE - ONLY compute the next_var at the time when we know we'll need it when
         processing a completion. (use Option Option)
       - on my computer the key repeat rate is about 66 ms maybe make this special debouce
         80ms? - or fold lsp into the other debounce?
+
+^^^^^^^^^ DONE
 
 01. LSP rematch options eg. Ok() is predicted a decent amount which should
     probably re rerouted to Ok(()) (config option this) 
@@ -19,6 +21,8 @@
      - having a predictable reusable pattern for this is funny though
      - maybe this is one for the rematch routine
 
+05. ensure that when messages come in they aren't duplicating existing messages
+    already around 
 
 ------------------------
 
@@ -50,6 +54,8 @@
        response
      - OPTION ONCE no more errors - save file to regenerate diagnostics
      - OPTION ONCE no more errors, go to the next file with errors in a new tab
+
+05. telemetry doesn't work if tracing logfile is disabled (it should)
 
 20. git diff extra_input eviction by line number
      - because we're just saving the file changes we do not need to actually 

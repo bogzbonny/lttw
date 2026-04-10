@@ -244,8 +244,18 @@ impl FimState {
     }
 
     /// Set the completion cycle list
-    fn push_completion_cycle(&mut self, completions: FimResponse) {
+    fn push_completion_cycle_if_unique(&mut self, completions: FimResponse) -> bool {
+        // first check if this completion's contents are unique
+        if self
+            .completion_cycle
+            .iter()
+            .any(|c| c.content == completions.content)
+        {
+            return false;
+        }
+
         self.completion_cycle.push(completions);
+        true
     }
 
     fn push_completion_idx_to_tail(&mut self) {
@@ -355,10 +365,8 @@ fn process_pending_display() -> LttwResult<()> {
         std::mem::take(&mut *pending_queue)
     };
 
-    //info!("process_pending_display");
-    let lsp_completion_enabled = state.config.read().lsp_completions;
-
-    let mut messages = if lsp_completion_enabled {
+    // read the LSP messages
+    let mut messages = if state.config.read().lsp_completions {
         match retrieve_lsp_completions(&state) {
             Ok(c) => c,
             Err(e) => {
@@ -369,13 +377,8 @@ fn process_pending_display() -> LttwResult<()> {
     } else {
         Vec::new()
     };
-    //info!("process_pending_display");
-
-    //info!("process_pending_display");
 
     messages.extend(queued_messages);
-    //info!("process_pending_display");
-
     if messages.is_empty() {
         return Ok(());
     }
@@ -383,25 +386,26 @@ fn process_pending_display() -> LttwResult<()> {
     info!("Processing {} pending display messages", messages.len(),);
 
     // accept the most recent message which has content and isn't only whitespace
-    let mut msg = None;
+    let mut msg_to_render = None;
     for msg_ in messages.into_iter().rev() {
         if msg_is_valid_to_display(&msg_) {
-            // because the msg is valie we already know that the message is for the cursor position
-            state
+            // because the msg is valid we already know that the message is for the cursor position
+            let is_unique = state
                 .fim_state
                 .write()
-                .push_completion_cycle(msg_.completion.clone());
-            if msg.is_none() {
+                .push_completion_cycle_if_unique(msg_.completion.clone());
+            // only trigger renders if unique messages added
+            if is_unique && msg_to_render.is_none() {
                 if msg_.do_render {
                     state.fim_state.write().push_completion_idx_to_tail();
                 }
-                msg = Some(msg_);
+                msg_to_render = Some(msg_);
             }
         }
     }
 
     let mut retry = 0;
-    if let Some(msg) = msg {
+    if let Some(msg) = msg_to_render {
         if msg.do_render {
             render_fim_suggestion(
                 state.clone(),
@@ -474,17 +478,17 @@ fn fim_accept_inner(
         // Delete the "…" character
         let mut new_line_without_ellipsis = new_line.clone();
         new_line_without_ellipsis.remove(ellipsis_pos);
-        
+
         // Calculate the position of "…" in the final output
         // The ellipsis is at ellipsis_pos in new_line, and new_line is the first line in combined
         let ellipsis_x = ellipsis_pos;
         let ellipsis_y = 0; // new_line is the first line
-        
+
         let mut combined = vec![new_line_without_ellipsis];
         if let Some(rest_lines) = &rest {
             combined.extend(rest_lines.clone());
         }
-        
+
         (ellipsis_x, pos_y + ellipsis_y, combined)
     } else {
         // Move the cursor to the end of the accepted text
