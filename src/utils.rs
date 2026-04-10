@@ -3,13 +3,14 @@
 // This module provides various utility functions used throughout the plugin.
 
 use {
-    crate::{LTTW_FIM_HIGHLIGHT, LttwResult, plugin_state::CurrentBufferInfo},
+    crate::{plugin_state::CurrentBufferInfo, LttwResult, LTTW_FIM_HIGHLIGHT},
     ahash::AHasher,
     nvim_oxi::{
         api::{
-            self, Buffer, Window, get_option_value,
+            self, get_option_value,
             opts::{CreateAutocmdOpts, OptionOpts, SetExtmarkOpts, SetExtmarkOptsBuilder},
             types::ExtmarkVirtTextPosition,
+            Buffer, Window,
         },
         conversion::FromObject,
     },
@@ -387,9 +388,97 @@ pub fn filter_tail<'a>(arr1: &'a [String], arr2: &[String]) -> &'a [String] {
     &arr1[..n - max_k]
 }
 
+#[tracing::instrument]
+pub fn filter_tail_chars(arr1: &str, arr2: &str) -> String {
+    let arr1_chs: Vec<char> = arr1.chars().collect();
+    let arr2_chs: Vec<char> = arr2.chars().collect();
+    let n = arr1_chs.len();
+    let m = arr2_chs.len();
+
+    // Find max k such that arr1[n-k..] == arr2[0..k]
+    let mut max_k = 0;
+    for k in 1..=m.min(n) {
+        if arr1_chs[n - k..].iter().eq(arr2_chs[..k].iter()) {
+            max_k = k;
+        }
+    }
+
+    arr1_chs[..n - max_k].iter().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_filter_tail_chars_example_1() {
+        let arr1 = "ABC";
+        let arr2 = "CD";
+        assert_eq!(filter_tail_chars(arr1, arr2), "AB");
+    }
+
+    #[test]
+    fn test_filter_tail_chars_example_2() {
+        let arr1 = "ABC";
+        let arr2 = "BD";
+        assert_eq!(filter_tail_chars(arr1, arr2), "ABC");
+    }
+
+    #[test]
+    fn test_filter_tail_chars_example_3() {
+        let arr1 = "ABCD";
+        let arr2 = "CDE";
+        assert_eq!(filter_tail_chars(arr1, arr2), "AB");
+    }
+
+    #[test]
+    fn test_filter_tail_chars_no_matches() {
+        let arr1 = "XYZ";
+        let arr2 = "AB";
+        assert_eq!(filter_tail_chars(arr1, arr2), arr1);
+    }
+
+    #[test]
+    fn test_filter_tail_chars_all_match() {
+        let arr1 = "ABC";
+        let arr2 = "ABC";
+        assert_eq!(filter_tail_chars(arr1, arr2), "");
+    }
+
+    #[test]
+    fn test_filter_tail_chars_partial_match_at_end() {
+        let arr1 = "ABCD";
+        let arr2 = "BC";
+        assert_eq!(filter_tail_chars(arr1, arr2), "ABCD");
+    }
+
+    #[test]
+    fn test_filter_tail_chars_match_at_equal_index() {
+        let arr1 = "ABC";
+        let arr2 = "BCD";
+        assert_eq!(filter_tail_chars(arr1, arr2), "A");
+    }
+
+    #[test]
+    fn test_filter_tail_chars_empty_arr2() {
+        let arr1 = "AB";
+        let arr2 = "";
+        assert_eq!(filter_tail_chars(arr1, arr2), arr1);
+    }
+
+    #[test]
+    fn test_filter_tail_chars_empty_arr1() {
+        let arr1 = "";
+        let arr2 = "A";
+        assert_eq!(filter_tail_chars(arr1, arr2), "");
+    }
+
+    #[test]
+    fn test_filter_tail_chars_unicode() {
+        let arr1 = "日本語";
+        let arr2 = "語語";
+        assert_eq!(filter_tail_chars(arr1, arr2), "日本");
+    }
 
     #[test]
     fn test_filter_tail_example_1() {

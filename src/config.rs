@@ -79,6 +79,10 @@ pub struct LttwConfig {
     // Comment detection configuration
     pub no_fim_in_comments: bool,
 
+    pub lsp_completions: bool,
+    pub lsp_comp_truncate_vars: bool,
+    pub lsp_comp_insert_one_var: bool,
+
     // Startup configuration
     pub enable_at_startup: bool,
     pub tracing_enabled: bool,
@@ -129,6 +133,9 @@ impl Default for LttwConfig {
             keymap_inst_cancel: "<Esc>".to_string(),
             diff_tracking_enabled: true,
             no_fim_in_comments: true,
+            lsp_completions: true,
+            lsp_comp_truncate_vars: true,
+            lsp_comp_insert_one_var: false,
             enable_at_startup: true,
             tracing_enabled: false,
             tracing_log_file: false,
@@ -304,6 +311,17 @@ impl LttwConfig {
         }
         if let Some(v) = get_bool("no_fim_in_comments") {
             config.no_fim_in_comments = v;
+        }
+
+        // LSP
+        if let Some(v) = get_bool("lsp_completions") {
+            config.lsp_completions = v;
+        }
+        if let Some(v) = get_bool("lsp_comp_truncate_vars") {
+            config.lsp_comp_truncate_vars = v;
+        }
+        if let Some(v) = get_bool("lsp_comp_insert_one_var") {
+            config.lsp_comp_insert_one_var = v;
         }
 
         // Handle deprecated key names (rename old keys to new ones)

@@ -6,18 +6,18 @@
 
 use {
     crate::{
-        Error, FimCompletionMessage, FimTimingsData, LTTW_FIM_HIGHLIGHT, LttwResult,
         cache::compute_hashes,
-        context::LocalContext,
         context::get_local_context,
+        context::LocalContext,
         filetype::should_be_enabled,
         fim_accept_inner, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
-        plugin_state::{PluginState, get_state},
+        plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
         utils::{
             clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input, is_in_comment,
             set_buf_extmark, set_buf_extmark_top_right,
         },
+        Error, FimCompletionMessage, FimTimingsData, LttwResult, LTTW_FIM_HIGHLIGHT,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition},
     serde::{Deserialize, Serialize},
@@ -276,7 +276,7 @@ pub fn fim_try_hint_inner(
     //
     let mut char_indices = pm.char_indices().collect::<Vec<_>>();
     char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
-    // its never used
+                                         // its never used
     let char_len = char_indices.len() - 1;
 
     let max_iters = 128; // TODO parameterize this
@@ -338,10 +338,13 @@ pub fn fim_try_hint_inner(
     let completions: Vec<FimResponse> = all_completions.into_iter().map(|(r, _)| r).collect();
     info!("all completions: {} found", completions.len());
 
+    let lsp_completion_enabled = state.config.read().lsp_completions;
+
     // only trigger completions when not on a whitespace line and also
     // not when there is whitespace left of the cursor (eg. after a space)
     let left_char = ctx.line_cur.chars().nth(pos_x.saturating_sub(1));
-    if completions.is_empty()
+    if lsp_completion_enabled
+        && completions.is_empty()
         && !ctx.line_cur.trim().is_empty()
         && let Some(lch) = left_char
         && !lch.is_whitespace()

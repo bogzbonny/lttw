@@ -8,10 +8,9 @@ just like the existing debug system works.
 01. BUG on_buf_enter_update_file_contents - for some reason its not triggered
     when openning for the first time (with vf) - subsiquent switches to the
     buffer will activate it
+01. remove matching suffix from LSP completions 
 
 ^^^^^^^^^ DONE
-
-01. remove matching suffix from LSP completions 
 
 05. Integrate in better usage of lsp autocompletions
      - TODO use some of these autocompletion details better rather than just
@@ -28,6 +27,13 @@ just like the existing debug system works.
      - NEW CONFIG OPTION something which only takes one arg, should
        automatically be filled in eg. typing Ok[CUR]some_var  then pressing tab
        should autocomplete to Ok(some_var)
+
+now add another parameter to the function 'next_var: Option<String>' if next_var
+is Some and if there is EXACTLY 1 regex match of the form ${NN:anything} then
+rather than using … insert the contents of next_var
+
+add a new function: `brackets_matching` which takes in a string and outputs a
+bool as to whether all open brackets match all closed brackets. test for < [ ( {
 
 ------------------------
 
@@ -159,6 +165,12 @@ POST RELEASE
        be good predictors). ALSO be sure that (excluding whitespace) beyond the
        ident being the same the other characters must match 
      - only predict small things (such as a few characters, or .. ONE 
+     - Also a good predictor would just be the previous 2 indents:
+        `HashSet<String` should then predict >
+     - It would be cool to be able to keep a long term Small Statistics
+       Completion system whereby you could digest your code and have general
+       completion predictors (but also could weight predictors from the
+       codebase you're working on in higher)
 
 50. Offline/Online mode for getting responses locally or over the web
 

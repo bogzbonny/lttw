@@ -32,12 +32,12 @@ use {
     diagnostics::{debug_output_diagnostics, handle_diagnostic_changed},
     diff_chunk::calculate_diff_between_contents,
     fim::{
-        FimAcceptType, FimResponse, FimTimings, fim_cycle_next, fim_cycle_prev, fim_try_hint,
-        fim_try_hint_skip_debounce, render_fim_suggestion,
+        fim_cycle_next, fim_cycle_prev, fim_try_hint, fim_try_hint_skip_debounce,
+        render_fim_suggestion, FimAcceptType, FimResponse, FimTimings,
     },
     lsp_completion::retrieve_lsp_completions,
     nvim_oxi::{Dictionary, Function},
-    plugin_state::{PluginState, get_state, init_state},
+    plugin_state::{get_state, init_state, PluginState},
     std::{
         sync::atomic::Ordering,
         time::{Duration, Instant},
@@ -305,13 +305,14 @@ fn init_completion_processing_and_tracing_thread(
         };
         while let Some(msg) = rx.recv().await {
             info!("pending_queue msg received");
-            //state_.pending_display.write().push(msg);
+            state_.pending_display.write().push(msg);
+            // TODO delete the following code if we don't get a deadlock in a while
             // do try write here for when we occassionally lock up (we will just lose the odd
             // message)
-            let Some(mut pending_queue) = state_.pending_display.try_write() else {
-                continue;
-            };
-            pending_queue.push(msg);
+            //let Some(mut pending_queue) = state_.pending_display.try_write() else {
+            //    continue;
+            //};
+            //pending_queue.push(msg);
         }
     });
 
@@ -355,12 +356,18 @@ fn process_pending_display() -> LttwResult<()> {
     };
 
     //info!("process_pending_display");
-    let mut messages = match retrieve_lsp_completions(&state) {
-        Ok(c) => c,
-        Err(e) => {
-            info!("retrieve_lsp_completions error: {}", e);
-            Vec::new()
+    let lsp_completion_enabled = state.config.read().lsp_completions;
+
+    let mut messages = if lsp_completion_enabled {
+        match retrieve_lsp_completions(&state) {
+            Ok(c) => c,
+            Err(e) => {
+                info!("retrieve_lsp_completions error: {}", e);
+                Vec::new()
+            }
         }
+    } else {
+        Vec::new()
     };
     //info!("process_pending_display");
 
