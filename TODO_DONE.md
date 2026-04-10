@@ -266,7 +266,7 @@ dynamically change n_predict during each FIM call (number of tokens to predict)
    of the cursor set to a new config param n_prefict_end (default value 256)
 01. when debugging is disabled the lttw.log file is still created/cleared, this
     shouldn't happen
-20. easier to use debugging system (like debug! macro)
+20. easier to use debugging system (like info! macro)
 05. completion cycling
 New keymaps; use CTRL-j and CTRL-k from insert mode to cycle through the
 completions options. Now whenever we compile autocompletions from previous

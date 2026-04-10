@@ -17,33 +17,57 @@ use {
 
 // Re-export tracing macros for use throughout the codebase
 
-// This macro provides backward compatibility with the old debug! macro that could
-// accept a single variable like debug!(var), which would print "var = value"
+// This macro provides backward compatibility with the old info! macro that could
+// accept a single variable like info!(var), which would print "var = value"
 #[macro_export]
 macro_rules! debug {
-    // Single expression (variable) - like the old debug!(var) syntax
+    // Single expression (variable) - like the old info!(var) syntax
     // This expands to a format string with debug formatting
     ($expr:expr) => {{
-        tracing::debug!(target: "lttw", "{} = {:?}", stringify!($expr), $expr);
+        tracing::debug!(target: "lttw", "{} = {:?}", stringify!(), );
     }};
-    // Format-style variadic - like the old debug!("message {}", arg) syntax
+    // Format-style variadic - like the old info!("message {}", arg) syntax
     ($($arg:tt)*) => {{
         tracing::debug!($($arg)*);
     }};
 }
+#[macro_export]
+macro_rules! info {
+    // Single expression (variable) - like the old info!(var) syntax
+    // This expands to a format string with debug formatting
+    ($expr:expr) => {{
+        tracing::info!(target: "lttw", "{} = {:?}", stringify!($expr), $expr);
+    }};
+    // Format-style variadic - like the old info!("message {}", arg) syntax
+    ($($arg:tt)*) => {{
+        tracing::info!($($arg)*);
+    }};
+}
 
-//#[macro_export]
-//macro_rules! info {
-//    // Single expression (variable) - like the old debug!(var) syntax
-//    // This expands to a format string with debug formatting
-//    ($expr:expr) => {{
-//        tracing::info!(target: "lttw", "{} = {:?}", stringify!($expr), $expr);
-//    }};
-//    // Format-style variadic - like the old debug!("message {}", arg) syntax
-//    ($($arg:tt)*) => {{
-//        tracing::info!($($arg)*);
-//    }};
-//}
+#[macro_export]
+macro_rules! error {
+    // Single expression (variable) - like the old info!(var) syntax
+    // This expands to a format string with debug formatting
+    ($expr:expr) => {{
+        tracing::error!(target: "lttw", "{} = {:?}", stringify!($expr), $expr);
+    }};
+    // Format-style variadic - like the old info!("message {}", arg) syntax
+    ($($arg:tt)*) => {{
+        tracing::error!($($arg)*);
+    }};
+}
+#[macro_export]
+macro_rules! warn {
+    // Single expression (variable) - like the old info!(var) syntax
+    // This expands to a format string with debug formatting
+    ($expr:expr) => {{
+        tracing::warn!(target: "lttw", "{} = {:?}", stringify!($expr), $expr);
+    }};
+    // Format-style variadic - like the old info!("message {}", arg) syntax
+    ($($arg:tt)*) => {{
+        tracing::warn!($($arg)*);
+    }};
+}
 
 // RUN WITH:
 // docker run -d --name jaeger -e COLLECTOR_OTLP_ENABLED=true -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one:latest
@@ -176,23 +200,3 @@ impl Drop for OtelGuard {
         }
     }
 }
-
-//#[tokio::main]
-//async fn main() {
-//    let _guard = init_tracing_subscriber();
-
-//    foo().await;
-//}
-
-//#[tracing::instrument]
-//async fn foo() {
-//    tracing::info!(
-//        monotonic_counter.foo = 1_u64,
-//        key_1 = "bar",
-//        key_2 = 10,
-//        "handle foo",
-//    );
-//    tracing::debug!("holla");
-
-//    tracing::info!(histogram.baz = 10, "histogram example",);
-//}

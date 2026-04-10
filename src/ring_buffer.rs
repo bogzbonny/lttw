@@ -28,9 +28,7 @@ pub fn setup_ring_buffer_timer() -> LttwResult<()> {
     let rt = state.tokio_runtime.clone();
     let state_ = state.clone();
 
-    //tracing::span!("ring_buffer_timer");
-
-    let _span = tracing::span!(tracing::Level::ERROR, "my span");
+    let _span = tracing::span!(tracing::Level::INFO, "ring_buffer_timer").entered();
 
     let timer_handle = rt.read().spawn(async move {
         let mut interval = tokio::time::interval(dur);
@@ -55,7 +53,7 @@ pub fn setup_ring_buffer_timer() -> LttwResult<()> {
     // Store the handle in the plugin state
     *state.ring_buffer_timer_handle.write() = Some(Arc::new(parking_lot::Mutex::new(timer_handle)));
 
-    debug!("Started ring buffer timer (interval: {}ms)", interval,);
+    info!("Started ring buffer timer (interval: {}ms)", interval,);
 
     Ok(())
 }
@@ -117,7 +115,7 @@ async fn ring_update() -> LttwResult<bool> {
     };
 
     if chunk_count > 0 {
-        debug!("Processing {chunk_count} ring buffer chunks ",);
+        info!("Processing {chunk_count} ring buffer chunks");
 
         // TODO should n-predict be 0 here?? test
         // Build request with ring buffer context
@@ -183,29 +181,24 @@ impl RingBuffer {
     ///  - `text` - Text to pick a chunk from
     ///  - `no_mod` - If true, don't pick chunks from buffers with pending changes
     ///  - `do_evict` - If true, evict chunks that are very similar to the new one
-    pub fn pick_chunk(
-        &mut self,
-        state: &PluginState,
-        text: &[String],
-        filename: String,
-    ) -> LttwResult<()> {
+    pub fn pick_chunk(&mut self, state: &PluginState, text: &[String], filename: String) {
         let info = state.get_cur_buffer_info();
         if !(info.filepath == filename && info.is_loaded && info.is_readable) {
-            return Ok(());
+            return;
         }
 
-        self.pick_chunk_inner(text, filename)
+        self.pick_chunk_inner(text, filename);
     }
 
-    pub fn pick_chunk_inner(&mut self, text: &[String], filename: String) -> LttwResult<()> {
+    pub fn pick_chunk_inner(&mut self, text: &[String], filename: String) {
         // Skip if extra context is disabled
         if self.ring_n_chunks == 0 {
-            return Ok(());
+            return;
         }
 
         // Skip very small chunks
         if text.len() < 3 {
-            return Ok(());
+            return;
         }
 
         let chunk = self.get_chunk_from_text(text);
@@ -214,10 +207,10 @@ impl RingBuffer {
 
         // Check if this chunk is already added
         if self.chunks.iter().any(|c| c.data == chunk) {
-            return Ok(());
+            return;
         }
         if self.queued.iter().any(|c| c.data == chunk) {
-            return Ok(());
+            return;
         }
 
         // Evict queued chunks that are very similar
@@ -236,7 +229,6 @@ impl RingBuffer {
             time: Instant::now(),
             filename,
         });
-        Ok(())
     }
 
     /// Move the first queued chunk to the ring buffer
@@ -407,8 +399,7 @@ mod tests {
                 "line3".to_string(),
             ],
             String::new(),
-        )
-        .unwrap();
+        );
         ring.pick_chunk_inner(
             &[
                 "line4".to_string(),
@@ -416,8 +407,7 @@ mod tests {
                 "line6".to_string(),
             ],
             String::new(),
-        )
-        .unwrap();
+        );
 
         assert_eq!(ring.queued_len(), 2);
 
@@ -439,8 +429,7 @@ mod tests {
                 "line3".to_string(),
             ],
             String::new(),
-        )
-        .unwrap();
+        );
         ring.pick_chunk_inner(
             &[
                 "line4".to_string(),
@@ -448,8 +437,7 @@ mod tests {
                 "line6".to_string(),
             ],
             String::new(),
-        )
-        .unwrap();
+        );
         ring.pick_chunk_inner(
             &[
                 "line7".to_string(),
@@ -457,8 +445,7 @@ mod tests {
                 "line9".to_string(),
             ],
             String::new(),
-        )
-        .unwrap();
+        );
 
         ring.update();
         ring.update();
@@ -481,8 +468,7 @@ mod tests {
                 "line3".to_string(),
             ],
             String::new(),
-        )
-        .unwrap();
+        );
         ring.pick_chunk_inner(
             &[
                 "line4".to_string(),
@@ -490,8 +476,7 @@ mod tests {
                 "line6".to_string(),
             ],
             String::new(),
-        )
-        .unwrap();
+        );
 
         assert_eq!(ring.queued_len(), 2);
 
@@ -518,8 +503,7 @@ mod tests {
                     "line3".to_string(),
                 ],
                 String::new(),
-            )
-            .unwrap();
+            );
             ring.update();
         }
 
@@ -537,8 +521,7 @@ mod tests {
                 "line3".to_string(),
             ],
             String::new(),
-        )
-        .unwrap();
+        );
         ring.pick_chunk_inner(
             &[
                 "line4".to_string(),
@@ -546,8 +529,7 @@ mod tests {
                 "line6".to_string(),
             ],
             String::new(),
-        )
-        .unwrap();
+        );
 
         ring.update();
         ring.update();
@@ -567,8 +549,7 @@ mod tests {
                 "line3".to_string(),
             ],
             String::new(),
-        )
-        .unwrap();
+        );
         ring.pick_chunk_inner(
             &[
                 "line4".to_string(),
@@ -576,8 +557,7 @@ mod tests {
                 "line6".to_string(),
             ],
             String::new(),
-        )
-        .unwrap();
+        );
         ring.pick_chunk_inner(
             &[
                 "line7".to_string(),
@@ -585,8 +565,7 @@ mod tests {
                 "line9".to_string(),
             ],
             String::new(),
-        )
-        .unwrap();
+        );
 
         assert_eq!(ring.queued_len(), 3);
     }

@@ -54,14 +54,14 @@ cargo build --lib --src src/<filename>.rs
 ## Code Style Guidelines
 
 ### Logging & Debugging
-- Use `debug!()` macro for debug logging (timestamped, file/line info)
+- Use \x60info!()\x60 macro for info logging (timestamped, file/line info)
 - Logs written to `lttw.log` in working directory
 - Log file path configurable via `set_log_file()`
 - Debug mode toggled via `LttwEnableDebug`/`LttwDisableDebug` commands
 
 ```rust
-debug!("Processing {} completions", count);
-debug!(variable_name); // Automatic "variable = value" format
+info!("Processing {} completions", count);
+info!(variable_name); // Automatic "variable = value" format
 ```
 
 ### Neovim API Usage

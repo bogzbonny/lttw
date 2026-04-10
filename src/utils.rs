@@ -3,13 +3,14 @@
 // This module provides various utility functions used throughout the plugin.
 
 use {
-    crate::{LTTW_FIM_HIGHLIGHT, LttwResult, plugin_state::CurrentBufferInfo},
+    crate::{plugin_state::CurrentBufferInfo, LttwResult, LTTW_FIM_HIGHLIGHT},
     ahash::AHasher,
     nvim_oxi::{
         api::{
-            self, Buffer, Window, get_option_value,
+            self, get_option_value,
             opts::{CreateAutocmdOpts, OptionOpts, SetExtmarkOpts, SetExtmarkOptsBuilder},
             types::ExtmarkVirtTextPosition,
+            Buffer, Window,
         },
         conversion::FromObject,
     },
@@ -32,8 +33,12 @@ pub fn assert_not_tokio_worker() {
     if let Some(n) = t.name()
         && n.contains("tokio")
     {
-        let bt = Backtrace::force_capture();
-        debug!("assert_not_tokio_worker Backtrace:\n{:?}", bt);
+        // Backtrace is captured only in debug builds
+        #[cfg(debug_assertions)]
+        {
+            let bt = Backtrace::force_capture();
+            info!("assert_not_tokio_worker Backtrace:\n{:?}", bt);
+        }
 
         panic!("function must not be called from Tokio runtime worker thread (name: {n})");
     }
@@ -288,7 +293,7 @@ pub fn is_in_comment(mut pos_x: usize, pos_y: usize, at_eol: bool) -> LttwResult
         || syn_name.contains("comment")
         || syn_name.contains("Comment");
 
-    debug!("Skipping FIM in comment");
+    info!("Skipping FIM in comment at ({}, {})", pos_x, pos_y);
 
     Ok(is_comment)
 }

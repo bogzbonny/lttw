@@ -3,7 +3,7 @@
 
 10. tracing support
 integrate in the tracing and tracing-opentelemetry crates into this library.
-Replace all instances of this crates `debug!` with the tracing `debug!` macro.
+Replace all instances of this crates \x60info!\x60 with the tracing \x60info!\x60 macro.
 If config.debug_enabled_at_startup is disabled, then telemetry should NOT start
 during startup.  Ensure that when debugging is enabled that the new tracing
 system will still write all the debug information into the `./lttw.log` file
@@ -175,4 +175,3 @@ POST RELEASE
        would be nice if there was a way to have the best of both worlds here
      - yanked text should have a description before adding to ExtraArgs... Maybe
        also have it located at the end near the prefix
-

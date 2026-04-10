@@ -1,6 +1,6 @@
 use {
     crate::{
-        cache, config, debug, diagnostics::DiagnosticTracker, instruction::InstructionRequestState,
+        cache, config, diagnostics::DiagnosticTracker, instruction::InstructionRequestState,
         ring_buffer, Error, FimCompletionMessage, FimState, LttwResult,
     },
     ahash::{HashMap, HashMapExt},
@@ -271,7 +271,7 @@ impl PluginState {
 
     pub fn debug_word_statistics(&self) {
         self.word_statistics.pin().iter().for_each(|(k, v)| {
-            debug!("{}: {}", k, v);
+            info!("{}: {}", k, v);
         });
     }
 }
@@ -280,7 +280,7 @@ impl PluginState {
 // which must begin with a letter or underscore but then may also include numbers afterwords).
 // The identifiers are then added to the word_statistics adding one for each word that exists
 pub fn add_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, content: String) {
-    debug!("add_word_statistics");
+    info!("add_word_statistics");
     let mut current_word = String::new();
 
     let stats = word_stats.pin();
@@ -304,7 +304,7 @@ pub fn add_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, content: Str
 }
 
 pub fn sub_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, content: String) {
-    debug!("sub_word_statistics");
+    info!("sub_word_statistics");
     let mut current_word = String::new();
 
     let stats = word_stats.pin();

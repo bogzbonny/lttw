@@ -9,7 +9,6 @@ use {
         cache::compute_hashes,
         context::get_local_context,
         context::LocalContext,
-        debug,
         filetype::should_be_enabled,
         fim_accept_inner, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
         plugin_state::{get_state, PluginState},
@@ -164,21 +163,27 @@ pub fn build_info_string(
     }
 }
 
+#[tracing::instrument(skip(retry))]
 pub fn fim_try_hint(retry: Option<usize>) -> LttwResult<()> {
+    let _span = tracing::info_span!("fim_try_hint").entered();
     if !in_insert_mode()? {
         return Ok(());
     }
     fim_try_hint_inner(false, false, retry) // check_comment = true for normal FIM
 }
 
+#[tracing::instrument]
 pub fn fim_try_hint_skip_debounce() -> LttwResult<()> {
+    let _span = tracing::info_span!("fim_try_hint_skip_debounce").entered();
     if !in_insert_mode()? {
         return Ok(());
     }
     fim_try_hint_inner(true, false, None) // check_comment = true for skip_debounce
 }
 
+#[tracing::instrument]
 pub fn fim_try_hint_regenerate() -> LttwResult<()> {
+    let _span = tracing::info_span!("fim_try_hint_regenerate").entered();
     if !in_insert_mode()? {
         return Ok(());
     }
@@ -195,16 +200,18 @@ pub fn fim_try_hint_regenerate() -> LttwResult<()> {
 /// ### Arguments
 ///  - `skip_debounce` - whether to skip the debounce check
 ///  - `retry` - retry number for speculative FIM
-#[tracing::instrument]
+#[tracing::instrument(skip(retry))]
 pub fn fim_try_hint_inner(
     skip_debounce: bool,
     force_regenerate: bool,
     retry: Option<usize>, // retry number
 ) -> LttwResult<()> {
+    let _span = tracing::info_span!("fim_try_hint_inner").entered();
     // filetype failsafe
     if !should_be_enabled() {
         // This can happen sometimes a request on the wrong filetype can squeeze through the cracks
         // on retry requests (but then the buffer changes)
+        info!("FIM not enabled for current filetype, returning");
         return Ok(());
     }
 
@@ -213,7 +220,7 @@ pub fn fim_try_hint_inner(
     let lines = get_buf_lines(..);
     let buffer_id = get_current_buffer_id();
     let no_fim_in_comments = state.config.read().no_fim_in_comments;
-    debug!("{}", no_fim_in_comments);
+    info!("no_fim_in_comments = {}", no_fim_in_comments);
 
     #[allow(clippy::collapsible_if)]
     if no_fim_in_comments {
@@ -224,7 +231,7 @@ pub fn fim_try_hint_inner(
             // comments FIM allowed at this position, continue with FIM
             //
         } else if is_in_comment(pos_x, pos_y, at_eol).unwrap_or(false) {
-            debug!("Skipping FIM in comment");
+            info!("Skipping FIM in comment at ({}, {})", pos_x, pos_y);
             return Ok(());
         }
     };
@@ -236,7 +243,7 @@ pub fn fim_try_hint_inner(
 
     // Get local context
     let ctx = get_local_context(&lines, pos_x, pos_y, &state.config.read());
-    debug!("fim_try_hint_inner");
+    info!("fim_try_hint_inner for pos ({}, {})", pos_x, pos_y);
 
     // Compute primary hash
     let primary_hash_inp = format!("{}{}Î{}", ctx.prefix, ctx.middle, ctx.suffix);
@@ -329,7 +336,7 @@ pub fn fim_try_hint_inner(
         }
     }
     let completions: Vec<FimResponse> = all_completions.into_iter().map(|(r, _)| r).collect();
-    debug!("all completions: {completions:?}");
+    info!("all completions: {} found", completions.len());
 
     // only trigger completions when not on a whitespace line and also
     // not when there is whitespace left of the cursor (eg. after a space)
@@ -341,7 +348,7 @@ pub fn fim_try_hint_inner(
     {
         // trigger the async lsp completion
         if let Err(e) = crate::lsp_completion::trigger_lsp_completions_async() {
-            debug!(e)
+            info!("trigger_lsp_completions_async error: {}", e)
         }
     }
     let completion = completions.get(completions_idx).cloned();
@@ -352,12 +359,12 @@ pub fn fim_try_hint_inner(
             .set_completion_cycle(completions, completions_idx);
     }
 
-    debug!("completions_idx: {completions_idx:?}");
+    info!("completions_idx: {}", completions_idx);
 
     let mut prev_for_next_fim: Option<Vec<String>> = None;
     if !force_regenerate && let Some(completion) = completion {
         let prev_content = completion.content.clone();
-        debug!("found cached prev_content: {prev_content:#?}");
+        info!("found cached prev_content ({} chars)", prev_content.len());
         if !prev_content.is_empty() {
             render_fim_suggestion(
                 state.clone(),
@@ -477,10 +484,10 @@ async fn spawn_fim_completion_worker(
             // Still within debounce period. Since this is the most recent request,
             // we should wait until debounce expires and then spawn.
             let remaining_ms = debounce_ms - elapsed.as_millis() as u64;
-            debug!("Within debounce period, (seq {seq}, remaining {remaining_ms}ms)");
+            info!("Within debounce period, (seq {seq}, remaining {remaining_ms}ms)");
 
             // Wait for remaining debounce time
-            tokio::time::sleep(Duration::from_millis(remaining_ms)).await;
+            tokio::time::sleep(Duration::from_millis(remaining_ms)).await
         }
     }
 
@@ -493,21 +500,21 @@ async fn spawn_fim_completion_worker(
         .load(std::sync::atomic::Ordering::SeqCst);
     if seq < latest_sequence {
         // A newer request has come in, discard this one
-        debug!("Discarding stale worker after wait (seq {seq} < latest {latest_sequence})");
+        info!("Discarding stale worker after wait (seq {seq} < latest {latest_sequence})");
         drop(permit);
         return Ok(());
     }
 
     state.record_worker_spawn();
 
-    debug!("Spawning worker for ({cursor_x}, {cursor_y})");
+    info!("Spawning worker for ({cursor_x}, {cursor_y})");
 
     let skip = if let Some((gbuf_id, gpos_x, gpos_y)) = *state.fim_worker_generating_for_pos.read()
         && gbuf_id == buffer_id
         && gpos_x == cursor_x
         && gpos_y == cursor_y
     {
-        debug!("already currently generating for this position, skipping request");
+        info!("already currently generating for this position, skipping request");
         true
     } else {
         false
@@ -581,7 +588,7 @@ pub async fn fim_completion(
     // Determine n_predict dynamically based on cursor position
     let (n_predict, inside_a_line) =
         get_dynamic_n_predict(&ctx.line_cur, pos_x, n_predict_inner, n_predict_end);
-    debug!(
+    info!(
         "dynamic n_predict: {} (inner: {}, end: {})",
         n_predict, n_predict_inner, n_predict_end
     );
@@ -594,6 +601,10 @@ pub async fn fim_completion(
     // Skip auto FIM if too much suffix characters, might be the case for dense text
     // where there's simply a lot of chs on a few suffix lines
     if ctx.line_cur_suffix.len() > state.config.read().max_line_suffix as usize {
+        info!(
+            "Skipping FIM due to large suffix ({} chars)",
+            ctx.line_cur_suffix.len()
+        );
         return Ok(());
     }
     if prev.is_none() {
@@ -608,6 +619,7 @@ pub async fn fim_completion(
         for hash in &hashes {
             let cache_lock = state.cache.read();
             if cache_lock.contains_key(hash) {
+                info!("FIM completion cached for hash, returning early");
                 return Ok(());
             }
         }
@@ -688,16 +700,10 @@ pub async fn fim_completion(
 
     let state__ = state.clone();
     let handle = tokio::spawn(async move {
-        //state
-        //    .debug_manager
-        //    .read()
-        //    .log("sending msg", format!("{request:#?}"));
-        // Send request without holding locks
-
         let response_text = match send_request(&request, endpoint_fim, model, api_key).await {
             Ok(response_text) => response_text,
             Err(e) => {
-                debug!(e);
+                info!("send_request error: {}", e);
                 return;
             }
         };
@@ -706,12 +712,15 @@ pub async fn fim_completion(
         let mut response = match serde_json::from_str::<FimResponse>(&response_text) {
             Ok(r) => r,
             Err(e) => {
-                debug!(e);
+                info!("FimResponse parse error: {}", e);
                 return;
             }
         };
 
-        debug!("resp: {response:#?}");
+        info!(
+            "FIM response received, content length: {}",
+            response.content.len()
+        );
 
         // compare the tail of the content to the lines and filter out any matching with the
         // following lines
@@ -761,7 +770,7 @@ pub async fn fim_completion(
         };
 
         if let Err(e) = tx.send(msg).await {
-            debug!(e);
+            info!(e);
         }
     });
 
@@ -799,11 +808,7 @@ pub async fn fim_completion(
         if !prefix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
             for _ in 0..ring_n_picks {
-                if let Err(e) = ring_buffer_lock.pick_chunk(&state_, prefix_lines, filename.clone())
-                {
-                    // Log error but continue with other picks
-                    debug!("Error picking prefix chunk: {}", e);
-                }
+                ring_buffer_lock.pick_chunk(&state_, prefix_lines, filename.clone())
             }
         }
 
@@ -814,11 +819,7 @@ pub async fn fim_completion(
         if !suffix_lines.is_empty() {
             let mut ring_buffer_lock = state_.ring_buffer.write();
             for _ in 0..ring_n_picks {
-                if let Err(e) = ring_buffer_lock.pick_chunk(&state_, suffix_lines, filename.clone())
-                {
-                    // Log error but continue with other picks
-                    debug!("Error picking suffix chunk: {}", e);
-                }
+                ring_buffer_lock.pick_chunk(&state_, suffix_lines, filename.clone())
             }
         }
 
@@ -947,7 +948,11 @@ pub fn render_fim_suggestion(
     let joined = lines.join("\n");
     let hint_is_valid = !joined.trim().is_empty();
 
-    debug!("Displaying FIM hint: \n{}", lines.join("\n"));
+    info!(
+        "Displaying FIM hint ({} lines, valid: {})",
+        lines.len(),
+        hint_is_valid
+    );
 
     // Update FIM state with timing data
     state.fim_state.write().update(
@@ -1027,10 +1032,10 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
         // Set the extmark for suggestion text at cursor position
         match set_buf_extmark(ns_id, pos_y, pos_x, &suggestion_opts.build()) {
             Ok(_id) => {
-                debug!("Set suggestion extmark at line {}, col {}", pos_y, pos_x);
+                info!("Set suggestion extmark at line {}, col {}", pos_y, pos_x);
             }
             Err(e) => {
-                debug!("Error setting suggestion extmark: {:?}", e);
+                info!("Error setting suggestion extmark: {:?}", e);
             }
         }
 
@@ -1083,7 +1088,7 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
             if !info_string.is_empty()
                 && let Err(e) = set_buf_extmark_top_right(ns_id, info_string)
             {
-                debug!("Error setting info extmark: {:?}", e);
+                info!("Error setting info extmark: {:?}", e);
             }
         }
     }
@@ -1123,7 +1128,10 @@ pub fn fim_cycle_next() -> LttwResult<()> {
         };
         completion
     };
-    debug!(completion);
+    info!(
+        "Cycled to next completion ({} chars)",
+        completion.content.len()
+    );
 
     // Re-display with new completion
     let (pos_x, pos_y, line_cur) = {
@@ -1167,6 +1175,11 @@ pub fn fim_cycle_prev() -> LttwResult<()> {
         };
         completion
     };
+
+    info!(
+        "Cycled to previous completion ({} chars)",
+        completion.content.len()
+    );
 
     // Re-display with new completion
     let (pos_x, pos_y, line_cur) = {
@@ -1367,62 +1380,54 @@ mod tests {
         let mut ring_buffer = RingBuffer::new(3, 64, 16);
 
         // Add first chunk
-        ring_buffer
-            .pick_chunk_inner(
-                &[
-                    "fn main() {".to_string(),
-                    "    println!(\"hello\");".to_string(),
-                    "}".to_string(),
-                ],
-                String::new(),
-            )
-            .unwrap();
+        ring_buffer.pick_chunk_inner(
+            &[
+                "fn main() {".to_string(),
+                "    println!(\"hello\");".to_string(),
+                "}".to_string(),
+            ],
+            String::new(),
+        );
         ring_buffer.update();
 
         assert_eq!(ring_buffer.len(), 1);
         assert_eq!(ring_buffer.queued_len(), 0);
 
         // Add second chunk (should not evict first since they're different)
-        ring_buffer
-            .pick_chunk_inner(
-                &[
-                    "use std::io;".to_string(),
-                    "fn read_input() {".to_string(),
-                    "    let mut s = String::new();".to_string(),
-                ],
-                String::new(),
-            )
-            .unwrap();
+        ring_buffer.pick_chunk_inner(
+            &[
+                "use std::io;".to_string(),
+                "fn read_input() {".to_string(),
+                "    let mut s = String::new();".to_string(),
+            ],
+            String::new(),
+        );
         ring_buffer.update();
 
         assert_eq!(ring_buffer.len(), 2);
 
         // Add third chunk
-        ring_buffer
-            .pick_chunk_inner(
-                &[
-                    "mod test;".to_string(),
-                    "fn test_func() {".to_string(),
-                    "    assert_eq!(1, 1);".to_string(),
-                ],
-                String::new(),
-            )
-            .unwrap();
+        ring_buffer.pick_chunk_inner(
+            &[
+                "mod test;".to_string(),
+                "fn test_func() {".to_string(),
+                "    assert_eq!(1, 1);".to_string(),
+            ],
+            String::new(),
+        );
         ring_buffer.update();
 
         assert_eq!(ring_buffer.len(), 3);
 
         // Add fourth chunk - should evict the oldest one due to max_chunks limit
-        ring_buffer
-            .pick_chunk_inner(
-                &[
-                    "pub fn export_func() {".to_string(),
-                    "    test_func();".to_string(),
-                    "}".to_string(),
-                ],
-                String::new(),
-            )
-            .unwrap();
+        ring_buffer.pick_chunk_inner(
+            &[
+                "pub fn export_func() {".to_string(),
+                "    test_func();".to_string(),
+                "}".to_string(),
+            ],
+            String::new(),
+        );
         ring_buffer.update();
 
         // Should still be at max_chunks (3)
@@ -1443,9 +1448,7 @@ mod tests {
         ];
 
         // Add first chunk
-        ring_buffer
-            .pick_chunk_inner(&chunk1, String::new())
-            .unwrap();
+        ring_buffer.pick_chunk_inner(&chunk1, String::new());
         ring_buffer.update();
 
         assert_eq!(ring_buffer.len(), 1);
@@ -1454,9 +1457,7 @@ mod tests {
         let mut chunk2 = chunk1.clone();
         chunk2[1] = "    let x = 100;".to_string(); // Slightly different
 
-        ring_buffer
-            .pick_chunk_inner(&chunk2, String::new())
-            .unwrap();
+        ring_buffer.pick_chunk_inner(&chunk2, String::new());
         ring_buffer.update();
 
         // Due to high similarity, first chunk should be evicted
@@ -1470,16 +1471,14 @@ mod tests {
         let mut ring_buffer = RingBuffer::new(2, 64, 16);
 
         // Add some chunks to the ring buffer
-        ring_buffer
-            .pick_chunk_inner(
-                &[
-                    "mod module1;".to_string(),
-                    "mod module2;".to_string(),
-                    "mod module3;".to_string(),
-                ],
-                String::new(),
-            )
-            .unwrap();
+        ring_buffer.pick_chunk_inner(
+            &[
+                "mod module1;".to_string(),
+                "mod module2;".to_string(),
+                "mod module3;".to_string(),
+            ],
+            String::new(),
+        );
         ring_buffer.update();
 
         let extra = ring_buffer.get_extra();
@@ -1518,16 +1517,14 @@ mod tests {
         let mut ring_buffer = RingBuffer::new(3, 64, 16);
 
         // Add chunks to ring buffer
-        ring_buffer
-            .pick_chunk_inner(
-                &[
-                    "fn test1() {".to_string(),
-                    "    println!(\"test1\");".to_string(),
-                    "}".to_string(),
-                ],
-                String::new(),
-            )
-            .unwrap();
+        ring_buffer.pick_chunk_inner(
+            &[
+                "fn test1() {".to_string(),
+                "    println!(\"test1\");".to_string(),
+                "}".to_string(),
+            ],
+            String::new(),
+        );
         ring_buffer.update();
 
         // Simulate a FIM request with ring buffer context
@@ -1575,16 +1572,14 @@ mod tests {
         // Test that n_evict counter tracks evicted chunks correctly
         let mut ring_buffer = RingBuffer::new(2, 64, 16);
 
-        ring_buffer
-            .pick_chunk_inner(
-                &[
-                    "fn func1() {".to_string(),
-                    "    let x = 1;".to_string(),
-                    "}".to_string(),
-                ],
-                String::new(),
-            )
-            .unwrap();
+        ring_buffer.pick_chunk_inner(
+            &[
+                "fn func1() {".to_string(),
+                "    let x = 1;".to_string(),
+                "}".to_string(),
+            ],
+            String::new(),
+        );
         ring_buffer.update();
 
         let n_evict_before = ring_buffer.n_evict();
@@ -1597,9 +1592,7 @@ mod tests {
                 "}".to_string(),
             ];
 
-            ring_buffer
-                .pick_chunk_inner(&similar_chunk, String::new())
-                .unwrap();
+            ring_buffer.pick_chunk_inner(&similar_chunk, String::new());
             ring_buffer.update();
         }
 
@@ -1621,9 +1614,7 @@ mod tests {
             "}".to_string(),
         ];
 
-        ring_buffer
-            .pick_chunk_inner(&chunk_data, String::new())
-            .unwrap();
+        ring_buffer.pick_chunk_inner(&chunk_data, String::new());
         ring_buffer.update();
 
         let extra = ring_buffer.get_extra();
@@ -1639,16 +1630,14 @@ mod tests {
 
         // Pick multiple chunks without updating
         for i in 0..5 {
-            ring_buffer
-                .pick_chunk_inner(
-                    &[
-                        format!("fn func{}_()", i),
-                        format!("    let x = {};", i),
-                        "}".to_string(),
-                    ],
-                    String::new(),
-                )
-                .unwrap();
+            ring_buffer.pick_chunk_inner(
+                &[
+                    format!("fn func{}_()", i),
+                    format!("    let x = {};", i),
+                    "}".to_string(),
+                ],
+                String::new(),
+            );
         }
 
         // All should be in queued
@@ -1685,19 +1674,19 @@ mod tests {
         ];
 
         // Add chunk first time
-        ring_buffer.pick_chunk_inner(&chunk, String::new()).unwrap();
+        ring_buffer.pick_chunk_inner(&chunk, String::new());
         ring_buffer.update();
 
         assert_eq!(ring_buffer.len(), 1);
 
         // Try to add exact same chunk again (should be ignored)
-        ring_buffer.pick_chunk_inner(&chunk, String::new()).unwrap();
+        ring_buffer.pick_chunk_inner(&chunk, String::new());
 
         // Should still be 1 (no duplicate added)
         assert_eq!(ring_buffer.len(), 1);
 
         // Try to add same chunk via queued (should also be ignored)
-        ring_buffer.pick_chunk_inner(&chunk, String::new()).unwrap();
+        ring_buffer.pick_chunk_inner(&chunk, String::new());
 
         // Should still have same queued count
         assert_eq!(ring_buffer.queued_len(), 0);

@@ -9,9 +9,6 @@ pub const LTTW_FIM_HIGHLIGHT: &str = "LttwFIM";
 #[macro_use]
 pub mod log; // note, must be first for the macro to work throughout
 
-// Export tracing macros (debug will be redefined in log.rs)
-pub use tracing::{error, info, warn};
-
 pub mod autocmd;
 pub mod cache;
 pub mod commands;
@@ -118,6 +115,7 @@ fn init_fim_highlight() -> LttwResult<()> {
 /// * `Err(nvim_oxi::Error)` - Error message if initialization failed
 #[nvim_oxi::plugin]
 pub fn lttw() -> LttwResult<Dictionary> {
+    let _span = tracing::info_span!("plugin_init").entered();
     let mut functions = Dictionary::new();
 
     functions.insert::<&str, Function<nvim_oxi::Object, ()>>("setup", Function::from(lttw_setup));
@@ -135,8 +133,10 @@ pub fn lttw() -> LttwResult<Dictionary> {
     Ok(functions)
 }
 
-// TODO process errors in this function
+/// Initialize the plugin setup with tracing
+#[tracing::instrument(skip(c))]
 fn lttw_setup(c: nvim_oxi::Object) {
+    let _span = tracing::info_span!("plugin_setup").entered();
     // Initialize plugin state
     init_state(c);
 
@@ -169,13 +169,8 @@ fn lttw_setup(c: nvim_oxi::Object) {
     // Initialize the LttwFIM highlight group to match Comment
     let _ = init_fim_highlight();
 
-    let _span = tracing::info_span!("test_span", foo = "bar").entered();
-    tracing::info!("Hello from telemetry");
+    tracing::info!("Lttw plugin setup complete");
 }
-
-// ---------------------------
-
-/// State for FIM (Fill-in-Middle) completion
 #[derive(Debug, Clone, Default)]
 pub struct FimState {
     hint_shown: bool,
@@ -308,7 +303,7 @@ fn init_completion_processing_and_tracing_thread(
             None
         };
         while let Some(msg) = rx.recv().await {
-            debug!("pending_queue msg");
+            info!("pending_queue msg received");
             //state_.pending_display.write().push(msg);
             // do try write here for when we occassionally lock up (we will just lose the odd
             // message)
@@ -331,7 +326,7 @@ fn init_completion_processing_and_tracing_thread(
             // Need this so that it executes on the main thread (or else extmarks won't display)
             nvim_oxi::schedule(|_| {
                 if let Err(e) = process_pending_display() {
-                    debug!("process_pending_display() error: {}", e);
+                    info!("process_pending_display() error: {}", e);
                 }
             });
         },
@@ -357,26 +352,26 @@ fn process_pending_display() -> LttwResult<()> {
         std::mem::take(&mut *pending_queue)
     };
 
-    //debug!("process_pending_display");
+    //info!("process_pending_display");
     let mut messages = match retrieve_lsp_completions(&state) {
         Ok(c) => c,
         Err(e) => {
-            debug!(e);
+            info!("retrieve_lsp_completions error: {}", e);
             Vec::new()
         }
     };
-    //debug!("process_pending_display");
+    //info!("process_pending_display");
 
-    //debug!("process_pending_display");
+    //info!("process_pending_display");
 
     messages.extend(queued_messages);
-    //debug!("process_pending_display");
+    //info!("process_pending_display");
 
     if messages.is_empty() {
         return Ok(());
     }
 
-    debug!("Processing {} pending display messages", messages.len(),);
+    info!("Processing {} pending display messages", messages.len(),);
 
     // accept the most recent message which has content and isn't only whitespace
     let mut msg = None;
@@ -417,7 +412,7 @@ fn process_pending_display() -> LttwResult<()> {
     // only retry a llm call 3 times before giving up
     if !state.fim_state.read().hint_shown && retry <= 3 {
         retry += 1;
-        debug!("rerendering fim suggestion");
+        info!("rerendering fim suggestion");
         fim_try_hint(Some(retry))?;
     }
 
@@ -485,7 +480,7 @@ fn fim_accept_inner(
 fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
     // Log before releasing the lock
     let state = get_state();
-    debug!("fim_accept_triggered");
+    info!("fim_accept_triggered for {}", accept_type);
 
     let (hint_shown, pos_x, pos_y, line_cur, content) = {
         let fim_state_lock = state.fim_state.read();
@@ -502,7 +497,7 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
         return Ok(());
     }
 
-    debug!("Accepting {} suggestion", accept_type,);
+    info!("Accepting {} suggestion", accept_type);
 
     let (new_x, new_y, final_content) =
         fim_accept_inner(accept_type, pos_x, pos_y, line_cur, content)?;
@@ -576,11 +571,11 @@ fn enable_plugin() -> LttwResult<()> {
     // Check filetype
     let filetype = get_current_filetype()?;
     if !state.config.read().is_filetype_enabled(&filetype) {
-        debug!("Plugin not enabled for filetype: {}", filetype);
+        info!("Plugin not enabled for filetype: {}", filetype);
         return Ok(());
     }
 
-    debug!("Enabling plugin");
+    info!("Enabling plugin");
 
     // Setup keymaps
     keymap::setup_keymaps()?;
@@ -606,7 +601,7 @@ fn disable_plugin() -> LttwResult<()> {
         return Ok(());
     }
 
-    debug!("Disabling plugin");
+    info!("Disabling plugin");
 
     // Hide FIM hints
     fim_hide()?;
@@ -655,14 +650,14 @@ fn on_move() -> LttwResult<()> {
     if let Some((allowed_buf, allowed_x, allowed_y)) = state.get_allow_comment_fim_cur_pos()
         && (buf_id != allowed_buf || pos_x != allowed_x || pos_y != allowed_y)
     {
-        debug!(
+        info!(
             "on_move clearing allow_comment_fim_cur_pos buf_id={buf_id}, pos_x={pos_x}, \
            pos_y={pos_y}, allowed_buf={allowed_buf}, allowed_x={allowed_x}, allowed_y={allowed_y}",
         );
         state.clear_allow_comment_fim_cur_pos();
     }
 
-    debug!("Cursor moved");
+    info!("Cursor moved");
     fim_hide()?;
     fim_try_hint(None)?;
     Ok(())
@@ -696,11 +691,11 @@ fn on_text_yank_post() -> LttwResult<()> {
     if !yanked.is_empty() {
         let filename = get_buf_filename().unwrap_or_default();
 
-        debug!("Yanked {} lines from {}", yanked.len(), filename,);
+        info!("Yanked {} lines from {}", yanked.len(), filename,);
 
         // Pick chunk from yanked text
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&state, &yanked, filename)?;
+        ring_buffer_lock.pick_chunk(&state, &yanked, filename);
     }
 
     Ok(())
@@ -715,11 +710,11 @@ fn on_buf_enter_gather_chunks() -> LttwResult<()> {
     if lines.len() > 3 {
         let filename = get_buf_filename().unwrap_or_default();
 
-        debug!("Entered buffer with {} lines: {}", lines.len(), filename,);
+        info!("Entered buffer with {} lines: {}", lines.len(), filename,);
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&state, &lines, filename.clone())?;
+        ring_buffer_lock.pick_chunk(&state, &lines, filename.clone());
     }
 
     Ok(())
@@ -734,11 +729,11 @@ fn on_buf_leave() -> LttwResult<()> {
     if lines.len() > 3 {
         let filename = get_buf_filename().unwrap_or_default();
 
-        debug!("Leaving buffer with {} lines: {}", lines.len(), filename,);
+        info!("Leaving buffer with {} lines: {}", lines.len(), filename,);
 
         // Pick chunk from buffer
         let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&state, &lines, filename)?;
+        ring_buffer_lock.pick_chunk(&state, &lines, filename);
     }
 
     Ok(())
@@ -747,7 +742,7 @@ fn on_buf_leave() -> LttwResult<()> {
 /// Handle BufEnter event - update file contents if not already stored
 /// This only reads from disk if there's no existing content saved for this file
 fn on_buf_enter_update_file_contents() -> LttwResult<()> {
-    debug!("on_buf_enter_update_file_contents");
+    info!("on_buf_enter_update_file_contents");
     let state = get_state();
 
     // Only update file contents if diff tracking is enabled
@@ -779,12 +774,12 @@ fn on_buf_write_post() -> LttwResult<()> {
     if lines.len() > 3 {
         let filename = get_buf_filename().unwrap_or_default();
 
-        debug!("Buffer saved with {} lines: {filename}", lines.len(),);
+        info!("Buffer saved with {} lines: {filename}", lines.len(),);
 
         // Pick chunk from buffer
         {
             let mut ring_buffer_lock = state.ring_buffer.write();
-            ring_buffer_lock.pick_chunk(&state, &lines, filename.clone())?;
+            ring_buffer_lock.pick_chunk(&state, &lines, filename.clone());
         }
 
         if state.config.read().diff_tracking_enabled {
@@ -815,7 +810,7 @@ fn on_buf_write_post() -> LttwResult<()> {
 
                 to_write.push((filename_.clone(), new_content));
 
-                debug!("diff_chunks: {:#?}", diff_chunks);
+                info!("diff_chunks: {:#?}", diff_chunks);
 
                 // Process diff chunks
                 if !diff_chunks.is_empty() {
@@ -826,9 +821,8 @@ fn on_buf_write_post() -> LttwResult<()> {
                     // TODO delete old intersecting chunks too
                     for chunk in &diff_chunks {
                         //let ring_chunk = chunk.to_ring_chunk();
-                        ring_buffer_lock
-                            .pick_chunk_inner(&chunk.content, chunk.filepath.clone())?;
-                        debug!("diff_chunk_added Added to queued: {}", chunk.filepath,);
+                        ring_buffer_lock.pick_chunk_inner(&chunk.content, chunk.filepath.clone());
+                        info!("diff_chunk_added Added to queued: {}", chunk.filepath,);
                     }
                 }
 

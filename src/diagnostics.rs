@@ -4,9 +4,9 @@
 // diagnostic information by buffer and line number.
 
 use {
-    crate::{LttwResult, get_state},
+    crate::{get_state, LttwResult},
     ahash::{HashMap, HashMapExt},
-    nvim_oxi::{Dictionary, String as NvimString, api::Buffer},
+    nvim_oxi::{api::Buffer, Dictionary, String as NvimString},
 };
 
 /// Represents a single diagnostic entry
@@ -126,7 +126,6 @@ pub fn handle_diagnostic_changed(_arg: nvim_oxi::Object) -> LttwResult<()> {
     let buf = Buffer::current();
     let buf_id = buf.handle();
     let buf_id_u64: u64 = buf_id.try_into().unwrap_or(0);
-    debug!(_arg);
 
     // Get diagnostics for this buffer using Neovim's vim.diagnostic.get()
     // We'll use a Lua callback to get the diagnostics directly
@@ -144,7 +143,7 @@ pub fn handle_diagnostic_changed(_arg: nvim_oxi::Object) -> LttwResult<()> {
     let json_str = match nvim_oxi::api::get_var::<String>("lttw_diagnostics") {
         Ok(s) => s,
         Err(e) => {
-            debug!(e);
+            info!("get_var error: {}", e);
             String::new()
         }
     };
@@ -203,7 +202,7 @@ pub fn handle_diagnostic_changed(_arg: nvim_oxi::Object) -> LttwResult<()> {
     let mut tracker = state.diagnostics.write();
     tracker.add_diagnostics(buf_id_u64, diagnostics.clone());
 
-    debug!(
+    info!(
         "DiagnosticChanged: Tracked {} diagnostics for buffer {}",
         diagnostics.len(),
         buf_id_u64
@@ -212,7 +211,7 @@ pub fn handle_diagnostic_changed(_arg: nvim_oxi::Object) -> LttwResult<()> {
     Ok(())
 }
 
-/// Get diagnostics for current buffer and output with debug!()
+/// Get diagnostics for current buffer and output with info!()
 pub fn debug_output_diagnostics(_arg: nvim_oxi::Object) -> LttwResult<()> {
     let state = get_state();
     let tracker = state.diagnostics.read();
@@ -224,20 +223,20 @@ pub fn debug_output_diagnostics(_arg: nvim_oxi::Object) -> LttwResult<()> {
 
     match buffer_diags {
         Some(lines) => {
-            debug!(
+            info!(
                 "Diagnostics for buffer {}: {} lines with diagnostics",
                 buf_id,
                 lines.len()
             );
             for (line, diags) in lines {
-                debug!("  Line {}: {} diagnostics", line, diags.len());
+                info!("  Line {}: {} diagnostics", line, diags.len());
                 for (i, diag) in diags.iter().enumerate() {
-                    debug!("    [{}] [{}] {}", i + 1, diag.severity, diag.message);
+                    info!("    [{}] [{}] {}", i + 1, diag.severity, diag.message);
                 }
             }
         }
         None => {
-            debug!("No diagnostics tracked for buffer {}", buf_id);
+            info!("No diagnostics tracked for buffer {}", buf_id);
         }
     }
 

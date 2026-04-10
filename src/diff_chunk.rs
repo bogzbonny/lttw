@@ -89,7 +89,7 @@ pub fn calculate_diff_between_contents(
     );
 
     let diff_output = gix_diff::blob::diff(Algorithm::Myers, &interner, unified)?;
-    debug!("state {diff_output}");
+    info!("state {diff_output}");
 
     // Parse the diff output to extract hunks
     // The output is a unified diff string

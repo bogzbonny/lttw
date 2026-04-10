@@ -45,7 +45,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
             .callback(|_| {
                 if let Err(e) = fim_accept(FimAcceptType::Full) {
                     // Log error but don't crash
-                    debug!("Error accepting FIM: {:?}", e);
+                    info!("Error accepting FIM: {:?}", e);
                 }
                 // TODO insert tab if not in hint mode
             })
@@ -61,7 +61,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
             .callback(|_| {
                 if let Err(e) = fim_accept(FimAcceptType::Line) {
                     // Log error but don't crash
-                    debug!("Error accepting FIM: {:?}", e);
+                    info!("Error accepting FIM: {:?}", e);
                 }
                 // TODO insert tab if not in hint mode
             })
@@ -77,7 +77,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
             .callback(|_| {
                 if let Err(e) = fim_cycle_next() {
                     // Log error but don't crash
-                    debug!("Error cycling to next FIM: {:?}", e,);
+                    info!("Error cycling to next FIM: {:?}", e,);
                 }
             })
             .build(),
@@ -92,7 +92,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
             .callback(|_| {
                 if let Err(e) = fim_cycle_prev() {
                     // Log error but don't crash
-                    debug!("Error cycling to previous FIM: {:?}", e,);
+                    info!("Error cycling to previous FIM: {:?}", e,);
                 }
             })
             .build(),
@@ -107,7 +107,7 @@ pub fn setup_keymaps() -> LttwResult<()> {
             .callback(|_| {
                 if let Err(e) = fim_try_hint_regenerate() {
                     // Log error but don't crash
-                    debug!("Error regenerating FIM: {:?}", e,);
+                    info!("Error regenerating FIM: {:?}", e,);
                 }
             })
             .build(),

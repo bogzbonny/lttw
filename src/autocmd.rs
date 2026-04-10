@@ -1,5 +1,4 @@
 use crate::{
-    LttwResult,
     diagnostics::handle_diagnostic_changed,
     filetype::on_buf_enter_check_filetype,
     fim_hide, get_state, on_buf_enter_gather_chunks, on_buf_enter_update_file_contents,
@@ -7,6 +6,7 @@ use crate::{
     ring_buffer::mode_change_maybe_start_processing_ring_updates,
     set_cur_buffer_info_in_state, set_mode_in_state,
     utils::{create_autocmd, del_autocmd},
+    LttwResult,
 };
 
 /// Setup autocmds function - creates autocmds for auto-triggering FIM and ring buffer
@@ -56,7 +56,7 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
     ids.push(id);
 
     if state.config.read().auto_fim {
-        debug!("registering auto fim autocmds");
+        info!("registering auto fim autocmds");
         let id = create_autocmd(
             ["CursorMoved", "CursorMovedI"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
@@ -75,7 +75,7 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         ["DiagnosticChanged"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
-                debug!("DiagnosticChanged autocmd fired");
+                info!("DiagnosticChanged autocmd fired");
                 let _ = handle_diagnostic_changed(nvim_oxi::Object::nil());
                 false
             })
@@ -104,7 +104,7 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         ["BufEnter"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
-                debug!("BufEnter diff_tracking_enabled autocmd fired");
+                info!("BufEnter diff_tracking_enabled autocmd fired");
                 let _ = on_buf_enter_update_file_contents();
                 false
             })
@@ -143,7 +143,7 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
 
     // Buffer write for ring buffer (only if diff tracking is enabled)
     if state.config.read().diff_tracking_enabled {
-        debug!("registering bufwritepost autocmd");
+        info!("registering bufwritepost autocmd");
         let id = create_autocmd(
             ["BufWritePost"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()

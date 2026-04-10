@@ -15,7 +15,7 @@ use {
 // TODO make '500' here a param, (500ms max wait time for the result)
 pub fn trigger_lsp_completions_async() -> LttwResult<()> {
     utils::assert_not_tokio_worker();
-    debug!("Requesting LSP completions at current cursor position");
+    info!("Requesting LSP completions at current cursor position");
 
     // For testing directly in neovim
     // :lua vim.print(vim.lsp.buf_request_sync(0, 'textDocument/completion', vim.lsp.util.make_position_params(0, 'utf-8'), 1000))
@@ -64,22 +64,22 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimComple
     };
     nvim_oxi::api::del_var("lttw_completion")?; // clear the var now that we've gotten it
 
-    //debug!("retrieved lsp completions: {}", json_str);
+    //info!("retrieved lsp completions: {}", json_str);
 
     let response: utils::CompletionResponse = serde_json::from_str(&json_str)?;
-    //debug!("response: {:?}", response);
+    //info!("response: {:?}", response);
 
     let (pos_x, pos_y) = (response.pos_x, response.pos_y);
     let (x, y) = get_pos();
     if pos_x != x || pos_y != y {
-        debug!("retrieve_lsp_completions");
+        info!("retrieve_lsp_completions");
         return Ok(vec![]);
     };
     if get_current_buffer_id() != response.buffer_id {
-        debug!("retrieve_lsp_completions");
+        info!("retrieve_lsp_completions");
         return Ok(vec![]);
     }
-    debug!("retrieve_lsp_completions");
+    info!("retrieve_lsp_completions");
     let line_cur = get_buf_line(pos_y);
     let mut seen = HashSet::default();
     let mut filtered_comps: Vec<(FimCompletionMessage, u64)> = response
@@ -133,11 +133,11 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimComple
             seen.insert(text.clone());
 
             // NOTE use the full suggestion here, NOT the prefix stripped text!
-            debug!("hi");
+            info!("hi");
             let ident = strip_to_first_identifier(&comp.text);
-            debug!(ident);
+            info!(ident);
             let usage = state.get_word_statistic_usage(&ident);
-            debug!(usage);
+            info!(usage);
 
             let fim_resp = FimResponse {
                 content: text,
@@ -145,7 +145,7 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimComple
                 tokens_cached: 0,
                 truncated: false,
             };
-            debug!("text: {}, usage: {}", fim_resp.content, usage);
+            info!("text: {}, usage: {}", fim_resp.content, usage);
 
             Some((
                 FimCompletionMessage {
@@ -176,7 +176,7 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimComple
     //for hash in &hashes {
     //    cache_lock.insert(hash.clone(), resp.clone());
     //}
-    debug!("retrieve_lsp_completions");
+    info!("retrieve_lsp_completions");
 
     Ok(filtered_comps)
 }
