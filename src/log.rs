@@ -1,18 +1,18 @@
 use {
-    opentelemetry::{KeyValue, global, trace::TracerProvider as _},
+    opentelemetry::{global, trace::TracerProvider as _, KeyValue},
     opentelemetry_sdk::{
-        Resource,
         metrics::{MeterProviderBuilder, PeriodicReader, SdkMeterProvider},
         trace::{RandomIdGenerator, Sampler, SdkTracerProvider},
+        Resource,
     },
     opentelemetry_semantic_conventions::{
-        SCHEMA_URL,
         attribute::{DEPLOYMENT_ENVIRONMENT_NAME, SERVICE_VERSION},
+        SCHEMA_URL,
     },
     std::str::FromStr,
     tracing_core::Level,
     tracing_opentelemetry::{MetricsLayer, OpenTelemetryLayer},
-    tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt},
+    tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer},
 };
 
 // Re-export tracing macros for use throughout the codebase
@@ -24,7 +24,7 @@ macro_rules! debug {
     // Single expression (variable) - like the old info!(var) syntax
     // This expands to a format string with debug formatting
     ($expr:expr) => {{
-        tracing::debug!(target: "lttw", "{} = {:?}", stringify!(), );
+        tracing::debug!(target: "lttw", "{} = {:?}", stringify!($expr), $expr );
     }};
     // Format-style variadic - like the old info!("message {}", arg) syntax
     ($($arg:tt)*) => {{

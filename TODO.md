@@ -9,9 +9,6 @@ just like the existing debug system works.
     when openning for the first time (with vf) - subsiquent switches to the
     buffer will activate it
 01. remove matching suffix from LSP completions 
-
-^^^^^^^^^ DONE
-
 05. Integrate in better usage of lsp autocompletions
      - TODO use some of these autocompletion details better rather than just
        truncating
@@ -23,17 +20,37 @@ just like the existing debug system works.
          ${3:truncated}, ${4:ring_chunks}, ${5:ring_n_chunks},
          ${6:ring_n_evict}, ${7:ring_queued}, ${8:ring_queue_length},
          ${9:cache_size}, ${10:max_cache_keys})$0",
-       
      - NEW CONFIG OPTION something which only takes one arg, should
        automatically be filled in eg. typing Ok[CUR]some_var  then pressing tab
        should autocomplete to Ok(some_var)
+01. This situation is for some reason not putting things inside: 
+       if let Err(...)e = fim_hide();
+     comp.text = "Err($1)$0" - need to strip the final $0
 
-now add another parameter to the function 'next_var: Option<String>' if next_var
-is Some and if there is EXACTLY 1 regex match of the form ${NN:anything} then
-rather than using … insert the contents of next_var
+^^^^^^^^^ DONE
 
-add a new function: `brackets_matching` which takes in a string and outputs a
-bool as to whether all open brackets match all closed brackets. test for < [ ( {
+01. Allow for suffix trimming IFF A SINGLE character is removed at the end. 
+    Eg. if match is Option<String> and the suffix is String then the suffix is a
+    match up to that character. 
+
+00. feeling a bit slow should probably NOT initiate the infill until a pause has
+    completed. Test by holding the backspace on code vs comment
+      - there is currently NO ignoring repeated keystrokes for cache completion 
+        OR LSP completion - should add a small delay using a last keystroke biz. 
+         - maybe use "try_read" on the "last move time" and just skip the
+           completion if its we can't try
+      - ONLY compute the next_var at the time when we know we'll need it when
+        processing a completion. (use Option Option)
+      - on my computer the key repeat rate is about 66 ms maybe make this special debouce
+        80ms? - or fold lsp into the other debounce?
+
+01. LSP rematch options eg. Ok() is predicted a decent amount which should
+    probably re rerouted to Ok(()) (config option this) 
+    - comp.text = "let mut $1 = $0;" is funny and turns into let mut ... = ;
+    it would almost make sense to have it just be 'let mut '[truncated]
+     - having a predictable reusable pattern for this is funny though
+     - maybe this is one for the rematch routine
+
 
 ------------------------
 
@@ -145,14 +162,16 @@ local query_string = [[
     time (hence you don't know if you're waiting for an llm or waiting for
     nothing!).
      - reduce_cognitive_offloading_ratio = 25%
+     - NOTE this should not apply to LSP predictions
 
 40. README gif of homer with the bird
      - link it to https://www.youtube.com/watch?v=R_rF4kcqLkI
 
-40. Beefy arms link up LLM + LSP 
-
 ------------------------
 POST RELEASE
+
+10. Allow for case-insenstive LSP so If I typed 'op' it could still match with
+    Option<...>
 
 30. Small Statistic completion predictions: 
      - we're definately in HLM territory here
@@ -173,6 +192,9 @@ POST RELEASE
        codebase you're working on in higher)
 
 50. Offline/Online mode for getting responses locally or over the web
+     - it would be really nice if this could be a persistant setting which is
+       not in the config... so when you flip it just stays flipped 
+     - "stateful toggle"?
 
 50. Bring the entire FIM system into LTTW for further customization
      - allow more control over cache ordering if one was to be evicted?

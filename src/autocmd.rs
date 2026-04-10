@@ -21,8 +21,9 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         ["InsertLeavePre", "CompleteChanged"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
-                let _ = fim_hide();
-                // TODO log error
+                if let Err(e) = fim_hide() {
+                    error!(e)
+                }
                 false
             })
             .build(),

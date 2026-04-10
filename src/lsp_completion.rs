@@ -93,6 +93,7 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimComple
     let line_cur = get_buf_line(pos_y);
     let suffix = line_cur.chars().skip(pos_x).collect::<String>();
     let mut seen = HashSet::default();
+    let non_split_chs = ['_', '.', '(', '[', '{', '<', '>', ')', '}', ']']; // TODO parameterize
     let mut filtered_comps: Vec<(FimCompletionMessage, u64)> = response
         .items
         .into_iter()
@@ -107,13 +108,14 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimComple
                 .take(pos_x - comp.start_char)
                 .collect::<String>();
 
-            // get the next word chunk seperated by space from the suffix
+            // get the next word chunk seperated by space/, from the suffix
             let next_var = if insert_one_var {
                 suffix
-                    .split_whitespace()
+                    .split(|c: char| !(c.is_alphanumeric() || non_split_chs.contains(&c)))
                     .next()
-                    .map(|s| s.to_string())
+                    .map(trim_trailing_unmatched_closing_brackets)
                     .filter(|next_var| brackets_matching(next_var))
+                    .map(|s| s.to_string())
             } else {
                 None
             };
@@ -123,8 +125,15 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimComple
                 &prefix,
                 &suffix,
                 truncate_vars,
-                next_var,
+                next_var.clone(),
             )?;
+
+            let span = tracing::span!(tracing::Level::DEBUG, "lsp completion");
+            let _enter = span.enter();
+            debug!(comp.text);
+            debug!(suffix);
+            debug!(prefix);
+            debug!(next_var);
 
             // filter out duplicates
             if seen.contains(&text) {
@@ -216,6 +225,52 @@ pub fn brackets_matching(s: &str) -> bool {
     stack.is_empty()
 }
 
+// NOTE this DOESN'T trim trailing open brackets!
+// assert_eq!(trim_trailing_unmatched_closing_brackets("((var))("), "((var))(");
+// assert_eq!(trim_trailing_unmatched_closing_brackets("((var))(("), "((var))((");
+fn trim_trailing_unmatched_closing_brackets(s: &str) -> String {
+    let mut chars: Vec<char> = s.chars().collect();
+    let mut matched = vec![false; chars.len()];
+    let mut stack = Vec::new();
+
+    // Match brackets: record matched pairs
+    for (i, &c) in chars.iter().enumerate() {
+        match c {
+            '(' | '[' | '{' | '<' => stack.push(i),
+            ')' if matches!(stack.last(), Some(&j) if chars[j] == '(') => {
+                matched[stack.pop().unwrap()] = true;
+                matched[i] = true;
+            }
+            ']' if matches!(stack.last(), Some(&j) if chars[j] == '[') => {
+                matched[stack.pop().unwrap()] = true;
+                matched[i] = true;
+            }
+            '}' if matches!(stack.last(), Some(&j) if chars[j] == '{') => {
+                matched[stack.pop().unwrap()] = true;
+                matched[i] = true;
+            }
+            '>' if matches!(stack.last(), Some(&j) if chars[j] == '<') => {
+                matched[stack.pop().unwrap()] = true;
+                matched[i] = true;
+            }
+            _ => {}
+        }
+    }
+
+    // Trim trailing unmatched closing brackets
+    let mut end = chars.len();
+    while end > 0 {
+        let i = end - 1;
+        match chars[i] {
+            ')' | ']' | '}' | '>' if !matched[i] => end = i,
+            _ => break,
+        }
+    }
+
+    chars.truncate(end);
+    chars.into_iter().collect()
+}
+
 fn trim_completion(
     completion: &str,
     prefix: &str,
@@ -249,6 +304,9 @@ fn trim_completion(
             text.truncate(mat.start());
         }
     } else {
+        // strip the final $0 if it exists
+        text = text.strip_suffix("$0").unwrap_or(&text).to_string();
+
         // Remove all matches and record position of first match
         let mut first_match_pos: Option<usize> = None;
         let matches: Vec<_> = re.find_iter(&text).collect();
@@ -258,9 +316,29 @@ fn trim_completion(
             first_match_pos = Some(mat.start());
         }
 
-        // Count curly matches before removal (to determine if exactly 1)
+        // Count curly matches and dollar-only matches
         let curly_matches: Vec<_> = curly_re.find_iter(&text).collect();
-        let is_single_curly = curly_matches.len() == 1;
+        let curly_count = curly_matches.len();
+
+        // Count only $NN matches (not ${...})
+        // Find all $NN matches and filter out those that are part of ${...}
+        let dollar_simple_re = Regex::new(r"\$\d{1,2}").unwrap();
+        let dollar_only_matches: Vec<_> = dollar_simple_re
+            .find_iter(&text)
+            .filter(|mat| {
+                // Check if this match is NOT inside a ${...} pattern
+                // The character immediately before the $ should not be {
+                let start_pos = mat.start();
+                start_pos == 0 || text.chars().nth(start_pos - 1) != Some('{')
+            })
+            .collect();
+        let dollar_only_count = dollar_only_matches.len();
+
+        // Determine if next_var should be inserted:
+        // - Exactly 1 curly match (${NN:...}), OR
+        // - No curly matches AND exactly 1 dollar-only match ($NN)
+        let should_insert_next_var =
+            curly_count == 1 || (curly_count == 0 && dollar_only_count == 1);
 
         // Remove all matches by iterating in reverse to maintain positions
         let mut text_to_modify = text.clone();
@@ -274,8 +352,7 @@ fn trim_completion(
         if let Some(first_pos) = first_match_pos
             && first_pos < text.len()
         {
-            // Check if there's exactly 1 curly match and next_var is Some
-            if is_single_curly {
+            if should_insert_next_var {
                 if let Some(next_var_text) = next_var {
                     text.insert_str(first_pos, &next_var_text);
                 } else {
@@ -770,17 +847,18 @@ mod tests {
 
     #[test]
     fn test_trim_completion_next_var_only_dollar_markers() {
-        // Only $NN markers (no curly) with next_var Some - use ellipsis
+        // Only $NN markers (no curly) with next_var Some - insert next_var
+        // Per new requirement: NO curly matches + exactly 1 $NN match = insert next_var
         let completion = "HelloWorld$1More";
         let prefix = "Hello";
         let suffix = "";
         let next_var = Some("replaced".to_string());
         // After stripping prefix: "World$1More"
         // Remove $1 -> "WorldMore"
-        // 0 curly matches, so use ellipsis at position 5
+        // 0 curly matches, 1 dollar match ($1), so insert next_var at position 5
         assert_eq!(
             trim_completion(completion, prefix, suffix, false, next_var),
-            Some("World…More".to_string())
+            Some("WorldreplacedMore".to_string())
         );
     }
 
@@ -884,5 +962,83 @@ mod tests {
         // Complex valid nested structures
         assert!(brackets_matching("{[<(abc)>]}"));
         assert!(brackets_matching("class<T> { method() { <T> } }"));
+    }
+
+    #[test]
+    fn test_basic_trimming() {
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var"), "var");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var)"), "var");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var))"), "var");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var())"), "var()");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var()"), "var()");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var[]"), "var[]");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var{}"), "var{}");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var<>"), "var<>");
+    }
+
+    #[test]
+    fn test_mismatched_brackets() {
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var)"), "var");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var]"), "var");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var}"), "var");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var>"), "var");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var)]"), "var");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var}]"), "var");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("var}>"), "var");
+    }
+
+    #[test]
+    fn test_nested_matching_brackets_with_trailing_unmatched() {
+        assert_eq!(
+            trim_trailing_unmatched_closing_brackets("a(b[c{d}e]f)"),
+            "a(b[c{d}e]f)"
+        );
+        assert_eq!(
+            trim_trailing_unmatched_closing_brackets("a(b[c{d}e]f))"),
+            "a(b[c{d}e]f)"
+        );
+        assert_eq!(
+            trim_trailing_unmatched_closing_brackets("a(b[c{d}e]f)))"),
+            "a(b[c{d}e]f)"
+        );
+        assert_eq!(
+            trim_trailing_unmatched_closing_brackets("a(b[c{d}e]f)))g"),
+            "a(b[c{d}e]f)))g"
+        );
+    }
+
+    #[test]
+    fn test_unbalanced_with_partial_trim() {
+        assert_eq!(trim_trailing_unmatched_closing_brackets("(var))"), "(var)");
+        assert_eq!(
+            trim_trailing_unmatched_closing_brackets("((var)))"),
+            "((var))"
+        );
+
+        // NOTE the following should not match as they are openning brackets
+        assert_eq!(
+            trim_trailing_unmatched_closing_brackets("((var))("),
+            "((var))("
+        );
+        assert_eq!(
+            trim_trailing_unmatched_closing_brackets("((var))(("),
+            "((var))(("
+        );
+    }
+
+    #[test]
+    fn test_angle_brackets() {
+        assert_eq!(trim_trailing_unmatched_closing_brackets("a<b>"), "a<b>");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("a<b>>"), "a<b>");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("a<b>>>"), "a<b>");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("a<b>>c"), "a<b>>c");
+    }
+
+    #[test]
+    fn test_empty_and_edge_cases() {
+        assert_eq!(trim_trailing_unmatched_closing_brackets(""), "");
+        assert_eq!(trim_trailing_unmatched_closing_brackets(")"), "");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("))"), "");
+        assert_eq!(trim_trailing_unmatched_closing_brackets("()"), "()");
     }
 }

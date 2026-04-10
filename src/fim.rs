@@ -14,8 +14,8 @@ use {
         plugin_state::{get_state, PluginState},
         ring_buffer::ExtraContext,
         utils::{
-            clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input, is_in_comment,
-            set_buf_extmark, set_buf_extmark_top_right,
+            self, clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input,
+            is_in_comment, set_buf_extmark, set_buf_extmark_top_right,
         },
         Error, FimCompletionMessage, FimTimingsData, LttwResult, LTTW_FIM_HIGHLIGHT,
     },
@@ -886,7 +886,7 @@ pub fn render_fim_suggestion(
     completion: &FimResponse,
     line_cur: String,
 ) -> LttwResult<()> {
-    let content = &*completion.content;
+    let sug_content = &*completion.content;
 
     let timings = completion.timings.as_ref().map(|timings| {
         FimTimingsData::new(
@@ -897,18 +897,18 @@ pub fn render_fim_suggestion(
     });
 
     // Parse content into lines
-    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    let mut sug_lines: Vec<String> = sug_content.lines().map(|s| s.to_string()).collect();
 
     // Remove trailing empty lines
-    while lines.last().map(|s| s.is_empty()).unwrap_or(false) {
-        lines.pop();
+    while sug_lines.last().map(|s| s.is_empty()).unwrap_or(false) {
+        sug_lines.pop();
     }
 
-    if lines.is_empty() {
-        lines.push(String::new());
+    if sug_lines.is_empty() {
+        sug_lines.push(String::new());
     }
 
-    // Filter out duplicate text - remove prefix that matches existing suffix
+    // Filter out duplicate text - remove suggested prefix that matches existing suffix
     // Safety: ensure bounds before slicing
     let line_cur_len = line_cur.len();
     let safe_pos_x = pos_x.min(line_cur_len);
@@ -917,43 +917,29 @@ pub fn render_fim_suggestion(
     } else {
         ""
     };
-    if !line_cur_suffix.is_empty() && !lines.is_empty() && !lines[0].is_empty() {
+    if !line_cur_suffix.is_empty() && !sug_lines.is_empty() && !sug_lines[0].is_empty() {
         // Check if the beginning of the suggestion duplicates existing text
         for i in (0..line_cur_suffix.len()).rev() {
-            if lines[0].starts_with(&line_cur_suffix[..=i]) {
-                // Remove the duplicate part from the first line
+            if sug_lines[0].starts_with(&line_cur_suffix[..=i]) {
+                // Remove the duplicate part from the first line of suggestion
                 let dup_len = line_cur_suffix[..=i].len();
-                if dup_len < lines[0].len() {
-                    lines[0] = lines[0][dup_len..].to_string();
+                if dup_len < sug_lines[0].len() {
+                    sug_lines[0] = sug_lines[0][dup_len..].to_string();
                 } else {
-                    lines[0] = String::new();
+                    sug_lines[0] = String::new();
                 }
                 break;
             }
         }
     }
 
-    // Append suffix to last line
-    let suffix_end = std::cmp::min(pos_x, line_cur.len());
-    let suffix = if suffix_end < line_cur.len() {
-        &line_cur[suffix_end..]
-    } else {
-        ""
-    };
-    if !lines.is_empty() {
-        let last_idx = lines.len() - 1;
-        let mut last_line = lines[last_idx].clone();
-        last_line += suffix;
-        lines[last_idx] = last_line;
-    }
-
     // Check if only whitespace
-    let joined = lines.join("\n");
+    let joined = sug_lines.join("\n");
     let hint_is_valid = !joined.trim().is_empty();
 
     info!(
         "Displaying FIM hint ({} lines, valid: {})",
-        lines.len(),
+        sug_lines.len(),
         hint_is_valid
     );
 
@@ -963,7 +949,7 @@ pub fn render_fim_suggestion(
         pos_x,
         pos_y,
         line_cur.to_string(),
-        lines,
+        sug_lines,
         timings,
     );
 
@@ -1004,8 +990,20 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
     if let Some(ns_id) = extmark_ns {
         // Build virtual text string - first line of suggestion
         let suggestion_text = content[0].clone();
-        let (suggestion_text, use_inline) =
-            trim_suggestion_curr_line(&suggestion_text, pos_x, &line_cur);
+
+        let suffix = if pos_x <= line_cur.len() {
+            &line_cur[pos_x..]
+        } else {
+            ""
+        };
+        let (suggestion_text, new_suffix, use_inline) =
+            trim_suggestion_and_suffix_on_curr_line(&suggestion_text, suffix);
+
+        let suggestion_text = if let Some(new_suffix) = new_suffix {
+            suggestion_text.to_owned() + &new_suffix
+        } else {
+            suggestion_text.to_string()
+        };
 
         // Create extmark opts for suggestion text
         let mut suggestion_opts = SetExtmarkOptsBuilder::default();
@@ -1017,10 +1015,11 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
         let suggestion_virt_text = vec![(suggestion_text, LTTW_FIM_HIGHLIGHT.to_string())];
         suggestion_opts.virt_text(suggestion_virt_text);
 
-        let mut suggestion_pos = ExtmarkVirtTextPosition::Overlay;
-        if content.len() == 1 && use_inline {
-            suggestion_pos = ExtmarkVirtTextPosition::Inline;
-        }
+        let suggestion_pos = if content.len() == 1 && use_inline {
+            ExtmarkVirtTextPosition::Inline
+        } else {
+            ExtmarkVirtTextPosition::Overlay
+        };
         suggestion_opts.virt_text_pos(suggestion_pos);
 
         // Add multi-line support for the suggestion - display rest of suggestion lines below
@@ -1212,25 +1211,51 @@ impl std::fmt::Display for FimAcceptType {
     }
 }
 
-// returns if Inline fill should be used
-pub fn trim_suggestion_curr_line<'a>(
+/// Trims the suggestion if there are matching characters with the beginning of the suffix of the
+/// current line.
+/// Trims the suffix of the current line (and not the suggestion) if while ignoring the final
+/// character of the suggestion the suffix matches the suggestion. This is useful in situations
+/// such as:
+///     Eg. if suggestion is "Option<String>" and the suffix is "String {" then the suffix matches
+///     with the end of the suggestion if ">" was ignored, and thus the final completion should be
+///     "Option<String> {"
+///  
+/// Returns:
+///   - trimmed suggestion
+///   - trimmed suffix
+///   - whether infill should be used
+#[tracing::instrument]
+pub fn trim_suggestion_and_suffix_on_curr_line<'a>(
     suggestion: &'a str,
-    pos_x: usize,
-    line_cur: &str,
-) -> (&'a str, bool) {
-    // If only one line, just replace the current line
-    let suffix = if pos_x <= line_cur.len() {
-        &line_cur[pos_x..]
-    } else {
-        ""
-    };
-
+    suffix: &str,
+) -> (&'a str, Option<String>, bool) {
     // trim the first_line suffix if it is the same as the suffix
+    debug!(
+        "trim_suggestion_and_suffix_on_curr_line: suggestion: '{}', suffix: '{}'",
+        suggestion, suffix
+    );
     if suggestion.ends_with(suffix) {
-        (suggestion.trim_end_matches(suffix), true)
+        debug!("1");
+        (suggestion.trim_end_matches(suffix), None, true)
     } else {
+        // check to see if the suffix should be trimmed at all if matches the suggestion if
+        // the suggestions final ch was removed
+        let sug_one_less = if !suggestion.is_empty() {
+            &suggestion[..suggestion.len() - 1]
+        } else {
+            suggestion
+        };
+
+        debug!("sug_one_less: {}", sug_one_less);
+        let new_suffix = utils::remove_matching_prefix(sug_one_less, suffix);
+        debug!("new_suffix: {}", new_suffix);
+        if new_suffix.len() == suffix.len() {
+            //return (suggestion, None, suggestion.len() < suffix.len());
+            return (suggestion, None, true);
+        };
+
         // If suggestion.len() less than suffix then assume infill display as okay
-        (suggestion, suggestion.len() < suffix.len())
+        (suggestion, Some(new_suffix), false) // do not infill we must overlay
     }
 }
 
@@ -1271,13 +1296,19 @@ pub fn accept_fim_suggestion(
         } else {
             ""
         };
-        let (first_line, is_inline) = trim_suggestion_curr_line(&first_line, pos_x, line_cur);
+        let (first_line, new_suffix, is_inline) =
+            trim_suggestion_and_suffix_on_curr_line(&first_line, suffix);
         let inline = if is_inline {
             Some(prefix.len() + first_line.len())
         } else {
             None
         };
-        (prefix + first_line + suffix, inline)
+        let suffix = if let Some(suffix) = new_suffix {
+            suffix
+        } else {
+            suffix.to_string()
+        };
+        (prefix + first_line + &suffix, inline)
     } else {
         (prefix + &first_line, None)
     };

@@ -35,12 +35,8 @@ pub fn assert_not_tokio_worker() {
         && n.contains("tokio")
     {
         // Backtrace is captured only in debug builds
-        #[cfg(debug_assertions)]
-        {
-            let bt = Backtrace::force_capture();
-            info!("assert_not_tokio_worker Backtrace:\n{:?}", bt);
-        }
-
+        let bt = Backtrace::force_capture();
+        error!("assert_not_tokio_worker Backtrace:\n{:?}", bt);
         panic!("function must not be called from Tokio runtime worker thread (name: {n})");
     }
 }
@@ -406,9 +402,78 @@ pub fn filter_tail_chars(arr1: &str, arr2: &str) -> String {
     arr1_chs[..n - max_k].iter().collect()
 }
 
+// like filter_tail_chars but filters the prefix out from arr2
+#[tracing::instrument]
+pub fn remove_matching_prefix(arr1: &str, arr2: &str) -> String {
+    let arr1_chs: Vec<char> = arr1.chars().collect();
+    let arr2_chs: Vec<char> = arr2.chars().collect();
+    let n = arr1_chs.len();
+    let m = arr2_chs.len();
+
+    let mut max_k = 0;
+    for k in 1..=m.min(n) {
+        if arr1_chs[n - k..].iter().eq(arr2_chs[..k].iter()) {
+            max_k = k;
+        }
+    }
+
+    arr2_chs[max_k..].iter().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn test_no_overlap() {
+        assert_eq!(remove_matching_prefix("abc", "def"), "def");
+        assert_eq!(remove_matching_prefix("xyz", "abc"), "abc");
+    }
+
+    #[test]
+    fn test_full_prefix_match() {
+        assert_eq!(remove_matching_prefix("abc", "abc"), "");
+        assert_eq!(remove_matching_prefix("aaaa", "aaaaaa"), "aa");
+    }
+
+    #[test]
+    fn test_partial_prefix_match() {
+        assert_eq!(remove_matching_prefix("abc", "abcd"), "d");
+        assert_eq!(remove_matching_prefix("hello", "helloworld"), "world");
+    }
+
+    #[test]
+    fn test_suffix_longer_than_prefix() {
+        assert_eq!(remove_matching_prefix("ab", "abc"), "c"); // XXX
+    }
+
+    #[test]
+    fn test_prefix_longer_than_suffix() {
+        assert_eq!(remove_matching_prefix("abc", "bc"), "");
+        assert_eq!(remove_matching_prefix("abc", "abcd"), "d");
+    }
+
+    #[test]
+    fn test_unicode() {
+        assert_eq!(remove_matching_prefix("日本", "日本語"), "語");
+        assert_eq!(remove_matching_prefix("🚀", "🚀🎉"), "🎉");
+    }
+
+    #[test]
+    fn test_empty_arr1() {
+        assert_eq!(remove_matching_prefix("", "abc"), "abc");
+    }
+
+    #[test]
+    fn test_empty_arr2() {
+        assert_eq!(remove_matching_prefix("abc", ""), "");
+    }
+
+    #[test]
+    fn test_both_empty() {
+        assert_eq!(remove_matching_prefix("", ""), "");
+    }
+
+    //------------
 
     #[test]
     fn test_filter_tail_chars_example_1() {
