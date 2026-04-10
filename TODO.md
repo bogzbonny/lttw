@@ -1,39 +1,5 @@
-10. tracing support
-integrate in the tracing and tracing-opentelemetry crates into this library.
-Replace all instances of this crates \x60info!\x60 with the tracing \x60info!\x60 macro.
-If config.debug_enabled_at_startup is disabled, then telemetry should NOT start
-during startup.  Ensure that when debugging is enabled that the new tracing
-system will still write all the debug information into the `./lttw.log` file
-just like the existing debug system works.
-01. BUG on_buf_enter_update_file_contents - for some reason its not triggered
-    when openning for the first time (with vf) - subsiquent switches to the
-    buffer will activate it
-01. remove matching suffix from LSP completions 
-05. Integrate in better usage of lsp autocompletions
-     - TODO use some of these autocompletion details better rather than just
-       truncating
-     - it would be nice to be able to accept Some_fn(...) and keep the closing backet
-       - maybe just using the … character as the marker (nice for viewing) and
-         then put the cursor there.
-       - example: 
-         newText = "build_info_string(${1:timings}, ${2:tokens_cached},
-         ${3:truncated}, ${4:ring_chunks}, ${5:ring_n_chunks},
-         ${6:ring_n_evict}, ${7:ring_queued}, ${8:ring_queue_length},
-         ${9:cache_size}, ${10:max_cache_keys})$0",
-     - NEW CONFIG OPTION something which only takes one arg, should
-       automatically be filled in eg. typing Ok[CUR]some_var  then pressing tab
-       should autocomplete to Ok(some_var)
-01. This situation is for some reason not putting things inside: 
-       if let Err(...)e = fim_hide();
-     comp.text = "Err($1)$0" - need to strip the final $0
-01. Allow for suffix trimming IFF A SINGLE character is removed at the end. 
-    Eg. if match is Option<String> and the suffix is String then the suffix is a
-    match up to that character. 
 
 ^^^^^^^^^ DONE
-
-00. bracket matching suffix removal goes to the end of the line
-
 
 00. feeling a bit slow should probably NOT initiate the infill until a pause has
     completed. Test by holding the backspace on code vs comment

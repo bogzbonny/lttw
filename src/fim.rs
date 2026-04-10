@@ -1240,10 +1240,15 @@ pub fn trim_suggestion_and_suffix_on_curr_line<'a>(
     } else {
         // check to see if the suffix should be trimmed at all if matches the suggestion if
         // the suggestions final ch was removed
-        let sug_one_less = if !suggestion.is_empty() {
-            &suggestion[..suggestion.len() - 1]
-        } else {
+        let sug_one_less = if suggestion.is_empty() {
             suggestion
+        } else {
+            let last_char_start = suggestion
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            &suggestion[..last_char_start]
         };
 
         debug!("sug_one_less: {}", sug_one_less);

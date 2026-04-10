@@ -93,7 +93,15 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimComple
     let line_cur = get_buf_line(pos_y);
     let suffix = line_cur.chars().skip(pos_x).collect::<String>();
     let mut seen = HashSet::default();
-    let non_split_chs = ['_', '.', '(', '[', '{', '<', '>', ')', '}', ']']; // TODO parameterize
+    let non_split_chs: Vec<char> = vec!['_', '.', '(', '[', '{', '<', '>', ')', '}', ']']; // TODO parameterize
+
+    let mut last_start_char = None;
+
+    // we try not to recompute next_var unless the start_chars change (rare)
+    // start with not computing it at all to begin with and only compute
+    // it on the first time we ACTUALLY would need to
+    let mut next_var: Option<Option<String>> = None;
+
     let mut filtered_comps: Vec<(FimCompletionMessage, u64)> = response
         .items
         .into_iter()
@@ -108,24 +116,21 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<FimComple
                 .take(pos_x - comp.start_char)
                 .collect::<String>();
 
-            // get the next word chunk seperated by space/, from the suffix
-            let next_var = if insert_one_var {
-                suffix
-                    .split(|c: char| !(c.is_alphanumeric() || non_split_chs.contains(&c)))
-                    .next()
-                    .map(trim_trailing_unmatched_closing_brackets)
-                    .filter(|next_var| brackets_matching(next_var))
-                    .map(|s| s.to_string())
-            } else {
-                None
-            };
+            if let Some(last_start_char) = last_start_char
+                && last_start_char != comp.start_char
+            {
+                next_var = None;
+            }
+            last_start_char = Some(comp.start_char);
 
             let text = trim_completion(
                 comp.text.as_str(),
                 &prefix,
                 &suffix,
                 truncate_vars,
-                next_var.clone(),
+                insert_one_var,
+                &non_split_chs,
+                &mut next_var,
             )?;
 
             let span = tracing::span!(tracing::Level::DEBUG, "lsp completion");
@@ -276,7 +281,9 @@ fn trim_completion(
     prefix: &str,
     suffix: &str,
     truncate: bool,
-    next_var: Option<String>,
+    insert_one_var: bool,
+    non_split_chs: &[char],
+    next_var: &mut Option<Option<String>>,
 ) -> Option<String> {
     // Only complete partially written text
     if prefix.is_empty() {
@@ -353,10 +360,33 @@ fn trim_completion(
             && first_pos < text.len()
         {
             if should_insert_next_var {
-                if let Some(next_var_text) = next_var {
-                    text.insert_str(first_pos, &next_var_text);
-                } else {
-                    text.insert(first_pos, '…');
+                // get the next word chunk seperated by space/ from the suffix
+
+                // compute next_var if it doesn't exist yet
+                if next_var.is_none() {
+                    let to_write = if insert_one_var {
+                        suffix
+                            .split(|c: char| !(c.is_alphanumeric() || non_split_chs.contains(&c)))
+                            .next()
+                            .map(trim_trailing_unmatched_closing_brackets)
+                            .filter(|next_var| brackets_matching(next_var))
+                            .map(|s| s.to_string())
+                    } else {
+                        None
+                    };
+                    *next_var = Some(to_write);
+                }
+
+                match next_var {
+                    Some(Some(v)) => {
+                        text.insert_str(first_pos, v);
+                    }
+                    Some(None) => {
+                        text.insert(first_pos, '…');
+                    }
+                    None => {
+                        error!("impossible");
+                    }
                 }
             } else {
                 text.insert(first_pos, '…');
