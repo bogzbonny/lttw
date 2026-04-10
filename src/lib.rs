@@ -406,6 +406,7 @@ fn process_pending_display() -> LttwResult<()> {
 
     let mut retry = 0;
     if let Some(msg) = msg_to_render {
+        info!("valid message about to render: {:?}", msg);
         if msg.do_render {
             render_fim_suggestion(
                 state.clone(),
@@ -435,23 +436,29 @@ fn process_pending_display() -> LttwResult<()> {
 // should we abort the completion because the content has changed since we started this completion
 #[tracing::instrument]
 fn msg_is_valid_to_display(msg: &FimCompletionMessage) -> bool {
+    info!("{:?}", msg);
     if msg.completion.content.is_empty() || msg.completion.content.trim().is_empty() {
+        info!("returning false");
         return false;
     }
     let id = get_current_buffer_id();
     if id != msg.buffer_id {
+        info!("returning false");
         return false;
     }
 
     let (x, y) = get_pos();
     if msg.cursor_y != y || msg.cursor_x != x {
+        info!("returning false");
         return false;
     };
     let curr_line = get_buf_line(y);
     if curr_line != msg.line_cur {
+        info!("returning false");
         return false;
     }
 
+    info!("returning true");
     true
 }
 

@@ -13,6 +13,7 @@
         80ms? - or fold lsp into the other debounce?
 05. ensure that when messages come in they aren't duplicating existing messages
     already around 
+05. telemetry doesn't work if tracing logfile is disabled (it should)
 
 ^^^^^^^^^ DONE
 
@@ -28,6 +29,10 @@
     it would almost make sense to have it just be 'let mut '[truncated]
      - having a predictable reusable pattern for this is funny though
      - maybe this is one for the rematch routine
+
+01. reduce flicker - on_move fim_hide should actually take place inside of
+    try_fim_hint as the first message sent in (modify messages to be able to
+    take in alternative biz)
 
 ------------------------
 
@@ -59,8 +64,6 @@
        response
      - OPTION ONCE no more errors - save file to regenerate diagnostics
      - OPTION ONCE no more errors, go to the next file with errors in a new tab
-
-05. telemetry doesn't work if tracing logfile is disabled (it should)
 
 20. git diff extra_input eviction by line number
      - because we're just saving the file changes we do not need to actually 
@@ -124,6 +127,7 @@ local query_string = [[
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
 
+
 10. More sophisticated statistics for lsp completion priority
      - beyond doing the global statistics, we could also do some quick stats on
        the nearby environment to wherever the completion is taking place. Nearby
@@ -132,6 +136,10 @@ local query_string = [[
 
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
+
+10. multiple llama.cpp servers, first attempt to get the result from the small
+    model (maybe even do a retry) then once we've gotten a result maybe launch
+    the slower model on the same location to get a potentially better solution.
 
 20. better global error printing/handling https://github.com/noib3/nvim-oxi/issues/231
 

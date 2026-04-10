@@ -132,8 +132,8 @@ fn init_tracer_provider() -> SdkTracerProvider {
         .build()
 }
 
-// Initialize tracing-subscriber and return OtelGuard for opentelemetry-related termination processing
-pub fn init_tracing_subscriber(log_file: bool, trace_level: String) -> OtelGuard {
+/// Initialize tracing-subscriber and return OtelGuard for opentelemetry-related termination processing
+pub fn init_tracing_subscriber(log_to_file: bool, trace_level: String) -> OtelGuard {
     let tracer_provider = init_tracer_provider();
     let meter_provider = init_meter_provider();
 
@@ -141,17 +141,20 @@ pub fn init_tracing_subscriber(log_file: bool, trace_level: String) -> OtelGuard
 
     let trace_level = Level::from_str(&trace_level).unwrap_or(Level::DEBUG);
 
-    let mut layers = vec![];
+    let mut layers: Vec<_> = Vec::new();
 
-    if log_file {
-        // Use tracing_subscriber with a file writer
+    // Always add telemetry layers (Jaeger + metrics)
+    layers.push(OpenTelemetryLayer::new(tracer).boxed());
+    layers.push(MetricsLayer::new(meter_provider.clone()).boxed());
+
+    // Optionally add file logging — no console, no interference
+    if log_to_file {
         let file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open("./lttw.log")
             .unwrap();
 
-        // Build the file writer layer for debug logging
         let file_layer = tracing_subscriber::fmt::layer()
             .with_writer(file)
             .with_target(false)
@@ -162,20 +165,12 @@ pub fn init_tracing_subscriber(log_file: bool, trace_level: String) -> OtelGuard
 
         layers.push(file_layer.boxed());
     }
+
     tracing_subscriber::registry()
-        // The global level filter prevents the exporter network stack
-        // from reentering the globally installed OpenTelemetryLayer with
-        // its own spans while exporting, as the libraries should not use
-        // tracing levels below DEBUG. If the OpenTelemetry layer needs to
-        // trace spans and events with higher verbosity levels, consider using
-        // per-layer filtering to target the telemetry layer specifically,
-        // e.g. by target matching.
         .with(tracing_subscriber::filter::LevelFilter::from_level(
             trace_level,
         ))
         .with(layers)
-        .with(MetricsLayer::new(meter_provider.clone()))
-        .with(OpenTelemetryLayer::new(tracer))
         .init();
 
     OtelGuard {
