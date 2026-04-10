@@ -281,6 +281,7 @@ impl FimState {
 
 /// Initialize persistent tokio runtime and completion channel
 /// also start tracing.
+#[tracing::instrument]
 fn init_completion_processing_and_tracing_thread(
     tracing_enabled: bool,
     log_file: bool,
@@ -335,6 +336,7 @@ fn init_completion_processing_and_tracing_thread(
 
 /// NOTE this occurs on the neovim thread
 /// Process pending FIM display queue - drains and displays messages on the main thread
+#[tracing::instrument]
 fn process_pending_display() -> LttwResult<()> {
     let state = get_state();
 
@@ -420,6 +422,7 @@ fn process_pending_display() -> LttwResult<()> {
 }
 
 // should we abort the completion because the content has changed since we started this completion
+#[tracing::instrument]
 fn msg_is_valid_to_display(msg: &FimCompletionMessage) -> bool {
     if msg.completion.content.is_empty() || msg.completion.content.trim().is_empty() {
         return false;
@@ -445,6 +448,7 @@ fn msg_is_valid_to_display(msg: &FimCompletionMessage) -> bool {
 /// to run speculative FIM for future rounds.
 ///
 /// Returns new_x_pos, new_y_pos, combined content to write
+#[tracing::instrument]
 fn fim_accept_inner(
     accept_type: FimAcceptType,
     pos_x: usize,
@@ -477,6 +481,7 @@ fn fim_accept_inner(
 }
 
 /// FIM accept function - accepts the FIM suggestion
+#[tracing::instrument]
 fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
     // Log before releasing the lock
     let state = get_state();
@@ -521,12 +526,14 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
 }
 
 /// FIM hide function - clears the FIM hint from display
+#[tracing::instrument]
 fn fim_hide() -> LttwResult<()> {
     let state = get_state();
     fim_hide_inner(&state)?;
     Ok(())
 }
 
+#[tracing::instrument]
 fn fim_hide_inner(state: &PluginState) -> LttwResult<()> {
     // Clear virtual text using nvim_buf_clear_namespace()
     if let Some(ns_id_val) = state.extmark_ns {
@@ -538,6 +545,7 @@ fn fim_hide_inner(state: &PluginState) -> LttwResult<()> {
 }
 
 /// Enable info display (set show_info = 2)
+#[tracing::instrument]
 fn enable_info() -> LttwResult<()> {
     let state = get_state();
     state.config.write().show_info = 2;
@@ -545,12 +553,14 @@ fn enable_info() -> LttwResult<()> {
 }
 
 /// Disable info display (set show_info = 0)
+#[tracing::instrument]
 fn disable_info() -> LttwResult<()> {
     let state = get_state();
     state.config.write().show_info = 0;
     Ok(())
 }
 
+#[tracing::instrument]
 fn is_enabled() -> bool {
     let state = get_state();
     if state.enabled.load(Ordering::SeqCst) {
@@ -560,6 +570,7 @@ fn is_enabled() -> bool {
 }
 
 /// Enable the plugin - sets up keymaps, autocmds, and state
+#[tracing::instrument]
 fn enable_plugin() -> LttwResult<()> {
     let state = get_state();
 
@@ -593,6 +604,7 @@ fn enable_plugin() -> LttwResult<()> {
 }
 
 /// Disable the plugin - removes keymaps, clears autocmds, and hides hints
+#[tracing::instrument]
 fn disable_plugin() -> LttwResult<()> {
     let state = get_state();
 
@@ -623,6 +635,7 @@ fn disable_plugin() -> LttwResult<()> {
 }
 
 /// Toggle auto_fim configuration
+#[tracing::instrument]
 fn toggle_auto_fim() -> LttwResult<bool> {
     let state = get_state();
 
@@ -639,6 +652,7 @@ fn toggle_auto_fim() -> LttwResult<bool> {
     Ok(new_value)
 }
 
+#[tracing::instrument]
 fn on_move() -> LttwResult<()> {
     let state = get_state();
     *state.last_move_time.write() = Instant::now();
@@ -664,6 +678,7 @@ fn on_move() -> LttwResult<()> {
 }
 
 /// Toggle auto_fim configuration
+#[tracing::instrument]
 fn set_mode_in_state() -> LttwResult<()> {
     let state = get_state();
     *state.nvim_mode.write() = get_mode_bz()?;
@@ -671,6 +686,7 @@ fn set_mode_in_state() -> LttwResult<()> {
 }
 
 /// Toggle auto_fim configuration
+#[tracing::instrument]
 fn set_cur_buffer_info_in_state() -> LttwResult<()> {
     let info = get_current_buffer_info()?;
     get_state().set_cur_buffer_info(info);
@@ -678,6 +694,7 @@ fn set_cur_buffer_info_in_state() -> LttwResult<()> {
 }
 
 /// Handle TextYankPost event - gather chunks from yanked text
+#[tracing::instrument]
 fn on_text_yank_post() -> LttwResult<()> {
     let state = get_state();
 
@@ -702,6 +719,7 @@ fn on_text_yank_post() -> LttwResult<()> {
 }
 
 /// Handle BufEnter event - track file content and gather chunks from entered buffer
+#[tracing::instrument]
 fn on_buf_enter_gather_chunks() -> LttwResult<()> {
     let state = get_state();
 
@@ -721,6 +739,7 @@ fn on_buf_enter_gather_chunks() -> LttwResult<()> {
 }
 
 /// Handle BufLeave event - track file content and gather chunks from buffer before leaving
+#[tracing::instrument]
 fn on_buf_leave() -> LttwResult<()> {
     let state = get_state();
 
@@ -741,6 +760,7 @@ fn on_buf_leave() -> LttwResult<()> {
 
 /// Handle BufEnter event - update file contents if not already stored
 /// This only reads from disk if there's no existing content saved for this file
+#[tracing::instrument]
 fn on_buf_enter_update_file_contents() -> LttwResult<()> {
     info!("on_buf_enter_update_file_contents");
     let state = get_state();
@@ -766,6 +786,7 @@ fn on_buf_enter_update_file_contents() -> LttwResult<()> {
 }
 
 /// Handle BufWritePost event - track file content and evaluate diff chunks after saving buffer
+#[tracing::instrument]
 fn on_buf_write_post() -> LttwResult<()> {
     let state = get_state();
 
