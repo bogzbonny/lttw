@@ -11,8 +11,16 @@
         processing a completion. (use Option Option)
       - on my computer the key repeat rate is about 66 ms maybe make this special debouce
         80ms? - or fold lsp into the other debounce?
+05. ensure that when messages come in they aren't duplicating existing messages
+    already around 
 
 ^^^^^^^^^ DONE
+
+00. regression on typing maintaining the same thing on the screen due to moving
+    the cache logic into async. 
+     - now the LSP is being computed all the time (maybe the issue) 
+     - the whole group of commits is not being written (only the most recent one
+       is being sent through a message.
 
 01. LSP rematch options eg. Ok() is predicted a decent amount which should
     probably re rerouted to Ok(()) (config option this) 
@@ -20,9 +28,6 @@
     it would almost make sense to have it just be 'let mut '[truncated]
      - having a predictable reusable pattern for this is funny though
      - maybe this is one for the rematch routine
-
-05. ensure that when messages come in they aren't duplicating existing messages
-    already around 
 
 ------------------------
 
