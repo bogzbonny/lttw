@@ -80,6 +80,7 @@ code.
       inside of a line (as opposed to at the end of a line) 
  - attempt to still use valid late llm completions which come in after the user has
    typed more since the llm completion was requested.  
+ - numerous small micro-optimizations throughout
 
 ## LSP Completion Overrides
 

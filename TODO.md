@@ -1,18 +1,11 @@
-05. better global error printing/handling https://github.com/noib3/nvim-oxi/issues/231
-01. reduce lsp flicker. - not sure why.. maybe because if nothing is computed it
-    sends an additional recomputation which automatically triggers the lsp
-      - if retry is some then DONT render lsp
-      - diagnostics.rs, delete all the imports until 'Dictionary', flickers
-01. When a message comes in, on the right line, but on the wrong position. STILL
-    use that message IFF newly typed chars actually match the beginning of the
-    message which has arrived, if this is the case trim the messages chars
-    (obviously) 
-    - this will encourage the user to type faster! if the response comes in it
-      can still be used!
 
 ^^^^^^^^^ DONE
 
-
+10. refactor to use AsyncHandle instead of Timer object for lib uv executions. 
+     - should work pretty straight forward for the new messages sent
+     - in terms of lsp async handler will need to register a function with
+       neovim that the lsp can call which will activate some rust to then send
+       the actual message back to the AsyncHandle.
 
 ------------------------
 LSP Completions improvements
@@ -30,12 +23,6 @@ LSP Completions improvements
 
 ------------------------
 GENERAL
-
-10. refactor to use AsyncHandle instead of Timer object for lib uv executions. 
-     - should work pretty straight forward for the new messages sent
-     - in terms of lsp async handler will need to register a function with
-       neovim that the lsp can call which will activate some rust to then send
-       the actual message back to the AsyncHandle.
 
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 

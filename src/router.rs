@@ -50,7 +50,8 @@ pub fn process_pending_display() -> LttwResult<()> {
 
     // Only display if we are in insert mode
     if !in_insert_mode()? {
-        fim_hide()?; // failsafe if somehow a hint weezled its way in there
+        //XXX
+        //fim_hide()?; // failsafe if somehow a hint weezled its way in there
         return Ok(());
     }
 

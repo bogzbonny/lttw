@@ -324,3 +324,15 @@ the final text generated against this list of rematches, if a match is found
 then modify the text to the override provided. For example if Ok() was found
 modify to Ok(()). Add comments as to how one would use this in their config in
 README.md
+
+05. better global error printing/handling https://github.com/noib3/nvim-oxi/issues/231
+01. reduce lsp flicker. - not sure why.. maybe because if nothing is computed it
+    sends an additional recomputation which automatically triggers the lsp
+      - if retry is some then DONT render lsp
+      - diagnostics.rs, delete all the imports until 'Dictionary', flickers
+01. When a message comes in, on the right line, but on the wrong position. STILL
+    use that message IFF newly typed chars actually match the beginning of the
+    message which has arrived, if this is the case trim the messages chars
+    (obviously) 
+    - this will encourage the user to type faster! if the response comes in it
+      can still be used!
