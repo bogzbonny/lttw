@@ -143,7 +143,10 @@ impl Default for LttwConfig {
             lsp_comp_truncate_vars: true,
             lsp_comp_insert_one_var: false,
             // Default override: transform Ok() to Ok(()) for unit type returns
-            lsp_overrides: vec![("Ok()".to_string(), "Ok(())".to_string())],
+            lsp_overrides: vec![
+                ("Ok()".to_string(), "Ok(())".to_string()),
+                ("unwrap_or()".to_string(), "unwrap_or(…)".to_string()),
+            ],
             enable_at_startup: true,
             tracing_enabled: false,
             tracing_log_file: false,

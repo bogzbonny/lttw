@@ -307,3 +307,20 @@ just like the existing debug system works.
     try_fim_hint as the first message sent in (modify messages to be able to
     take in alternative biz)
 00. do NOT do lsp-completion is there is a cached guy found
+
+00. if lsp_comp_insert_one_var=true AND a variable match was found 
+     then we should skip matching removing any matching suffix characters from
+     the match - this sometimes removes final ')' undesirably 
+01. LSP rematch options eg. Ok() is predicted a decent amount which should
+    probably re rerouted to Ok(()) (config option this) 
+    - comp.text = "let mut $1 = $0;" is funny and turns into let mut ... = ;
+    it would almost make sense to have it just be 'let mut '[truncated]
+     - having a predictable reusable pattern for this is funny though
+     - maybe this is one for the rematch routine
+Add a new configuration option "lsp_overrides" which is an array of string pairs.
+For the default value of this add one override pair: ("Ok()", "Ok(())"). 
+In lsp_completions.rs right at the end of generating the lsp text, add compare
+the final text generated against this list of rematches, if a match is found
+then modify the text to the override provided. For example if Ok() was found
+modify to Ok(()). Add comments as to how one would use this in their config in
+README.md

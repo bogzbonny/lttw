@@ -1,8 +1,8 @@
 use {
     crate::{
-        LttwResult, autocmd::clear_filetype_autocommand, debug_word_statistics,
+        autocmd::clear_filetype_autocommand, debug_word_statistics,
         diagnostics::debug_output_diagnostics, disable_info, disable_plugin, enable_info,
-        enable_plugin, instruction, is_enabled, toggle_auto_fim,
+        enable_plugin, instruction, is_enabled, toggle_auto_fim, LttwResult,
     },
     nvim_oxi::api::create_user_command,
 };
@@ -130,4 +130,117 @@ pub fn register_commands() -> LttwResult<()> {
     );
 
     Ok(())
+}
+
+/// Enable info display (set show_info = 2)
+#[tracing::instrument]
+fn enable_info() -> LttwResult<()> {
+    let state = get_state();
+    state.config.write().show_info = 2;
+    Ok(())
+}
+
+/// Disable info display (set show_info = 0)
+#[tracing::instrument]
+fn disable_info() -> LttwResult<()> {
+    let state = get_state();
+    state.config.write().show_info = 0;
+    Ok(())
+}
+
+#[tracing::instrument]
+fn is_enabled() -> bool {
+    let state = get_state();
+    if state.enabled.load(Ordering::SeqCst) {
+        return true;
+    }
+    false
+}
+
+/// Enable the plugin - sets up keymaps, autocmds, and state
+#[tracing::instrument]
+fn enable_plugin() -> LttwResult<()> {
+    let state = get_state();
+
+    // Check if already enabled
+    if state.enabled.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    // Check filetype
+    let filetype = get_current_filetype()?;
+    if !state.config.read().is_filetype_enabled(&filetype) {
+        info!("Plugin not enabled for filetype: {}", filetype);
+        return Ok(());
+    }
+
+    info!("Enabling plugin");
+
+    // Setup keymaps
+    keymap::setup_keymaps()?;
+
+    // Setup autocmds
+    autocmd::setup_non_filetype_autocmds()?;
+
+    // Hide any existing FIM hints
+    fim_hide()?;
+
+    // Mark as enabled
+    state.enabled.store(true, Ordering::SeqCst);
+
+    Ok(())
+}
+
+/// Disable the plugin - removes keymaps, clears autocmds, and hides hints
+#[tracing::instrument]
+fn disable_plugin() -> LttwResult<()> {
+    let state = get_state();
+
+    // Check if already disabled
+    if !state.enabled.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    info!("Disabling plugin");
+
+    // Hide FIM hints
+    fim_hide()?;
+
+    // Remove keymaps
+    keymap::remove_keymaps()?;
+
+    {
+        let mut autocmd_ids_lock = state.autocmd_ids.write();
+        for id in autocmd_ids_lock.drain(..) {
+            del_autocmd(id)?
+        }
+    }
+
+    // Mark as disabled
+    state.enabled.store(false, Ordering::SeqCst);
+
+    Ok(())
+}
+
+/// Toggle auto_fim configuration
+#[tracing::instrument]
+fn toggle_auto_fim() -> LttwResult<bool> {
+    let state = get_state();
+
+    // Toggle auto_fim in config
+    let new_value = !state.config.read().auto_fim;
+    {
+        let mut config_lock = state.config.write();
+        config_lock.auto_fim = new_value;
+    }
+
+    // Re-setup autocmds with new config
+    autocmd::setup_non_filetype_autocmds()?;
+
+    Ok(new_value)
+}
+
+pub fn debug_word_statistics() {
+    let state = get_state();
+    state.debug_word_statistics();
 }

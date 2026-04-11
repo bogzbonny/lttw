@@ -68,11 +68,12 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<DisplayMe
     nvim_oxi::api::del_var("lttw_completion")?; // clear the var now that we've gotten it
 
     //info!("retrieved lsp completions: {}", json_str);
-    let (truncate_vars, insert_one_var) = {
+    let (truncate_vars, insert_one_var, overrides) = {
         let config = state.config.read();
         (
             config.lsp_comp_truncate_vars,
             config.lsp_comp_insert_one_var,
+            config.lsp_overrides.clone(),
         )
     };
 
@@ -123,7 +124,7 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<DisplayMe
             }
             last_start_char = Some(comp.start_char);
 
-            let text = trim_completion(
+            let mut text = trim_completion(
                 comp.text.as_str(),
                 &prefix,
                 &suffix,
@@ -144,29 +145,32 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<DisplayMe
             if seen.contains(&text) {
                 return None;
             }
+            seen.insert(text.clone());
 
             // Apply LSP overrides: check if text matches any override pattern
             // and replace with the override value
-            let text_with_overrides = {
-                let config = state.config.read();
-                let mut modified_text = text.clone();
-                for (pattern, replacement) in &config.lsp_overrides {
-                    if modified_text == *pattern {
-                        modified_text = replacement.clone();
-                        break; // Apply only the first matching override
-                    }
+            let text_with_prefix = prefix.clone() + &text;
+            info!(
+                "final lsp text_with_prefix pre_override: {}",
+                text_with_prefix
+            );
+            for (pattern, replacement) in &overrides {
+                if text_with_prefix == *pattern {
+                    text = replacement
+                        .strip_prefix(&prefix)
+                        .unwrap_or(&text)
+                        .to_string();
+                    break;
                 }
-                modified_text
-            };
-
-            seen.insert(text_with_overrides.clone());
+            }
+            info!("final lsp text post_override: {}", text);
 
             // NOTE use the full suggestion here, NOT the prefix stripped text!
             let ident = strip_to_first_identifier(&comp.text);
             let usage = state.get_word_statistic_usage(&ident);
 
             let fim_resp = FimResponse {
-                content: text_with_overrides,
+                content: text,
                 timings: None,
                 tokens_cached: 0,
                 truncated: false,

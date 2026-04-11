@@ -1,54 +1,57 @@
-00. if lsp_comp_insert_one_var=true AND a variable match was found 
-     then we should skip matching removing any matching suffix characters from
-     the match - this sometimes removes final ')' undesirably 
 
 ^^^^^^^^^ DONE
 
-01. LSP rematch options eg. Ok() is predicted a decent amount which should
-    probably re rerouted to Ok(()) (config option this) 
-    - comp.text = "let mut $1 = $0;" is funny and turns into let mut ... = ;
-    it would almost make sense to have it just be 'let mut '[truncated]
-     - having a predictable reusable pattern for this is funny though
-     - maybe this is one for the rematch routine
+01. When a message comes in, on the right line, but on the wrong position. STILL
+    use that message IFF newly typed chars actually match the beginning of the
+    message which has arrived, if this is the case trim the messages chars
+    (obviously) 
+    - this will encourage the user to type faster! if the response comes in it
+      can still be used!
 
-Add a new configuration option "lsp_overrides" which is an array of string pairs.
-For the default value of this add one override pair: ("Ok()", "Ok(())"). 
-In lsp_completions.rs right at the end of generating the lsp text, add compare
-the final text generated against this list of rematches, if a match is found
-then modify the text to the override provided. For example if Ok() was found
-modify to Ok(()). Add comments as to how one would use this in their config in
-README.md
+01. reduce lsp flicker. - not sure why.. maybe because if nothing is computed it
+    sends an additional recomputation which automatically triggers the lsp
+
+05. better global error printing/handling https://github.com/noib3/nvim-oxi/issues/231
+
 
 ------------------------
+LSP Completions improvements
 
-05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
-     - :lua print(vim.inspect(vim.diagnostic.get())) 
-        - DIAGNOSTIC PIPELINE IS OVERWRITTEN BY ALE! thus the diagnostic changed
-          autocmd will not be updated - it DOES actually work so long as we dont
-          suppress the color changes that ale has
+10. More sophisticated localized statistics for lsp completion priority
+     - beyond doing the global statistics, we could also do some quick stats on
+       the nearby environment to wherever the completion is taking place. Nearby
+       guys should have a high statistical weighting as compared to the global
+       stats. This would be good for variable names.
+     - probably just recompute with some frequency on line changes / finish
+       insert mode - should be fast to compute async 
 
-        config.handlers = {
-        -- Override Neovim's handling of diagnostics to run through ALE's
-        -- functions so all of the functionality in ALE works.
-        ["textDocument/publishDiagnostics"] = function(err, result, _, _)
+30. Option to allow for case-insenstive LSP so If I typed 'op' it could still match with
+    Option<...>
 
-     - use regular completions/ endpoint not infill endpoint
-     - NOTE if more tabs are received WHILE the completion is in progress they
-       should be discarded
-     - Whatever the whole range of the fed diagnostic is is what should be fed
-       into the prompt (along with the diagnostic
-     - I'm not sure if it'll be a pain to still use FIM for this or not
-        - probably use a regular completion 
-     - afterwords this will generate a replacement line(s) for which will be
-       displayed using extmarks
-     - then a 3rd TAB can accept this
-     - then a 4th TAB should take the cursor to the next line which has
-       diagnostic errors
-     - use this entire system in reverse as well with SHIFT-TAB to move up
-     - CTRL-TAB to regenerate a TAB-TAB if the user doesn't like the provided
-       response
-     - OPTION ONCE no more errors - save file to regenerate diagnostics
-     - OPTION ONCE no more errors, go to the next file with errors in a new tab
+------------------------
+GENERAL
+
+10. refactor to use AsyncHandle instead of Timer object for lib uv executions. 
+     - should work pretty straight forward for the new messages sent
+     - in terms of lsp async handler will need to register a function with
+       neovim that the lsp can call which will activate some rust to then send
+       the actual message back to the AsyncHandle.
+
+10. option to automatically launch llama.cpp with nohup rather than depending on
+    a server already being running. 
+
+10. multiple llama.cpp servers, first attempt to get the result from the small
+    model (maybe even do a retry) then once we've gotten a result maybe launch
+    the slower model on the same location to get a potentially better solution.
+
+10. reduce cognitive offloading allowing for llm calls to be ignored a % of the
+    time (hence you don't know if you're waiting for an llm or waiting for
+    nothing!).
+     - reduce_cognitive_offloading_ratio = 25%
+     - NOTE this should not apply to LSP predictions
+
+20. README gif of homer with the bird
+     - link it to https://www.youtube.com/watch?v=R_rF4kcqLkI
 
 20. git diff extra_input eviction by line number
      - because we're just saving the file changes we do not need to actually 
@@ -112,38 +115,45 @@ local query_string = [[
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
 
-
-10. More sophisticated statistics for lsp completion priority
-     - beyond doing the global statistics, we could also do some quick stats on
-       the nearby environment to wherever the completion is taking place. Nearby
-       guys should have a high statistical weighting as compared to the global
-       stats. This would be good for variable names.
-
-10. option to automatically launch llama.cpp with nohup rather than depending on
-    a server already being running. 
-
-10. multiple llama.cpp servers, first attempt to get the result from the small
-    model (maybe even do a retry) then once we've gotten a result maybe launch
-    the slower model on the same location to get a potentially better solution.
-
-20. better global error printing/handling https://github.com/noib3/nvim-oxi/issues/231
+------------------------
+LOW PRIORITY
 
 40. instruction system LOW priority can use CodeCompanion for now
 
-40. reduce cognitive offloading allowing for llm calls to be ignored a % of the
-    time (hence you don't know if you're waiting for an llm or waiting for
-    nothing!).
-     - reduce_cognitive_offloading_ratio = 25%
-     - NOTE this should not apply to LSP predictions
+05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
+     - :lua print(vim.inspect(vim.diagnostic.get())) 
+        - DIAGNOSTIC PIPELINE IS OVERWRITTEN BY ALE! thus the diagnostic changed
+          autocmd will not be updated - it DOES actually work so long as we dont
+          suppress the color changes that ale has
 
-40. README gif of homer with the bird
-     - link it to https://www.youtube.com/watch?v=R_rF4kcqLkI
+        config.handlers = {
+        -- Override Neovim's handling of diagnostics to run through ALE's
+        -- functions so all of the functionality in ALE works.
+        ["textDocument/publishDiagnostics"] = function(err, result, _, _)
 
-------------------------
-POST RELEASE
+     - use regular completions/ endpoint not infill endpoint
+     - NOTE if more tabs are received WHILE the completion is in progress they
+       should be discarded
+     - Whatever the whole range of the fed diagnostic is is what should be fed
+       into the prompt (along with the diagnostic
+     - I'm not sure if it'll be a pain to still use FIM for this or not
+        - probably use a regular completion 
+     - afterwords this will generate a replacement line(s) for which will be
+       displayed using extmarks
+     - then a 3rd TAB can accept this
+     - then a 4th TAB should take the cursor to the next line which has
+       diagnostic errors
+     - use this entire system in reverse as well with SHIFT-TAB to move up
+     - CTRL-TAB to regenerate a TAB-TAB if the user doesn't like the provided
+       response
+     - OPTION ONCE no more errors - save file to regenerate diagnostics
+     - OPTION ONCE no more errors, go to the next file with errors in a new tab
 
-10. Allow for case-insenstive LSP so If I typed 'op' it could still match with
-    Option<...>
+05. Sophisticated LLM suggestions: 
+     - on a timer feed in the ordered diff history, get the LLM to hypothesis on
+       what the user is attempting to do - save this as the current 'goal'
+     - whenever in normal mode (and still?) based on the projected goal and the
+       current code, make suggestions 
 
 30. Small Statistic completion predictions: 
      - we're definately in HLM territory here
@@ -173,7 +183,9 @@ POST RELEASE
        - maybe this isn't an issue and we can just add something to the end of
          the cache though?
      - investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
-       - would require FIM customization
+       - would require FIM customization - probably a bad idea the existing FIM
+         format is established and trained on - we'd have to see how good it
+         actually worked!
      - the indent system for generating completions is good, however, its a bit
        annoying to not be able to autogenerate a closing } in the right position
        would be nice if there was a way to have the best of both worlds here

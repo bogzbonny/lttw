@@ -305,9 +305,6 @@ require('llama').setup({
   lsp_overrides = {
     -- Rust unit types
     {"Ok()", "Ok(())"},
-    {"Err()", "Err(())"},
-    -- Common wrappers
-    {"Some(x)", "Some(Box::new(x))"},
   },
 })
 ```
