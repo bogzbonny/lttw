@@ -83,14 +83,11 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<DisplayMe
     let (pos_x, pos_y) = (response.pos_x, response.pos_y);
     let (x, y) = get_pos();
     if pos_x != x || pos_y != y {
-        info!("retrieve_lsp_completions");
         return Ok(vec![]);
     };
     if get_current_buffer_id() != response.buffer_id {
-        info!("retrieve_lsp_completions");
         return Ok(vec![]);
     }
-    info!("retrieve_lsp_completions");
     let line_cur = get_buf_line(pos_y);
     let suffix = line_cur.chars().skip(pos_x).collect::<String>();
     let mut seen = HashSet::default();

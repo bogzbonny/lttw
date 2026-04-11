@@ -146,6 +146,7 @@ impl Default for LttwConfig {
             lsp_overrides: vec![
                 ("Ok()".to_string(), "Ok(())".to_string()),
                 ("unwrap_or()".to_string(), "unwrap_or(…)".to_string()),
+                ("if … {".to_string(), "if ".to_string()),
             ],
             enable_at_startup: true,
             tracing_enabled: false,

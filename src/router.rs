@@ -67,7 +67,7 @@ pub fn process_pending_display() -> LttwResult<()> {
         match retrieve_lsp_completions(&state) {
             Ok(c) => c,
             Err(e) => {
-                info!("retrieve_lsp_completions error: {}", e);
+                error!("retrieve_lsp_completions error: {}", e);
                 Vec::new()
             }
         }
@@ -125,14 +125,14 @@ pub fn process_pending_display() -> LttwResult<()> {
     }
 
     for msg_ in disp_msgs.into_iter() {
-        if msg_is_valid_to_display(&msg_) {
+        //if msg_is_valid_to_display(&msg_) { // XXX delete
+        if let Some(msg_) = valid_adjusted_msg_to_display(msg_) {
             // because the msg is valid we already know that the message is for the cursor position
             let is_unique = state
                 .fim_state
                 .write()
                 .push_completion_cycle_if_unique(msg_.completion.clone());
             // only trigger renders if unique messages added
-            //if is_unique && msg_to_render.is_none() {
             if is_unique {
                 if msg_.do_render {
                     state.fim_state.write().push_completion_idx_to_tail();
@@ -174,31 +174,91 @@ pub fn process_pending_display() -> LttwResult<()> {
     Ok(())
 }
 
+// XXX delete
 // should we abort the completion because the content has changed since we started this completion
+//#[tracing::instrument]
+//fn msg_is_valid_to_display(msg: &FimCompletionMessage) -> bool {
+//    info!("{:?}", msg);
+//    if msg.completion.content.is_empty() || msg.completion.content.trim().is_empty() {
+//        return false;
+//    }
+//    let id = get_current_buffer_id();
+//    if id != msg.buffer_id {
+//        return false;
+//    }
+
+//    let (x, y) = get_pos();
+//    if msg.cursor_y != y || msg.cursor_x != x {
+//        return false;
+//    };
+//    let curr_line = get_buf_line(y);
+//    if curr_line != msg.line_cur {
+//        return false;
+//    }
+//    true
+//}
+
+// Checks if the message is valid, potentially adjusting the message if the message came in after
+// the user typed some characters, but the users newly-typed characters match the beginning of the
+// predicted message.
+//
+// In other words, when a message comes in, on the right line, but on the wrong x-position. STILL
+// use that message IFF the newly typed chars actually match the beginning of the message which has
+// arrived, if this is the case trim the message's chars.
 #[tracing::instrument]
-fn msg_is_valid_to_display(msg: &FimCompletionMessage) -> bool {
+fn valid_adjusted_msg_to_display(msg: FimCompletionMessage) -> Option<FimCompletionMessage> {
     info!("{:?}", msg);
     if msg.completion.content.is_empty() || msg.completion.content.trim().is_empty() {
-        info!("returning false");
-        return false;
+        return None;
     }
     let id = get_current_buffer_id();
     if id != msg.buffer_id {
-        info!("returning false");
-        return false;
+        return None;
     }
 
     let (x, y) = get_pos();
-    if msg.cursor_y != y || msg.cursor_x != x {
-        info!("returning false");
-        return false;
+    if msg.cursor_y != y {
+        return None;
     };
-    let curr_line = get_buf_line(y);
-    if curr_line != msg.line_cur {
-        info!("returning false");
-        return false;
-    }
+    let adj_msg = if msg.cursor_x == x {
+        msg
+    } else {
+        if x < msg.cursor_x {
+            return None;
+        }
 
-    info!("returning true");
-    true
+        // get the newly changed characters
+        let x_diff = x - msg.cursor_x;
+        let newly_typed = msg
+            .line_cur
+            .chars()
+            .skip(msg.cursor_x)
+            .take(x_diff)
+            .collect::<String>();
+        if !msg.completion.content.starts_with(&newly_typed) {
+            return None;
+        }
+        let trimmed_completion = msg.completion.content.strip_prefix(&newly_typed)?;
+        if trimmed_completion.is_empty() {
+            return None;
+        }
+        FimCompletionMessage {
+            buffer_id: msg.buffer_id,
+            line_cur: msg.line_cur + &newly_typed,
+            cursor_x: x, // current actual x
+            cursor_y: y, // current actual y
+            completion: FimResponse {
+                content: trimmed_completion.to_string(),
+                ..msg.completion.clone()
+            },
+            do_render: msg.do_render,
+            retry: msg.retry,
+        }
+    };
+
+    let curr_line = get_buf_line(y);
+    if curr_line != adj_msg.line_cur {
+        return None;
+    }
+    Some(adj_msg)
 }
