@@ -1,7 +1,7 @@
 use {
     crate::{
-        autocmd, autocmd::clear_filetype_autocommand, diagnostics::debug_output_diagnostics,
-        fim_hide, get_state, instruction, keymap, utils::get_current_filetype, LttwResult,
+        autocmd, autocmd::clear_filetype_autocommand, fim_hide, get_state, instruction, keymap,
+        utils::get_current_filetype, LttwResult,
     },
     nvim_oxi::api::{create_user_command, del_autocmd},
     std::sync::atomic::Ordering,
@@ -100,14 +100,15 @@ pub fn register_commands() -> LttwResult<()> {
         &Default::default(),
     );
 
-    let _ = create_user_command(
-        "LttwDia",
-        |_: nvim_oxi::api::types::CommandArgs| -> LttwResult<()> {
-            debug_output_diagnostics(nvim_oxi::Object::nil())?;
-            Ok(())
-        },
-        &Default::default(),
-    );
+    //// TODO delete
+    //let _ = create_user_command(
+    //    "LttwDia",
+    //    |_: nvim_oxi::api::types::CommandArgs| -> LttwResult<()> {
+    //        diagnostics::debug_output_diagnostics(nvim_oxi::Object::nil())?;
+    //        Ok(())
+    //    },
+    //    &Default::default(),
+    //);
 
     let _ = create_user_command(
         "LttwEnableInfo",

@@ -32,9 +32,9 @@ pub use {
 };
 
 use {
-    diagnostics::{debug_output_diagnostics, handle_diagnostic_changed},
     diff_chunk::calculate_diff_between_contents,
     fim::fim_try_hint,
+    nvim_oxi::libuv::AsyncHandle,
     nvim_oxi::{Dictionary, Function},
     plugin_state::{get_state, init_state, PluginState},
     router::process_pending_display,
@@ -59,40 +59,39 @@ pub fn lttw() -> LttwResult<Dictionary> {
     let _span = tracing::info_span!("plugin_init").entered();
     let mut functions = Dictionary::new();
 
-    functions.insert::<&str, Function<nvim_oxi::Object, ()>>("setup", Function::from(lttw_setup));
-
-    // Export functions for diagnostic tracking
+    functions.insert::<&str, Function<nvim_oxi::Object, ()>>("setup", Function::from(setup));
     functions.insert::<&str, Function<nvim_oxi::Object, ()>>(
-        "handle_diagnostic_changed",
-        Function::from(handle_diagnostic_changed),
+        "process_pending_display",
+        Function::from(process_pending_display_neovim),
     );
-    functions.insert::<&str, Function<nvim_oxi::Object, ()>>(
-        "debug_output_diagnostics",
-        Function::from(debug_output_diagnostics),
-    );
-
     Ok(functions)
 }
 
 /// Initialize the plugin setup with tracing
 #[tracing::instrument(skip(c))]
-fn lttw_setup(c: nvim_oxi::Object) {
+fn setup(c: nvim_oxi::Object) {
     let _span = tracing::info_span!("plugin_setup").entered();
     // Initialize plugin state
     init_state(c);
 
     let state = get_state();
-    let (tracing_enabled, log_file, tracing_level) = {
+    let (tracing_enabled, log_file, tracing_level, disable_cleanup) = {
         let config = state.config.read();
         (
             config.tracing_enabled,
             config.tracing_log_file,
             config.tracing_level.clone(),
+            config.disable_cleanup,
         )
     };
 
     // Initialize persistent tokio runtime and completion channel
-    init_completion_processing_and_tracing_thread(tracing_enabled, log_file, tracing_level);
+    init_completion_processing_and_tracing_thread(
+        tracing_enabled,
+        log_file,
+        tracing_level,
+        disable_cleanup,
+    );
 
     // Setup timer-based ring buffer updates (every ring_update_ms)
     let _ = ring_buffer::setup_ring_buffer_timer();
@@ -111,6 +110,16 @@ fn lttw_setup(c: nvim_oxi::Object) {
     let _ = init_fim_highlight();
 
     tracing::info!("Lttw plugin setup complete");
+}
+
+// NOTE we do not not need to wrap this in a nvim_oxi::schedule(...) as
+// the callback for the lsp completions happens on the main thread of neovim.
+#[tracing::instrument]
+fn process_pending_display_neovim(_obj: nvim_oxi::Object) {
+    tracing::info!("Processing pending display messages... FROM_NEOVIM");
+    if let Err(e) = process_pending_display() {
+        info!("process_pending_display() error: {}", e);
+    }
 }
 
 /// Highlight group name for FIM generated text
@@ -136,12 +145,31 @@ fn init_completion_processing_and_tracing_thread(
     tracing_enabled: bool,
     log_file: bool,
     trace_level: String,
+    disable_cleanup: bool,
 ) {
     let state = get_state();
 
     // Create channel for completion messages
     let (tx, mut rx) = mpsc::channel::<DisplayMessage>(16);
     *state.fim_completion_tx.write() = Some(tx);
+
+    let handle = match AsyncHandle::new(move || {
+        // Need to use schedule here so that it executes on the main thread (or else will kill
+        // neovim). Additionally we can't simply call the following code without use of the handle
+        // (makes tokio panic)
+        nvim_oxi::schedule(move |_| {
+            if let Err(e) = process_pending_display() {
+                info!("process_pending_display() error: {}", e);
+            }
+        });
+    }) {
+        Ok(handle) => handle,
+        Err(e) => {
+            error!("Failed to create async handle: {}", e);
+            // not much more we can do
+            return;
+        }
+    };
 
     // Spawn a task that receives completion messages and adds them to the pending display queue
     // This runs on its own dedicated current-thread runtime separate from the main multi-threaded one
@@ -156,26 +184,40 @@ fn init_completion_processing_and_tracing_thread(
         while let Some(msg) = rx.recv().await {
             info!("pending_queue msg received");
             state_.pending_display.write().push(msg);
+            if let Err(e) = handle.send() {
+                error!("Error when sending to async handle: {}", e);
+            }
         }
     });
 
+    // failsafe - TODO the goal is to remove this chunk of code
+    //
     // Set up a Neovim timer to periodically process the pending display queue This ensures display
     // updates happen on the main thread
     //
     // NOTE This won't work with a tokio thread, it needs to execute on the neovim main thread
     // to actually render extmarks
-    let _ = nvim_oxi::libuv::TimerHandle::start(
-        Duration::from_millis(500),
-        Duration::from_millis(50), // repeat
-        |_| {
-            // Need this so that it executes on the main thread (or else extmarks won't display)
-            nvim_oxi::schedule(|_| {
-                if let Err(e) = process_pending_display() {
-                    info!("process_pending_display() error: {}", e);
-                }
-            });
-        },
-    );
+    if !disable_cleanup {
+        let _ = nvim_oxi::libuv::TimerHandle::start(
+            Duration::from_millis(100),
+            Duration::from_millis(100), // repeat every 100ms
+            |_| {
+                // Need this so that it executes on the main thread (or else extmarks won't display)
+                nvim_oxi::schedule(|_| {
+                    if let Err(e) = fim_hide_if_not_insert() {
+                        info!("fim_hide_if_not_insert() error: {}", e);
+                    }
+                });
+            },
+        );
+    }
+}
+
+fn fim_hide_if_not_insert() -> LttwResult<()> {
+    if !in_insert_mode()? {
+        fim_hide()?; // failsafe if somehow a hint weezled its way in there
+    }
+    Ok(())
 }
 
 /// FIM hide function - clears the FIM hint from display

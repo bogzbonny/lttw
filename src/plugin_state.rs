@@ -83,6 +83,7 @@ pub struct PluginState {
 
     // FIM completion channel for async worker communication
     pub fim_completion_tx: Arc<RwLock<Option<mpsc::Sender<DisplayMessage>>>>,
+
     // Pending display queue - holds messages waiting to be rendered on main thread
     pub pending_display: Arc<RwLock<Vec<DisplayMessage>>>,
     // Persistent tokio runtime for async operations

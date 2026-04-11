@@ -1,12 +1,6 @@
 
 ^^^^^^^^^ DONE
 
-10. refactor to use AsyncHandle instead of Timer object for lib uv executions. 
-     - should work pretty straight forward for the new messages sent
-     - in terms of lsp async handler will need to register a function with
-       neovim that the lsp can call which will activate some rust to then send
-       the actual message back to the AsyncHandle.
-
 ------------------------
 LSP Completions improvements
 

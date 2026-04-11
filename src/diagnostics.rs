@@ -222,6 +222,7 @@ pub fn handle_diagnostic_changed(_arg: nvim_oxi::Object) -> LttwResult<()> {
 }
 
 /// Get diagnostics for current buffer and output with info!()
+#[allow(dead_code)]
 #[tracing::instrument]
 pub fn debug_output_diagnostics(_arg: nvim_oxi::Object) -> LttwResult<()> {
     let state = get_state();

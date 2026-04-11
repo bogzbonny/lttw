@@ -12,7 +12,6 @@ use {
 ///
 /// This is a test command to debug LSP completion behavior.
 /// It uses Neovim's built-in LSP functionality via `vim.lsp.buf_request_sync`.
-// TODO make async by using buf_request_all with a handler
 // TODO make '500' here a param, (500ms max wait time for the result)
 #[tracing::instrument]
 pub fn trigger_lsp_completions_async() -> LttwResult<()> {
@@ -54,6 +53,7 @@ vim.lsp.buf_request_all(bufnr, 'textDocument/completion', vim.lsp.util.make_posi
       buffer_id = bufnr
     }
     vim.g.lttw_completion = vim.json.encode(result)
+    require("lttw").process_pending_display()
   end)
 "#,
     )?;

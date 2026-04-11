@@ -12,7 +12,7 @@ use {
         context::get_local_context,
         context::LocalContext,
         filetype::should_be_enabled,
-        get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
+        fim_hide, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
         llama_client::{send_fim_request, FimRequest},
         plugin_state::{get_state, PluginState},
         utils::{filter_tail, get_buf_filename, is_in_comment},
@@ -79,7 +79,7 @@ pub fn fim_try_hint_regenerate() -> LttwResult<()> {
 /// If one is found at (x,y) then it checks that the characters typed after (x,y)
 /// match up with the cached completion result.
 ///
-/// NOTE this happens on the neovim main thread
+/// NOTE this happens on the neovim main thread (but then spawns tasks)
 ///
 /// ### Arguments
 ///  - `skip_debounce` - whether to skip the debounce check
@@ -116,6 +116,7 @@ pub fn fim_try_hint_inner(
             // comments FIM allowed at this position, continue with FIM
             //
         } else if is_in_comment(pos_x, pos_y, at_eol).unwrap_or(false) {
+            fim_hide()?; // remove any comments which may exist
             info!("Skipping FIM in comment at ({}, {})", pos_x, pos_y);
             return Ok(());
         }
@@ -298,7 +299,7 @@ pub fn fim_try_hint_inner(
 ///
 /// NOTE this DOES NOT happens on the neovim main thread - don't call neovim functions
 #[allow(clippy::too_many_arguments)]
-#[tracing::instrument]
+#[tracing::instrument(skip(ctx, buffer_lines))]
 async fn spawn_fim_completion_worker(
     state: Arc<PluginState>,
     ctx: LocalContext,

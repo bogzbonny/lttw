@@ -95,6 +95,10 @@ pub struct LttwConfig {
     pub tracing_log_file: bool,
     pub tracing_level: String,
 
+    // cleanup of old virt text
+    // TODO eventually remove this
+    pub disable_cleanup: bool,
+
     pub disabled_filetypes: Vec<String>,
     pub enabled_filetypes: Vec<String>,
 }
@@ -152,6 +156,7 @@ impl Default for LttwConfig {
             tracing_enabled: false,
             tracing_log_file: false,
             tracing_level: "DEBUG".to_string(),
+            disable_cleanup: false,
             disabled_filetypes: Vec::new(),
             enabled_filetypes: Vec::new(),
         }
@@ -311,6 +316,9 @@ impl LttwConfig {
         }
 
         // Override array fields
+        if let Some(v) = get_bool("disable_cleanup") {
+            config.disable_cleanup = v;
+        }
         if let Some(v) = get_string_array("disabled_filetypes") {
             config.disabled_filetypes = v;
         }

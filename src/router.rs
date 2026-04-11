@@ -32,8 +32,7 @@ impl From<Vec<DisplayMessage>> for DisplayMessage {
 /// Message sent from async worker to main thread when completion is ready
 #[derive(Debug, Clone)]
 pub struct FimCompletionMessage {
-    pub buffer_id: u64, // Buffer handle to ensure we're still in same buffer
-    //ctx: LocalContext,       // All buffer lines captured at start
+    pub buffer_id: u64,          // Buffer handle to ensure we're still in same buffer
     pub line_cur: String, // the current line where the completion was calculated (without completion)
     pub cursor_x: usize,  // Cursor position X
     pub cursor_y: usize,  // Cursor position Y
@@ -50,8 +49,7 @@ pub fn process_pending_display() -> LttwResult<()> {
 
     // Only display if we are in insert mode
     if !in_insert_mode()? {
-        //XXX
-        //fim_hide()?; // failsafe if somehow a hint weezled its way in there
+        fim_hide()?; // failsafe if somehow a hint weezled its way in there
         return Ok(());
     }
 
