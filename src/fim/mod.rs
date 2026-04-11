@@ -15,7 +15,7 @@ use {
         fim_hide, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
         llama_client::{send_fim_request, FimRequest},
         plugin_state::{get_state, PluginState},
-        utils::{filter_tail, get_buf_filename, is_in_comment},
+        utils::{self, filter_tail, get_buf_filename, is_in_comment},
         DisplayMessage, FimCompletionMessage, FimResponse, LttwResult,
     },
     accept::{fim_accept_inner, FimAcceptType},
@@ -131,12 +131,17 @@ pub fn fim_try_hint_inner(
         // fim_workers in the debounce period that there is a new show in town (so don't start!).
         // We do this first because the following cache checking may take a bit of time.
         let seq = state.increment_debounce_sequence();
+        let (llm_completion_enabled, reduce_cognitive_offloading_percentage) = {
+            let c = state.config.read();
+            (c.llm_completions, c.reduce_cognitive_offloading_percentage)
+        };
 
         // Get local context
         let ctx = get_local_context(&lines, pos_x, pos_y, &state.config.read());
         info!("fim_try_hint_inner for pos ({}, {})", pos_x, pos_y);
 
-        let (mut all_completions, completions_idx) = if !force_regenerate {
+        let (mut all_completions, completions_idx) = if !force_regenerate && llm_completion_enabled
+        {
             state.cache.write().get_cached_completion(&ctx)
         } else {
             (Vec::new(), 0)
@@ -171,6 +176,22 @@ pub fn fim_try_hint_inner(
                     error!(e);
                 }
             }
+        }
+
+        // roll some dice with our users well being
+        let prevent_cognitive_decline = if reduce_cognitive_offloading_percentage > 0 {
+            let roll = utils::random_range(1, 100) as u8;
+            roll <= reduce_cognitive_offloading_percentage
+        } else {
+            false
+        };
+
+        if !llm_completion_enabled || prevent_cognitive_decline {
+            // early exit, send the msg
+            if let Err(e) = tx.send(msgs.into()).await {
+                error!(e)
+            }
+            return;
         }
 
         info!("all completions: {} found", all_completions.len());

@@ -79,6 +79,9 @@ pub struct LttwConfig {
     // Comment detection configuration
     pub no_fim_in_comments: bool,
 
+    pub llm_completions: bool,
+    pub reduce_cognitive_offloading_percentage: u8,
+
     pub lsp_completions: bool,
     pub lsp_comp_truncate_vars: bool,
     pub lsp_comp_insert_one_var: bool,
@@ -143,6 +146,8 @@ impl Default for LttwConfig {
             keymap_inst_cancel: "<Esc>".to_string(),
             diff_tracking_enabled: true,
             no_fim_in_comments: true,
+            llm_completions: true,
+            reduce_cognitive_offloading_percentage: 0,
             lsp_completions: true,
             lsp_comp_truncate_vars: true,
             lsp_comp_insert_one_var: false,
@@ -250,7 +255,8 @@ impl LttwConfig {
             config.max_concurrent_fim_requests = v as u32;
         }
         if let Some(v) = get_i64("show_info") {
-            config.show_info = v as u8;
+            let v = v.clamp(0, 2) as u8;
+            config.show_info = v;
         }
         if let Some(v) = get_i64("max_line_suffix") {
             config.max_line_suffix = v as u32;
@@ -331,6 +337,15 @@ impl LttwConfig {
         }
         if let Some(v) = get_bool("no_fim_in_comments") {
             config.no_fim_in_comments = v;
+        }
+
+        // LLM general settings
+        if let Some(v) = get_bool("llm_completions") {
+            config.llm_completions = v;
+        }
+        if let Some(v) = get_i64("reduce_cognitive_offloading_percentage") {
+            let v = v.clamp(0, 100) as u8;
+            config.reduce_cognitive_offloading_percentage = v;
         }
 
         // LSP

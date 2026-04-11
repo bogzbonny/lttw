@@ -1,6 +1,14 @@
 
 ^^^^^^^^^ DONE
 
+10. option to disable llm calls (just use lsp)
+
+10. reduce cognitive offloading allowing for llm calls to be ignored a % of the
+    time (hence you don't know if you're waiting for an llm or waiting for
+    nothing!).
+     - reduce_cognitive_offloading_ratio = 25%
+     - NOTE this should not apply to LSP predictions
+
 ------------------------
 LSP Completions improvements
 
@@ -24,12 +32,6 @@ GENERAL
 10. multiple llama.cpp servers, first attempt to get the result from the small
     model (maybe even do a retry) then once we've gotten a result maybe launch
     the slower model on the same location to get a potentially better solution.
-
-10. reduce cognitive offloading allowing for llm calls to be ignored a % of the
-    time (hence you don't know if you're waiting for an llm or waiting for
-    nothing!).
-     - reduce_cognitive_offloading_ratio = 25%
-     - NOTE this should not apply to LSP predictions
 
 20. README gif of homer with the bird
      - link it to https://www.youtube.com/watch?v=R_rF4kcqLkI
@@ -96,6 +98,7 @@ local query_string = [[
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
 
+
 ------------------------
 LOW PRIORITY
 
@@ -135,6 +138,13 @@ LOW PRIORITY
        what the user is attempting to do - save this as the current 'goal'
      - whenever in normal mode (and still?) based on the projected goal and the
        current code, make suggestions 
+
+30. autocmd for YANK adds messages to extra_inputs. We should either NOT add the
+    yanked text. or prefix it with '-' symbols if the yank was a deletion. Low
+    priority though we already do diff analysis which should take care of the
+    detail upon save (when the diff chunks are processed). Doing this task will
+    require actually parsing the event args in the callback (always a bit of a
+    pain).
 
 30. Small Statistic completion predictions: 
      - we're definately in HLM territory here
