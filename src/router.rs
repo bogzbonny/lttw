@@ -126,9 +126,9 @@ pub fn process_pending_display() -> LttwResult<()> {
 
     let (x, y) = get_pos();
     let curr_line = get_buf_line(y);
+    let buffer_id = get_current_buffer_id();
     for msg_ in disp_msgs.into_iter() {
-        //if msg_is_valid_to_display(&msg_) { // XXX delete
-        if let Some(msg_) = valid_adjusted_msg_to_display(msg_, x, y, &curr_line) {
+        if let Some(msg_) = valid_adjusted_msg_to_display(msg_, buffer_id, x, y, &curr_line) {
             // because the msg is valid we already know that the message is for the cursor position
             let is_unique = state
                 .fim_state
@@ -176,30 +176,6 @@ pub fn process_pending_display() -> LttwResult<()> {
     Ok(())
 }
 
-// XXX delete
-// should we abort the completion because the content has changed since we started this completion
-//#[tracing::instrument]
-//fn msg_is_valid_to_display(msg: &FimCompletionMessage) -> bool {
-//    info!("{:?}", msg);
-//    if msg.completion.content.is_empty() || msg.completion.content.trim().is_empty() {
-//        return false;
-//    }
-//    let id = get_current_buffer_id();
-//    if id != msg.buffer_id {
-//        return false;
-//    }
-
-//    let (x, y) = get_pos();
-//    if msg.cursor_y != y || msg.cursor_x != x {
-//        return false;
-//    };
-//    let curr_line = get_buf_line(y);
-//    if curr_line != msg.line_cur {
-//        return false;
-//    }
-//    true
-//}
-
 // Checks if the message is valid, potentially adjusting the message if the message came in after
 // the user typed some characters, but the users newly-typed characters match the beginning of the
 // predicted message.
@@ -210,20 +186,23 @@ pub fn process_pending_display() -> LttwResult<()> {
 #[tracing::instrument]
 fn valid_adjusted_msg_to_display(
     msg: FimCompletionMessage,
+    buffer_id: u64,
     true_pos_x: usize,
     true_pos_y: usize,
     true_curr_line: &str,
 ) -> Option<FimCompletionMessage> {
     info!("{:?}", msg);
     if msg.completion.content.is_empty() || msg.completion.content.trim().is_empty() {
+        dbg!();
         return None;
     }
-    let id = get_current_buffer_id();
-    if id != msg.buffer_id {
+    if buffer_id != msg.buffer_id {
+        dbg!();
         return None;
     }
 
     if msg.cursor_y != true_pos_y {
+        dbg!();
         return None;
     };
     let adj_msg = if msg.cursor_x == true_pos_x {
@@ -231,27 +210,38 @@ fn valid_adjusted_msg_to_display(
     } else {
         if true_pos_x < msg.cursor_x {
             // (the user is deleting)
+            dbg!();
             return None;
         }
 
+        let msg_line_prefix = msg.line_cur.chars().take(msg.cursor_x).collect::<String>();
+        let msg_line_suffix = msg.line_cur.chars().skip(msg.cursor_x).collect::<String>();
+
+        dbg!();
         // get the newly changed characters
         let x_diff = true_pos_x - msg.cursor_x;
-        let newly_typed = msg
-            .line_cur
+        let newly_typed = true_curr_line
             .chars()
             .skip(msg.cursor_x)
             .take(x_diff)
             .collect::<String>();
         if !msg.completion.content.starts_with(&newly_typed) {
+            dbg!();
             return None;
         }
         let trimmed_completion = msg.completion.content.strip_prefix(&newly_typed)?;
         if trimmed_completion.is_empty() {
+            dbg!();
             return None;
         }
+        dbg!(&msg.line_cur);
+        dbg!(&newly_typed);
+
+        let new_msg_line = msg_line_prefix + &newly_typed + &msg_line_suffix;
+
         FimCompletionMessage {
             buffer_id: msg.buffer_id,
-            line_cur: msg.line_cur + &newly_typed,
+            line_cur: new_msg_line,
             cursor_x: true_pos_x, // current actual x
             cursor_y: true_pos_y, // current actual y
             completion: FimResponse {
@@ -264,7 +254,103 @@ fn valid_adjusted_msg_to_display(
     };
 
     if true_curr_line != adj_msg.line_cur {
+        dbg!(true_curr_line, adj_msg.line_cur);
         return None;
     }
+    dbg!();
     Some(adj_msg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_adjusted_msg_to_display_match_end_cursor() {
+        // cursor at the end of the line's text
+        let msg = FimCompletionMessage {
+            buffer_id: 1,
+            line_cur: "fn ma".to_string(),
+            cursor_x: 5,
+            cursor_y: 0,
+            completion: FimResponse {
+                content: "in(test".to_string(),
+                ..Default::default()
+            },
+            do_render: true,
+            retry: None,
+        };
+
+        let result = valid_adjusted_msg_to_display(msg, 1, 8, 0, "fn main(");
+        assert!(result.is_some());
+        let result = result.unwrap();
+        assert_eq!(result.cursor_x, 8);
+        assert_eq!(result.cursor_y, 0);
+        assert_eq!(result.completion.content, "test"); // stripped "in("
+        assert_eq!(result.line_cur, "fn main(");
+    }
+
+    #[test]
+    fn test_valid_adjusted_msg_to_display_no_match_end_cursor() {
+        let msg = FimCompletionMessage {
+            buffer_id: 1,
+            line_cur: "fn ma".to_string(),
+            cursor_x: 5,
+            cursor_y: 0,
+            completion: FimResponse {
+                content: "in(test".to_string(),
+                ..Default::default()
+            },
+            do_render: true,
+            retry: None,
+        };
+
+        let result = valid_adjusted_msg_to_display(msg, 1, 8, 0, "fn make");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_valid_adjusted_msg_to_display_match_mid_cursor() {
+        // cursor in the middle of the line
+        let msg = FimCompletionMessage {
+            buffer_id: 1,
+            line_cur: "fn main(".to_string(),
+            cursor_x: 5,
+            cursor_y: 0,
+            completion: FimResponse {
+                content: "ple_syrup_is_no_s".to_string(),
+                ..Default::default()
+            },
+            do_render: true,
+            retry: None,
+        };
+
+        let result = valid_adjusted_msg_to_display(msg, 1, 8, 0, "fn maplein(");
+        assert!(result.is_some());
+        let result = result.unwrap();
+        assert_eq!(result.cursor_x, 8);
+        assert_eq!(result.cursor_y, 0);
+        assert_eq!(result.completion.content, "_syrup_is_no_s"); // stripped "in("
+        assert_eq!(result.line_cur, "fn maplein(");
+    }
+
+    #[test]
+    fn test_valid_adjusted_msg_to_display_no_match_mid_cursor() {
+        // cursor in the middle of the line
+        let msg = FimCompletionMessage {
+            buffer_id: 1,
+            line_cur: "fn main(".to_string(),
+            cursor_x: 5,
+            cursor_y: 0,
+            completion: FimResponse {
+                content: "ple_syrup_is_no_s".to_string(),
+                ..Default::default()
+            },
+            do_render: true,
+            retry: None,
+        };
+
+        let result = valid_adjusted_msg_to_display(msg, 1, 8, 0, "fn makein(");
+        assert!(result.is_none());
+    }
 }

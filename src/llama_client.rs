@@ -53,7 +53,7 @@ impl FimTimingsData {
 }
 
 /// FIM completion response (uses flat keys from server)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct FimResponse {
     pub content: String,
     #[serde(flatten)]

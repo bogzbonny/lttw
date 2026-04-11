@@ -443,7 +443,7 @@ mod tests {
 
     #[test]
     fn test_suffix_longer_than_prefix() {
-        assert_eq!(remove_matching_prefix("ab", "abc"), "c"); // XXX
+        assert_eq!(remove_matching_prefix("ab", "abc"), "c");
     }
 
     #[test]
