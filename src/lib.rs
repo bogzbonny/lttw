@@ -458,11 +458,12 @@ fn process_pending_display() -> LttwResult<()> {
                 .write()
                 .push_completion_cycle_if_unique(msg_.completion.clone());
             // only trigger renders if unique messages added
-            if is_unique && msg_to_render.is_none() {
+            //if is_unique && msg_to_render.is_none() {
+            if is_unique {
                 if msg_.do_render {
                     state.fim_state.write().push_completion_idx_to_tail();
                 }
-                msg_to_render = Some(msg_);
+                msg_to_render = Some(msg_); // always render the last message
             }
         }
     }
