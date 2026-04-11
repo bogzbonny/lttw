@@ -3,15 +3,15 @@
     sends an additional recomputation which automatically triggers the lsp
       - if retry is some then DONT render lsp
       - diagnostics.rs, delete all the imports until 'Dictionary', flickers
-
-^^^^^^^^^ DONE
-
 01. When a message comes in, on the right line, but on the wrong position. STILL
     use that message IFF newly typed chars actually match the beginning of the
     message which has arrived, if this is the case trim the messages chars
     (obviously) 
     - this will encourage the user to type faster! if the response comes in it
       can still be used!
+
+^^^^^^^^^ DONE
+
 
 
 ------------------------

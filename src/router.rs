@@ -193,16 +193,13 @@ fn valid_adjusted_msg_to_display(
 ) -> Option<FimCompletionMessage> {
     info!("{:?}", msg);
     if msg.completion.content.is_empty() || msg.completion.content.trim().is_empty() {
-        dbg!();
         return None;
     }
     if buffer_id != msg.buffer_id {
-        dbg!();
         return None;
     }
 
     if msg.cursor_y != true_pos_y {
-        dbg!();
         return None;
     };
     let adj_msg = if msg.cursor_x == true_pos_x {
@@ -210,14 +207,12 @@ fn valid_adjusted_msg_to_display(
     } else {
         if true_pos_x < msg.cursor_x {
             // (the user is deleting)
-            dbg!();
             return None;
         }
 
         let msg_line_prefix = msg.line_cur.chars().take(msg.cursor_x).collect::<String>();
         let msg_line_suffix = msg.line_cur.chars().skip(msg.cursor_x).collect::<String>();
 
-        dbg!();
         // get the newly changed characters
         let x_diff = true_pos_x - msg.cursor_x;
         let newly_typed = true_curr_line
@@ -226,16 +221,12 @@ fn valid_adjusted_msg_to_display(
             .take(x_diff)
             .collect::<String>();
         if !msg.completion.content.starts_with(&newly_typed) {
-            dbg!();
             return None;
         }
         let trimmed_completion = msg.completion.content.strip_prefix(&newly_typed)?;
         if trimmed_completion.is_empty() {
-            dbg!();
             return None;
         }
-        dbg!(&msg.line_cur);
-        dbg!(&newly_typed);
 
         let new_msg_line = msg_line_prefix + &newly_typed + &msg_line_suffix;
 
@@ -254,10 +245,8 @@ fn valid_adjusted_msg_to_display(
     };
 
     if true_curr_line != adj_msg.line_cur {
-        dbg!(true_curr_line, adj_msg.line_cur);
         return None;
     }
-    dbg!();
     Some(adj_msg)
 }
 

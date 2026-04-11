@@ -20,15 +20,6 @@
 
 A Neovim plugin for code completion using llama.cpp, written in Rust.
 
-## CREDIT WHERE CREDIT IS DUE
-
-Originally this codebase was translated from
-[llama.vim](https://github.com/ggml-org/llama.vim) which is an excellent
-lightweight code-completion system with lots of great ideas programmed by
-somebody who knows more about what they're doing then I do. I've drawn lots of
-inspiration from this, and I would recommend checking out it out! At the time of
-making this plugin this was def the best option, however code completion is too
-important for me not to get my mits more grubby (see the key differences below).
 
 ## Installation
 
@@ -58,18 +49,37 @@ lua require('llama').setup()
 }
 ```
 
+## CREDIT WHERE CREDIT IS DUE
+
+Originally this codebase was translated from
+[llama.vim](https://github.com/ggml-org/llama.vim) which is an excellent
+lightweight code-completion system with lots of great ideas programmed by
+somebody who knows more about what they're doing then I do. I've drawn lots of
+inspiration from this, and I would recommend checking out it out! I honestly had
+no flippin' idea what I was doing until I had the privilege of studying this
+code. 
+
 ## Key Differences from llama.vim
 
- - continious ring buffer updating (when in normal mode/ inactive) instead of
-   just capping it at 1 chunk per second
- - picking ring buffer chunks to the queue doesn't evict similar chunks from the live buffer
-   (only once that queue entry is added to the live buffer will this occur)  
- - param to pick more from the FIM scope after fim (instead of limited to 1
-   pick) NOTE that the ring scope should be larger if you increase this
- - adaptive debounce strategy for fast typing
- - ability to explicitly cap the limit number of concurrent FIM calls 
- - don't autocomplete while in code comments (option to turn that on)
-  - dynamic n_predict for reduce prediction tokens while inside a line
+ - LSP completion integration (whoa)
+ - Ring Buffer Adjustments
+   - continious ring buffer updating (when in normal mode/ inactive) instead of
+     just capping it at 1 chunk per second
+   - picking ring buffer chunks to the queue doesn't evict similar chunks from the live buffer
+     (only once that queue entry is added to the live buffer will this occur)  
+   - param to pick more from the FIM scope after fim (instead of limited to 1
+     pick) NOTE that the ring scope should be larger if you increase this
+ - adaptive debounce strategy for faster completions while being able to respond
+   to if the user decides to type real fast (start with slow debounce then ramp
+   up)
+ - ability to explicitly cap the limit number of concurrent completion llm calls 
+ - don't autocomplete while in code comments (option to turn that back on if
+   you're cowardly ;) )
+ - dynamic llm n_predict for reduce prediction tokens while inside a line
+    - aka reduce the amount of tokens the llm is allowed to predict if typing
+      inside of a line (as opposed to at the end of a line) 
+ - attempt to still use valid late llm completions which come in after the user has
+   typed more since the llm completion was requested.  
 
 ## LSP Completion Overrides
 
