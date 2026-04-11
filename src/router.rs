@@ -124,9 +124,11 @@ pub fn process_pending_display() -> LttwResult<()> {
         }
     }
 
+    let (x, y) = get_pos();
+    let curr_line = get_buf_line(y);
     for msg_ in disp_msgs.into_iter() {
         //if msg_is_valid_to_display(&msg_) { // XXX delete
-        if let Some(msg_) = valid_adjusted_msg_to_display(msg_) {
+        if let Some(msg_) = valid_adjusted_msg_to_display(msg_, x, y, &curr_line) {
             // because the msg is valid we already know that the message is for the cursor position
             let is_unique = state
                 .fim_state
@@ -206,7 +208,12 @@ pub fn process_pending_display() -> LttwResult<()> {
 // use that message IFF the newly typed chars actually match the beginning of the message which has
 // arrived, if this is the case trim the message's chars.
 #[tracing::instrument]
-fn valid_adjusted_msg_to_display(msg: FimCompletionMessage) -> Option<FimCompletionMessage> {
+fn valid_adjusted_msg_to_display(
+    msg: FimCompletionMessage,
+    true_pos_x: usize,
+    true_pos_y: usize,
+    true_curr_line: &str,
+) -> Option<FimCompletionMessage> {
     info!("{:?}", msg);
     if msg.completion.content.is_empty() || msg.completion.content.trim().is_empty() {
         return None;
@@ -216,19 +223,19 @@ fn valid_adjusted_msg_to_display(msg: FimCompletionMessage) -> Option<FimComplet
         return None;
     }
 
-    let (x, y) = get_pos();
-    if msg.cursor_y != y {
+    if msg.cursor_y != true_pos_y {
         return None;
     };
-    let adj_msg = if msg.cursor_x == x {
+    let adj_msg = if msg.cursor_x == true_pos_x {
         msg
     } else {
-        if x < msg.cursor_x {
+        if true_pos_x < msg.cursor_x {
+            // (the user is deleting)
             return None;
         }
 
         // get the newly changed characters
-        let x_diff = x - msg.cursor_x;
+        let x_diff = true_pos_x - msg.cursor_x;
         let newly_typed = msg
             .line_cur
             .chars()
@@ -245,8 +252,8 @@ fn valid_adjusted_msg_to_display(msg: FimCompletionMessage) -> Option<FimComplet
         FimCompletionMessage {
             buffer_id: msg.buffer_id,
             line_cur: msg.line_cur + &newly_typed,
-            cursor_x: x, // current actual x
-            cursor_y: y, // current actual y
+            cursor_x: true_pos_x, // current actual x
+            cursor_y: true_pos_y, // current actual y
             completion: FimResponse {
                 content: trimmed_completion.to_string(),
                 ..msg.completion.clone()
@@ -256,8 +263,7 @@ fn valid_adjusted_msg_to_display(msg: FimCompletionMessage) -> Option<FimComplet
         }
     };
 
-    let curr_line = get_buf_line(y);
-    if curr_line != adj_msg.line_cur {
+    if true_curr_line != adj_msg.line_cur {
         return None;
     }
     Some(adj_msg)
