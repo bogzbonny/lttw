@@ -1,7 +1,8 @@
 use {
     crate::{
-        cache, config, diagnostics::DiagnosticTracker, instruction::InstructionRequestState,
-        ring_buffer, DisplayMessage, Error, FimState, LttwResult,
+        cache, config, diagnostics::DiagnosticTracker, fim::FimState,
+        instruction::InstructionRequestState, ring_buffer, DisplayMessage, Error, FimState,
+        LttwResult,
     },
     ahash::{HashMap, HashMapExt},
     nvim_oxi::api::create_namespace,

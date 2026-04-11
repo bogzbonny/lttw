@@ -17,13 +17,18 @@ pub mod filetype;
 pub mod fim;
 pub mod instruction;
 pub mod keymap;
+pub mod llama_client;
 pub mod lsp_completion;
 pub mod plugin_state;
 pub mod ring_buffer;
 pub mod router;
 pub mod utils;
 
-pub use error::{Error, LttwResult};
+pub use {
+    error::{Error, LttwResult},
+    llama_client::{FimRequest, FimResponse, FimTimings},
+    router::{DisplayMessage, FimCompletionMessage, FimTimingsData},
+};
 
 use {
     diagnostics::{debug_output_diagnostics, handle_diagnostic_changed},

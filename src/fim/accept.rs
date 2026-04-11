@@ -1,3 +1,27 @@
+use {
+    crate::fim::fim_try_hint_skip_debounce,
+    crate::plugin_state::get_state,
+    crate::utils::{get_current_buffer_id, set_buf_lines, set_window_cursor},
+    crate::LttwResult,
+};
+
+#[derive(Clone, Debug)]
+pub enum FimAcceptType {
+    Full,
+    Line,
+    Word,
+}
+
+impl std::fmt::Display for FimAcceptType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FimAcceptType::Full => write!(f, "full"),
+            FimAcceptType::Line => write!(f, "line"),
+            FimAcceptType::Word => write!(f, "word"),
+        }
+    }
+}
+
 /// FIM accept function - accepts the FIM suggestion
 //
 /// NOTE Processed on main Neovim thread
@@ -50,9 +74,9 @@ fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
 ///
 /// Returns new_x_pos, new_y_pos, combined content to write
 //
-/// NOTE Processed on main Neovim thread
+/// NOTE NOT processed on main Neovim thread
 #[tracing::instrument]
-fn fim_accept_inner(
+pub fn fim_accept_inner(
     accept_type: FimAcceptType,
     pos_x: usize,
     pos_y: usize,
@@ -104,4 +128,100 @@ fn fim_accept_inner(
     };
 
     Ok((new_x, new_y, combined))
+}
+
+/// Accept FIM suggestion - returns the modified line
+// returns if inline should be used
+#[tracing::instrument]
+pub fn accept_fim_suggestion(
+    accept_type: FimAcceptType,
+    pos_x: usize,
+    line_cur: &str,
+    content: &[String],
+) -> (
+    String,              // first line
+    Option<Vec<String>>, // rest lines (None if not needed)
+    Option<usize>,       // inline-end (NONE if not inline)
+) {
+    // Safety: check content length before accessing content[0]
+    if content.is_empty() {
+        return (line_cur.to_string(), None, None);
+    }
+
+    let first_line = content[0].clone();
+
+    // Safety: ensure pos_x is within bounds
+    let line_cur_len = line_cur.len();
+    let safe_pos_x = pos_x.min(line_cur_len);
+    let prefix = if safe_pos_x <= line_cur_len {
+        &line_cur[..safe_pos_x]
+    } else {
+        ""
+    }
+    .to_string();
+
+    let (new_line, inline) = if content.len() == 1 {
+        // If only one line, just replace the current line
+        let suffix = if safe_pos_x <= line_cur_len {
+            &line_cur[safe_pos_x..]
+        } else {
+            ""
+        };
+        let (first_line, new_suffix, infill) =
+            trim_suggestion_and_suffix_on_curr_line(&first_line, suffix);
+
+        // NOTE even though when we get a new suffix (under a partial bracket match) we
+        // don't render the content with infill but we still are rendering "inline"
+        // so we still need to calculate the final location upon acceptance
+        let inline = if infill || new_suffix.is_some() {
+            Some(prefix.len() + first_line.len())
+        } else {
+            None
+        };
+
+        let suffix = if let Some(suffix) = new_suffix {
+            suffix
+        } else {
+            suffix.to_string()
+        };
+        (prefix + first_line + &suffix, inline)
+    } else {
+        (prefix + &first_line, None)
+    };
+
+    // Handle accept type
+    match accept_type {
+        FimAcceptType::Full => {
+            // Insert rest of suggestion
+            if content.len() > 1 {
+                let rest: Vec<String> = content[1..].to_vec();
+                (new_line, Some(rest), inline)
+            } else {
+                (new_line, None, inline)
+            }
+        }
+        FimAcceptType::Line => {
+            if new_line == line_cur && content.len() > 1 {
+                // accept the next line - safety check for content[1]
+                let rest = vec![content[1].clone()];
+                (new_line, Some(rest), inline)
+            } else {
+                (new_line, None, inline)
+            }
+        }
+        FimAcceptType::Word => {
+            // Accept only the first word
+            let suffix = if safe_pos_x <= line_cur_len {
+                &line_cur[safe_pos_x..]
+            } else {
+                ""
+            };
+            if let Some(word_match) = first_line.split_whitespace().next() {
+                let _new_word = word_match.to_string() + suffix;
+                (new_line + word_match, None, inline)
+            } else {
+                (new_line, None, inline)
+            }
+        }
+    }
 }

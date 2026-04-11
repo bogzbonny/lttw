@@ -1,8 +1,8 @@
-// src/fim.rs - Fill-in-Middle (FIM) completion functions
-//
-// This module handles FIM completion requests to the llama.cpp server,
-// including context gathering, request building, response processing,
-// and rendering suggestions.
+pub mod accept;
+pub mod info_stats;
+pub mod state;
+
+pub use {info_stats::FimTimings, state::FimState};
 
 use {
     crate::{
@@ -10,84 +10,21 @@ use {
         context::get_local_context,
         context::LocalContext,
         filetype::should_be_enabled,
-        fim_accept_inner, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
+        get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
         plugin_state::{get_state, PluginState},
-        ring_buffer::ExtraContext,
         utils::{
             self, clear_buf_namespace_objects, filter_tail, get_buf_filename, hash_input,
             is_in_comment, set_buf_extmark, set_buf_extmark_top_right,
         },
-        DisplayMessage, Error, FimCompletionMessage, FimTimingsData, LttwResult,
-        LTTW_FIM_HIGHLIGHT,
+        DisplayMessage, Error, FimCompletionMessage, LttwResult, LTTW_FIM_HIGHLIGHT,
     },
+    accept::fim_accept_inner,
+    info_stats::build_info_string,
+    llama_client::{FimRequest, FimResponse, FimTimings},
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition},
-    serde::{Deserialize, Serialize},
     std::sync::Arc,
     std::time::{Duration, Instant},
 };
-
-/// FIM completion request
-#[derive(Debug, Clone, Serialize)]
-pub struct FimRequest {
-    pub id_slot: i64,
-    pub input_prefix: String,
-    pub input_suffix: String,
-    pub input_extra: Vec<ExtraContext>,
-    pub prompt: String,
-    pub stop: Vec<String>,
-    pub n_predict: u32,
-    pub n_indent: usize,
-    pub top_k: u32,
-    pub top_p: f32,
-    pub samplers: Vec<String>,
-    pub t_max_prompt_ms: u32,
-    pub t_max_predict_ms: u32,
-    pub response_fields: Vec<String>,
-}
-
-/// FIM completion response (uses flat keys from server)
-#[derive(Debug, Clone, Deserialize)]
-pub struct FimResponse {
-    pub content: String,
-    #[serde(flatten)]
-    pub timings: Option<FimTimings>,
-    #[serde(default)]
-    pub tokens_cached: u64,
-    #[serde(default)]
-    pub truncated: bool,
-}
-
-/// FIM completion result with timing info
-#[derive(Debug, Clone, Serialize)]
-pub struct FimResult {
-    pub content: String,
-    pub can_accept: bool,
-    pub timings: Option<FimTimings>,
-    pub tokens_cached: u64,
-    pub truncated: bool,
-    pub info: Option<String>,
-}
-
-/// FIM timing information (matches server response format with flat keys)
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct FimTimings {
-    #[serde(rename = "timings/prompt_n")]
-    pub prompt_n: Option<i64>,
-    #[serde(rename = "timings/prompt_ms")]
-    pub prompt_ms: Option<f64>,
-    #[serde(rename = "timings/prompt_per_token_ms")]
-    pub prompt_per_token_ms: Option<f64>,
-    #[serde(rename = "timings/prompt_per_second")]
-    pub prompt_per_second: Option<f64>,
-    #[serde(rename = "timings/predicted_n")]
-    pub predicted_n: Option<i64>,
-    #[serde(rename = "timings/predicted_ms")]
-    pub predicted_ms: Option<f64>,
-    #[serde(rename = "timings/predicted_per_token_ms")]
-    pub predicted_per_token_ms: Option<f64>,
-    #[serde(rename = "timings/predicted_per_second")]
-    pub predicted_per_second: Option<f64>,
-}
 
 /// Determine n_predict based on cursor position
 /// Returns n_predict_inner if there are non-whitespace characters to the right of the cursor
@@ -111,58 +48,6 @@ pub fn get_dynamic_n_predict(
 
     // There are non-whitespace characters to the right of the cursor
     (n_predict_inner, true)
-}
-
-/// Build info string from timing information
-#[allow(clippy::too_many_arguments)] // Info display requires many parameters
-#[tracing::instrument]
-pub fn build_info_string(
-    timings: &FimTimings,
-    tokens_cached: u64,
-    truncated: bool,
-    ring_chunks: usize,
-    ring_n_chunks: usize,
-
-    ring_n_evict: usize,
-    ring_queued: usize,
-    ring_queue_length: usize,
-    cache_size: usize,
-    max_cache_keys: usize,
-) -> String {
-    // Extract timing values
-    let n_prompt = timings.prompt_n.unwrap_or(0);
-    let t_prompt_ms = timings.prompt_ms.unwrap_or(1.0);
-    let s_prompt = timings.prompt_per_second.unwrap_or(0.0);
-
-    let n_predict = timings.predicted_n.unwrap_or(0);
-    let t_predict_ms = timings.predicted_ms.unwrap_or(1.0);
-    let s_predict = timings.predicted_per_second.unwrap_or(0.0);
-
-    // Build info string
-    if truncated {
-        format!(
-            " | WARNING: the context is full: {}, increase the server context size or reduce g:lttw_config.ring_n_chunks",
-            tokens_cached
-        )
-    } else {
-        format!(
-            " | c: {}, r: {}/{}, e: {}, q: {}/{}, C: {}/{} | p: {} ({:.2} ms, {:.2} t/s) | g: {} ({:.2} ms, {:.2} t/s)",
-            tokens_cached,
-            ring_chunks,
-            ring_n_chunks,
-            ring_n_evict,
-            ring_queued,
-            ring_queue_length,
-            cache_size,
-            max_cache_keys,
-            n_prompt,
-            t_prompt_ms,
-            s_prompt,
-            n_predict,
-            t_predict_ms,
-            s_predict
-        )
-    }
 }
 
 #[tracing::instrument(skip(retry))]
@@ -238,24 +123,6 @@ pub fn fim_try_hint_inner(
             return Ok(());
         }
     };
-
-    //// TRIGGER LSP COMPLETION
-    ////
-    //// only trigger completions when not on a whitespace line and also
-    //// not when there is whitespace left of the cursor (eg. after a space)
-    //let lsp_completion_enabled = state.config.read().lsp_completions;
-    //let line_cur = lines.get(pos_y).cloned().unwrap_or_default();
-    //let left_char = line_cur.chars().nth(pos_x.saturating_sub(1));
-    //if lsp_completion_enabled
-    //    && !line_cur.trim().is_empty()
-    //    && let Some(lch) = left_char
-    //    && !lch.is_whitespace()
-    //{
-    //    // trigger the async lsp completion
-    //    if let Err(e) = crate::lsp_completion::trigger_lsp_completions_async() {
-    //        info!("trigger_lsp_completions_async error: {}", e)
-    //    }
-    //}
 
     // Spawn a FIM in the background nomatter what
     // either a speculative-fim as though the completion was accepted
@@ -1268,23 +1135,6 @@ pub fn fim_cycle_prev() -> LttwResult<()> {
     Ok(())
 }
 
-#[derive(Clone, Debug)]
-pub enum FimAcceptType {
-    Full,
-    Line,
-    Word,
-}
-
-impl std::fmt::Display for FimAcceptType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FimAcceptType::Full => write!(f, "full"),
-            FimAcceptType::Line => write!(f, "line"),
-            FimAcceptType::Word => write!(f, "word"),
-        }
-    }
-}
-
 /// Trims the suggestion if there are matching characters with the beginning of the suffix of the
 /// current line at the end of the suffix.
 /// Trims the suffix of the current line (existing text) IFF while ignoring the final
@@ -1328,102 +1178,6 @@ pub fn trim_suggestion_and_suffix_on_curr_line<'a>(
 
         // If suggestion.len() less than suffix then assume infill display as okay
         (suggestion, Some(new_suffix), false) // do not infill we must overlay
-    }
-}
-
-/// Accept FIM suggestion - returns the modified line
-// returns if inline should be used
-#[tracing::instrument]
-pub fn accept_fim_suggestion(
-    accept_type: FimAcceptType,
-    pos_x: usize,
-    line_cur: &str,
-    content: &[String],
-) -> (
-    String,              // first line
-    Option<Vec<String>>, // rest lines (None if not needed)
-    Option<usize>,       // inline-end (NONE if not inline)
-) {
-    // Safety: check content length before accessing content[0]
-    if content.is_empty() {
-        return (line_cur.to_string(), None, None);
-    }
-
-    let first_line = content[0].clone();
-
-    // Safety: ensure pos_x is within bounds
-    let line_cur_len = line_cur.len();
-    let safe_pos_x = pos_x.min(line_cur_len);
-    let prefix = if safe_pos_x <= line_cur_len {
-        &line_cur[..safe_pos_x]
-    } else {
-        ""
-    }
-    .to_string();
-
-    let (new_line, inline) = if content.len() == 1 {
-        // If only one line, just replace the current line
-        let suffix = if safe_pos_x <= line_cur_len {
-            &line_cur[safe_pos_x..]
-        } else {
-            ""
-        };
-        let (first_line, new_suffix, infill) =
-            trim_suggestion_and_suffix_on_curr_line(&first_line, suffix);
-
-        // NOTE even though when we get a new suffix (under a partial bracket match) we
-        // don't render the content with infill but we still are rendering "inline"
-        // so we still need to calculate the final location upon acceptance
-        let inline = if infill || new_suffix.is_some() {
-            Some(prefix.len() + first_line.len())
-        } else {
-            None
-        };
-
-        let suffix = if let Some(suffix) = new_suffix {
-            suffix
-        } else {
-            suffix.to_string()
-        };
-        (prefix + first_line + &suffix, inline)
-    } else {
-        (prefix + &first_line, None)
-    };
-
-    // Handle accept type
-    match accept_type {
-        FimAcceptType::Full => {
-            // Insert rest of suggestion
-            if content.len() > 1 {
-                let rest: Vec<String> = content[1..].to_vec();
-                (new_line, Some(rest), inline)
-            } else {
-                (new_line, None, inline)
-            }
-        }
-        FimAcceptType::Line => {
-            if new_line == line_cur && content.len() > 1 {
-                // accept the next line - safety check for content[1]
-                let rest = vec![content[1].clone()];
-                (new_line, Some(rest), inline)
-            } else {
-                (new_line, None, inline)
-            }
-        }
-        FimAcceptType::Word => {
-            // Accept only the first word
-            let suffix = if safe_pos_x <= line_cur_len {
-                &line_cur[safe_pos_x..]
-            } else {
-                ""
-            };
-            if let Some(word_match) = first_line.split_whitespace().next() {
-                let _new_word = word_match.to_string() + suffix;
-                (new_line + word_match, None, inline)
-            } else {
-                (new_line, None, inline)
-            }
-        }
     }
 }
 

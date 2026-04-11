@@ -5,6 +5,7 @@ use {
         fim_cycle_next, fim_cycle_prev, fim_try_hint, fim_try_hint_skip_debounce,
         render_fim_suggestion, FimAcceptType, FimResponse, FimTimings,
     },
+    crate::fim_hide,
     crate::lsp_completion::retrieve_lsp_completions,
     crate::plugin_state::{get_state, init_state, PluginState},
     crate::utils::{
@@ -12,6 +13,7 @@ use {
         get_current_buffer_id, get_current_buffer_info, get_current_filetype, get_mode_bz, get_pos,
         get_yanked_text, in_insert_mode, set_buf_lines, set_window_cursor,
     },
+    crate::LttwResult,
     std::{
         sync::atomic::Ordering,
         time::{Duration, Instant},
@@ -44,49 +46,20 @@ impl From<Vec<DisplayMessage>> for DisplayMessage {
 /// Message sent from async worker to main thread when completion is ready
 #[derive(Debug, Clone)]
 pub struct FimCompletionMessage {
-    buffer_id: u64, // Buffer handle to ensure we're still in same buffer
+    pub buffer_id: u64, // Buffer handle to ensure we're still in same buffer
     //ctx: LocalContext,       // All buffer lines captured at start
-    line_cur: String, // the current line where the completion was calculated (without completion)
-    cursor_x: usize,  // Cursor position X
-    cursor_y: usize,  // Cursor position Y
-    completion: FimResponse, // All available completions for cycling
-    do_render: bool,
-    retry: Option<usize>, // the retry count for this completion
-}
-
-// FIM completion channel types for async communication between worker and main thread
-/// Timing information from FIM completion
-#[derive(Debug, Clone, Default)]
-pub struct FimTimingsData {
-    pub n_prompt: i64,
-    pub t_prompt_ms: f64,
-    pub s_prompt: f64,
-    pub n_predict: i64,
-    pub t_predict_ms: f64,
-    pub s_predict: f64,
-    pub tokens_cached: u64,
-    pub truncated: bool,
-}
-
-impl FimTimingsData {
-    pub fn new(t: FimTimings, tokens_cached: u64, truncated: bool) -> Self {
-        Self {
-            n_prompt: t.prompt_n.unwrap_or(0),
-            t_prompt_ms: t.prompt_ms.unwrap_or(0.0),
-            s_prompt: t.prompt_per_second.unwrap_or(0.0),
-            n_predict: t.predicted_n.unwrap_or(0),
-            t_predict_ms: t.predicted_ms.unwrap_or(0.0),
-            s_predict: t.predicted_per_second.unwrap_or(0.0),
-            tokens_cached,
-            truncated,
-        }
-    }
+    pub line_cur: String, // the current line where the completion was calculated (without completion)
+    pub cursor_x: usize,  // Cursor position X
+    pub cursor_y: usize,  // Cursor position Y
+    pub completion: FimResponse, // All available completions for cycling
+    pub do_render: bool,
+    pub retry: Option<usize>, // the retry count for this completion
 }
 
 /// NOTE this occurs on the neovim thread
 /// Process pending FIM display queue - drains and displays messages on the main thread
 #[tracing::instrument]
-fn process_pending_display() -> LttwResult<()> {
+pub fn process_pending_display() -> LttwResult<()> {
     let state = get_state();
 
     // Only display if we are in insert mode
