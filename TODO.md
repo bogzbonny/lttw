@@ -1,6 +1,10 @@
 
 ^^^^^^^^^ DONE
 
+00. if lsp_comp_insert_one_var=true AND a variable match was found 
+     then we should skip matching removing any matching suffix characters from
+     the match - this sometimes removes final ')' undesirably 
+
 01. LSP rematch options eg. Ok() is predicted a decent amount which should
     probably re rerouted to Ok(()) (config option this) 
     - comp.text = "let mut $1 = $0;" is funny and turns into let mut ... = ;

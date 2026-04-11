@@ -305,6 +305,8 @@ fn trim_completion(
     // Regex for ${NN:...} patterns only
     let curly_re = Regex::new(r"\$\{\d{1,2}:[^}]*,?\s*\}").unwrap();
 
+    let mut filter_tail = true;
+
     if truncate {
         // Truncate at first marker (current behavior)
         if let Some(mat) = re.find(&text) {
@@ -380,6 +382,7 @@ fn trim_completion(
                 match next_var {
                     Some(Some(v)) => {
                         text.insert_str(first_pos, v);
+                        filter_tail = false;
                     }
                     Some(None) => {
                         text.insert(first_pos, '…');
@@ -400,7 +403,9 @@ fn trim_completion(
     }
 
     // trim the end of the completion for any matching suffix chars
-    let text = filter_tail_chars(&text, suffix); // strip the prefix from the text
+    if filter_tail {
+        text = filter_tail_chars(&text, suffix); // strip the prefix from the text
+    }
     Some(text)
 }
 

@@ -1286,8 +1286,8 @@ impl std::fmt::Display for FimAcceptType {
 }
 
 /// Trims the suggestion if there are matching characters with the beginning of the suffix of the
-/// current line.
-/// Trims the suffix of the current line (and not the suggestion) if while ignoring the final
+/// current line at the end of the suffix.
+/// Trims the suffix of the current line (existing text) IFF while ignoring the final
 /// character of the suggestion the suffix matches the suggestion. This is useful in situations
 /// such as:
 ///     Eg. if suggestion is "Option<String>" and the suffix is "String {" then the suffix matches
