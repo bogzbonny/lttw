@@ -1,6 +1,3 @@
-
-^^^^^^^^^ DONE
-
 10. option to disable llm calls (just use lsp)
 
 10. reduce cognitive offloading allowing for llm calls to be ignored a % of the
@@ -8,6 +5,8 @@
     nothing!).
      - reduce_cognitive_offloading_ratio = 25%
      - NOTE this should not apply to LSP predictions
+
+^^^^^^^^^ DONE
 
 ------------------------
 LSP Completions improvements
@@ -26,12 +25,22 @@ LSP Completions improvements
 ------------------------
 GENERAL
 
+10. multiple models, first attempt to get the result from the small model (maybe
+    even do a retry) then once we've gotten a result maybe launch the slower
+    model on the same location to get a potentially better solution.
+     - single llama.cpp server in router mode should be able to handle
+       concurrent/series requests to multiple models 
+     - experiment with running two models concurrently (see how much it slows
+       down the fast model) 
+     - SHOULD allow for all the llm settings to be different between the two
+       models, importantly the ring buffer settings, pick settings, and context
+       window settings.
+     - Some kind of minimum lag before launching the heavy model is probably
+       appropriate - like even a full second, just so it's not constantly
+       running.
+
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
-
-10. multiple llama.cpp servers, first attempt to get the result from the small
-    model (maybe even do a retry) then once we've gotten a result maybe launch
-    the slower model on the same location to get a potentially better solution.
 
 20. README gif of homer with the bird
      - link it to https://www.youtube.com/watch?v=R_rF4kcqLkI
