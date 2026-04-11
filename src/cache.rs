@@ -4,7 +4,7 @@
 // eviction policy to manage memory usage and improve performance.
 
 use {
-    crate::{utils::hash_input, FimResponse},
+    crate::{context::LocalContext, utils::hash_input, FimResponse},
     ahash::{HashMap, HashMapExt},
     serde::{Deserialize, Serialize},
     std::collections::VecDeque,
@@ -97,6 +97,106 @@ impl Cache {
     #[cfg(test)]
     pub fn max_keys(&self) -> usize {
         self.max_keys
+    }
+
+    // returns all the cache completions for the provided context, recaching them to a closer
+    // position if found
+    #[tracing::instrument]
+    pub fn get_cached_completion(&mut self, ctx: &LocalContext) -> (Vec<FimResponse>, usize) {
+        // Compute primary hash
+        let primary_hash_inp = format!("{}{}Î{}", ctx.prefix, ctx.middle, ctx.suffix);
+        let hash = hash_input(&primary_hash_inp);
+
+        // Check if the completion is cached (and update LRU order)
+        let response = self.get(&hash);
+
+        // the bool in all_completions is "recache"
+        let mut completions_idx = 0;
+        let mut all_completions: Vec<(FimResponse, bool)> = Vec::new();
+        let find_better_completion = if let Some(resp) = response {
+            all_completions.push((resp, false));
+            false
+        } else {
+            true
+        };
+
+        // ... or if there is a cached completion nearby (128 characters behind)
+        // Looks at the previous 128 characters to see if a completion is cached.
+        let pm = format!("{}{}", ctx.prefix, ctx.middle);
+        let mut best_len = 0;
+
+        // Only search if pm has enough characters
+        if pm.len() < 2 {
+            let completions = all_completions.into_iter().map(|(c, _)| c).collect();
+            return (completions, completions_idx);
+        }
+
+        // iterate through the prefix+midde string while removing characters from the tail
+        //
+        let mut char_indices = pm.char_indices().collect::<Vec<_>>();
+        char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
+                                             // its never used
+        let char_len = char_indices.len() - 1;
+
+        let max_iters = 128; // TODO parameterize this
+        for i in 1..=(max_iters.min(char_len.saturating_sub(1))) {
+            let split_byte_idx = char_indices[char_len - i].0;
+            let (pm_with_less_tail, removed) = pm.split_at(split_byte_idx);
+
+            let new_prefix_middle = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
+            let hash_new = hash_input(&new_prefix_middle);
+
+            if let Some(response_) = self.get(&hash_new) {
+                let content = &response_.content;
+                if content.is_empty() {
+                    continue;
+                }
+
+                // Check that the removed text matches the beginning of the cached response
+                // NOTE 'i' always is == removed.len()
+                // don't bother if i == content.len() because then there isn't any additional
+                // predicted text
+                if content.starts_with(removed) {
+                    // Found a match - use the rest of the content
+                    let Some(remaining) = content.strip_prefix(removed) else {
+                        continue;
+                    };
+
+                    all_completions.push((
+                        FimResponse {
+                            content: remaining.to_string(),
+                            timings: response_.timings,
+                            tokens_cached: response_.tokens_cached,
+                            truncated: response_.truncated,
+                        },
+                        true,
+                    )); // recache = true
+
+                    // could use chars().count() but it's not to important
+                    if find_better_completion && !remaining.is_empty() && remaining.len() > best_len
+                    {
+                        best_len = remaining.len();
+                        completions_idx = all_completions.len() - 1;
+                    }
+                }
+            }
+        }
+
+        for all_completion in all_completions.iter() {
+            let (resp, recache) = all_completion;
+            // recache the re-found response at the new position - this way the response can still be found
+            // if it was longer than 128 characters and the user is accepting this line by line.
+            if *recache {
+                // use the original ctx to compute the hashes
+                let hashes = compute_hashes(&ctx.prefix, &ctx.middle, &ctx.suffix);
+                for hash in &hashes {
+                    self.insert(hash.clone(), resp.clone());
+                }
+            }
+        }
+
+        let completions = all_completions.into_iter().map(|(c, _)| c).collect();
+        (completions, completions_idx)
     }
 }
 
