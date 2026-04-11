@@ -149,24 +149,29 @@ pub fn fim_try_hint_inner(
             }
         };
 
-        // TRIGGER LSP COMPLETION
-        //
-        // only trigger completions when not on a whitespace line and also
-        // not when there is whitespace left of the cursor (eg. after a space)
-        if all_completions.is_empty() {
-            let lsp_completion_enabled = state.config.read().lsp_completions;
-            let left_char = ctx.line_cur.chars().nth(pos_x.saturating_sub(1));
-            if lsp_completion_enabled
-                && !ctx.line_cur.trim().is_empty()
-                && let Some(lch) = left_char
-                && !lch.is_whitespace()
-                && let Err(e) = tx.send(DisplayMessage::TriggerLSPCompletion).await
-            {
-                error!(e);
+        let mut msgs: Vec<DisplayMessage> = vec![];
+
+        if retry.is_none() {
+            msgs.push(DisplayMessage::ClearFIM);
+
+            // TRIGGER LSP COMPLETION
+            //
+            // only trigger completions when not on a whitespace line and also
+            // not when there is whitespace left of the cursor (eg. after a space)
+            if all_completions.is_empty() {
+                let lsp_completion_enabled = state.config.read().lsp_completions;
+                let left_char = ctx.line_cur.chars().nth(pos_x.saturating_sub(1));
+                if lsp_completion_enabled
+                    && !ctx.line_cur.trim().is_empty()
+                    && let Some(lch) = left_char
+                    && !lch.is_whitespace()
+                    && let Err(e) = tx.send(DisplayMessage::TriggerLSPCompletion).await
+                {
+                    error!(e);
+                }
             }
         }
 
-        let mut msgs: Vec<DisplayMessage> = vec![DisplayMessage::ClearFIM];
         info!("all completions: {} found", all_completions.len());
 
         let mut final_completion = None;

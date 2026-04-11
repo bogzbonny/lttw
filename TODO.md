@@ -1,4 +1,8 @@
 05. better global error printing/handling https://github.com/noib3/nvim-oxi/issues/231
+01. reduce lsp flicker. - not sure why.. maybe because if nothing is computed it
+    sends an additional recomputation which automatically triggers the lsp
+      - if retry is some then DONT render lsp
+      - diagnostics.rs, delete all the imports until 'Dictionary', flickers
 
 ^^^^^^^^^ DONE
 
@@ -9,10 +13,6 @@
     - this will encourage the user to type faster! if the response comes in it
       can still be used!
 
-01. reduce lsp flicker. - not sure why.. maybe because if nothing is computed it
-    sends an additional recomputation which automatically triggers the lsp
-      - if retry is some then DONT render lsp
-      - diagnostics.rs, delete all the imports until 'Dictionary', flickers
 
 ------------------------
 LSP Completions improvements
