@@ -69,9 +69,59 @@ lua require('llama').setup()
  - adaptive debounce strategy for fast typing
  - ability to explicitly cap the limit number of concurrent FIM calls 
  - don't autocomplete while in code comments (option to turn that on)
- - dynamic n_predict for reduce prediction tokens while inside a line
+  - dynamic n_predict for reduce prediction tokens while inside a line
 
-## Alternatives Local Code Completion 
+## LSP Completion Overrides
+
+The `lsp_overrides` configuration option allows you to transform LSP completion text
+after it's generated. This is useful for cases where the LSP provides completions
+that need slight modifications to be valid.
+
+### Configuration Format
+
+```lua
+config = function()
+  require('llama').setup({
+    lsp_overrides = {
+      -- Each entry is a pair: {pattern, replacement}
+      {"Ok()", "Ok(())"},  -- Transform Ok() to Ok(()) for unit type returns
+      -- Add more overrides as needed
+    }
+  })
+end
+```
+
+### How It Works
+
+- The plugin compares the final completion text against each pattern in order
+- When a match is found, the text is replaced with the corresponding replacement string
+- Only the first matching override is applied (breaks after first match)
+- Patterns are matched exactly (string equality), not as regex
+
+### Example Use Cases
+
+1. **Rust Unit Type Returns**: Transform `Ok()` to `Ok(())` when the LSP suggests a
+   simple `Ok()` but you need the explicit unit type
+   ```lua
+   {"Ok()", "Ok(())"}
+   ```
+
+2. **Common Function Wrappers**: If the LSP suggests `Some(x)` but you often need
+   `Some(Box::new(x))`
+   ```lua
+   {"Some(x)", "Some(Box::new(x))"}
+   ```
+
+3. **Multiple Overrides**: You can add multiple override pairs
+   ```lua
+   {
+     {"Ok()", "Ok(())"},
+     {"Err()", "Err(())"},
+     {"Some(x)", "Some(Box::new(x))"}
+   }
+   ```
+
+## Alternatives Local Code Completion
 
  - llama.vim
  - tabby

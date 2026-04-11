@@ -144,14 +144,29 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<DisplayMe
             if seen.contains(&text) {
                 return None;
             }
-            seen.insert(text.clone());
+
+            // Apply LSP overrides: check if text matches any override pattern
+            // and replace with the override value
+            let text_with_overrides = {
+                let config = state.config.read();
+                let mut modified_text = text.clone();
+                for (pattern, replacement) in &config.lsp_overrides {
+                    if modified_text == *pattern {
+                        modified_text = replacement.clone();
+                        break; // Apply only the first matching override
+                    }
+                }
+                modified_text
+            };
+
+            seen.insert(text_with_overrides.clone());
 
             // NOTE use the full suggestion here, NOT the prefix stripped text!
             let ident = strip_to_first_identifier(&comp.text);
             let usage = state.get_word_statistic_usage(&ident);
 
             let fim_resp = FimResponse {
-                content: text,
+                content: text_with_overrides,
                 timings: None,
                 tokens_cached: 0,
                 truncated: false,

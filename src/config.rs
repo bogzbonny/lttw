@@ -83,6 +83,12 @@ pub struct LttwConfig {
     pub lsp_comp_truncate_vars: bool,
     pub lsp_comp_insert_one_var: bool,
 
+    /// LSP override pairs for transforming completion text.
+    /// Each pair is (pattern, replacement). If a completion text matches
+    /// the pattern, it will be replaced with the replacement string.
+    /// Example: [("Ok()", "Ok(())")] will transform Ok() to Ok(())
+    pub lsp_overrides: Vec<(String, String)>,
+
     // Startup configuration
     pub enable_at_startup: bool,
     pub tracing_enabled: bool,
@@ -136,6 +142,8 @@ impl Default for LttwConfig {
             lsp_completions: true,
             lsp_comp_truncate_vars: true,
             lsp_comp_insert_one_var: false,
+            // Default override: transform Ok() to Ok(()) for unit type returns
+            lsp_overrides: vec![("Ok()".to_string(), "Ok(())".to_string())],
             enable_at_startup: true,
             tracing_enabled: false,
             tracing_log_file: false,
@@ -324,6 +332,39 @@ impl LttwConfig {
             config.lsp_comp_insert_one_var = v;
         }
 
+        // Helper to get array of string pairs from dictionary
+        let get_string_pairs = |key: &str| -> Option<Vec<(String, String)>> {
+            dict.get(key).and_then(|obj| {
+                nvim_oxi::Array::from_object(obj.clone()).ok().map(|a| {
+                    a.into_iter()
+                        .filter_map(|item| {
+                            nvim_oxi::Array::from_object(item).ok().map(|pair| {
+                                if pair.len() >= 2 {
+                                    let first = nvim_oxi::String::try_from(pair[0].clone())
+                                        .ok()
+                                        .map(|s| s.to_string());
+                                    let second = nvim_oxi::String::try_from(pair[1].clone())
+                                        .ok()
+                                        .map(|s| s.to_string());
+                                    match (first, second) {
+                                        (Some(f), Some(s)) => Some((f, s)),
+                                        _ => None,
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                        .flatten()
+                        .collect()
+                })
+            })
+        };
+
+        if let Some(v) = get_string_pairs("lsp_overrides") {
+            config.lsp_overrides = v;
+        }
+
         // Handle deprecated key names (rename old keys to new ones)
         if let Some(v) = get_string("endpoint") {
             config.endpoint_fim = v;
@@ -425,5 +466,29 @@ mod tests {
         assert_eq!(config.n_predict_inner, 16);
         assert_eq!(config.n_predict_end, 256);
         assert!(config.auto_fim);
+    }
+
+    #[test]
+    fn test_lsp_overrides_default() {
+        let config = LttwConfig::new();
+        // Check default override is present
+        assert_eq!(config.lsp_overrides.len(), 1);
+        assert_eq!(config.lsp_overrides[0].0, "Ok()");
+        assert_eq!(config.lsp_overrides[0].1, "Ok(())");
+    }
+
+    #[test]
+    fn test_lsp_overrides_custom() {
+        let config = LttwConfig::new();
+        // Test that overrides work as expected
+        let text = "Ok()";
+        let mut modified = text.to_string();
+        for (pattern, replacement) in &config.lsp_overrides {
+            if modified == *pattern {
+                modified = replacement.clone();
+                break;
+            }
+        }
+        assert_eq!(modified, "Ok(())");
     }
 }
