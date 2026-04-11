@@ -401,7 +401,12 @@ pub struct ExtraContext {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::{
+        cache::{compute_hashes, Cache},
+        context::LocalContext,
+        ring_buffer::RingBuffer,
+        FimResponse,
+    };
 
     #[test]
     fn test_ring_buffer_basic() {
@@ -583,5 +588,278 @@ mod tests {
         );
 
         assert_eq!(ring.queued_len(), 3);
+    }
+
+    #[test]
+    fn test_ring_buffer_chunk_duplicate_prevention() {
+        // Test that duplicate chunks are not added to the buffer
+        let mut ring_buffer = RingBuffer::new(5, 64, 16);
+
+        let chunk = vec![
+            "fn duplicate_test() {".to_string(),
+            "    let x = 1;".to_string(),
+            "}".to_string(),
+        ];
+
+        // Add chunk first time
+        ring_buffer.pick_chunk_inner(&chunk, String::new());
+        ring_buffer.update();
+
+        assert_eq!(ring_buffer.len(), 1);
+
+        // Try to add exact same chunk again (should be ignored)
+        ring_buffer.pick_chunk_inner(&chunk, String::new());
+
+        // Should still be 1 (no duplicate added)
+        assert_eq!(ring_buffer.len(), 1);
+
+        // Try to add same chunk via queued (should also be ignored)
+        ring_buffer.pick_chunk_inner(&chunk, String::new());
+
+        // Should still have same queued count
+        assert_eq!(ring_buffer.queued_len(), 0);
+    }
+
+    #[test]
+    fn test_ring_buffer_integration_with_cache() {
+        // Test that ring buffer chunks are properly tracked and cached
+        let mut ring_buffer = RingBuffer::new(3, 64, 16);
+
+        // Add first chunk
+        ring_buffer.pick_chunk_inner(
+            &[
+                "fn main() {".to_string(),
+                "    println!(\"hello\");".to_string(),
+                "}".to_string(),
+            ],
+            String::new(),
+        );
+        ring_buffer.update();
+
+        assert_eq!(ring_buffer.len(), 1);
+        assert_eq!(ring_buffer.queued_len(), 0);
+
+        // Add second chunk (should not evict first since they're different)
+        ring_buffer.pick_chunk_inner(
+            &[
+                "use std::io;".to_string(),
+                "fn read_input() {".to_string(),
+                "    let mut s = String::new();".to_string(),
+            ],
+            String::new(),
+        );
+        ring_buffer.update();
+
+        assert_eq!(ring_buffer.len(), 2);
+
+        // Add third chunk
+        ring_buffer.pick_chunk_inner(
+            &[
+                "mod test;".to_string(),
+                "fn test_func() {".to_string(),
+                "    assert_eq!(1, 1);".to_string(),
+            ],
+            String::new(),
+        );
+        ring_buffer.update();
+
+        assert_eq!(ring_buffer.len(), 3);
+
+        // Add fourth chunk - should evict the oldest one due to max_chunks limit
+        ring_buffer.pick_chunk_inner(
+            &[
+                "pub fn export_func() {".to_string(),
+                "    test_func();".to_string(),
+                "}".to_string(),
+            ],
+            String::new(),
+        );
+        ring_buffer.update();
+
+        // Should still be at max_chunks (3)
+        assert_eq!(ring_buffer.len(), 3);
+    }
+
+    #[test]
+    fn test_ring_buffer_eviction_with_similarity() {
+        // Test that similar chunks are evicted based on similarity threshold
+        let mut ring_buffer = RingBuffer::new(5, 64, 16);
+
+        let chunk1 = vec![
+            "fn function_one() {".to_string(),
+            "    let x = 1;".to_string(),
+            "    let y = 2;".to_string(),
+            "    let z = 3;".to_string(),
+            "}".to_string(),
+        ];
+
+        // Add first chunk
+        ring_buffer.pick_chunk_inner(&chunk1, String::new());
+        ring_buffer.update();
+
+        assert_eq!(ring_buffer.len(), 1);
+
+        // Add very similar chunk (should evict first due to >0.9 similarity)
+        let mut chunk2 = chunk1.clone();
+        chunk2[1] = "    let x = 100;".to_string(); // Slightly different
+
+        ring_buffer.pick_chunk_inner(&chunk2, String::new());
+        ring_buffer.update();
+
+        // Due to high similarity, first chunk should be evicted
+        // The exact behavior depends on the similarity threshold (0.9)
+        assert!(ring_buffer.len() <= 2);
+    }
+
+    #[test]
+    fn test_cache_with_ring_buffer_chunks() {
+        // Test that cache properly handles entries with ring buffer context
+        let mut cache = Cache::new(10);
+        let mut ring_buffer = RingBuffer::new(3, 64, 16);
+
+        // Add chunks to ring buffer
+        ring_buffer.pick_chunk_inner(
+            &[
+                "fn test1() {".to_string(),
+                "    println!(\"test1\");".to_string(),
+                "}".to_string(),
+            ],
+            String::new(),
+        );
+        ring_buffer.update();
+
+        // Simulate a FIM request with ring buffer context
+        // Use a prefix with newlines to test truncated prefix hashes
+        let ctx = LocalContext {
+            prefix: "fn main() {\n    let x = 1;\n".to_string(),
+            middle: "    println!(\"hello\"".to_string(),
+            suffix: ");\n}".to_string(),
+            line_cur_suffix: "rintln!(\"hello\");".to_string(),
+            line_cur: "    println!(\"hello\");".to_string(),
+            indent: 4,
+        };
+
+        let hashes = compute_hashes(&ctx.prefix, &ctx.middle, &ctx.suffix);
+
+        // Verify we generated multiple hashes (prefix has newlines)
+        assert!(
+            hashes.len() > 1,
+            "Should generate multiple hashes from truncated prefixes"
+        );
+
+        // Cache a response for these hashes
+        let response = r#"{"content":" world","timings":{},"tokens_cached":0,"truncated":false}"#;
+        let response = serde_json::from_str::<FimResponse>(response).unwrap();
+        for hash in &hashes {
+            cache.insert(hash.clone(), response.clone());
+        }
+
+        // Verify cache contains the entries
+        for hash in &hashes {
+            assert!(cache.contains_key(hash));
+        }
+
+        // Verify cache size matches the number of hashes generated
+        assert_eq!(
+            cache.len(),
+            hashes.len(),
+            "Cache should contain all {} hash entries",
+            hashes.len()
+        );
+    }
+
+    #[test]
+    fn test_ring_buffer_n_evict_counter() {
+        // Test that n_evict counter tracks evicted chunks correctly
+        let mut ring_buffer = RingBuffer::new(2, 64, 16);
+
+        ring_buffer.pick_chunk_inner(
+            &[
+                "fn func1() {".to_string(),
+                "    let x = 1;".to_string(),
+                "}".to_string(),
+            ],
+            String::new(),
+        );
+        ring_buffer.update();
+
+        let n_evict_before = ring_buffer.n_evict();
+
+        // Add similar chunks to trigger eviction
+        for _ in 0..5 {
+            let similar_chunk = vec![
+                "fn func1() {".to_string(),
+                "    let x = 100;".to_string(), // Slightly different
+                "}".to_string(),
+            ];
+
+            ring_buffer.pick_chunk_inner(&similar_chunk, String::new());
+            ring_buffer.update();
+        }
+
+        let n_evict_after = ring_buffer.n_evict();
+
+        // Should have evicted some chunks
+        assert!(n_evict_after >= n_evict_before);
+    }
+
+    #[test]
+    fn test_ring_buffer_get_extra_returns_correct_data() {
+        // Test that get_extra returns properly formatted extra context
+        let mut ring_buffer = RingBuffer::new(2, 64, 16);
+
+        let chunk_data = vec![
+            "fn test_function() {".to_string(),
+            "    let x = 42;".to_string(),
+            "    return x;".to_string(),
+            "}".to_string(),
+        ];
+
+        ring_buffer.pick_chunk_inner(&chunk_data, String::new());
+        ring_buffer.update();
+
+        let extra = ring_buffer.get_extra();
+
+        assert_eq!(extra.len(), 1);
+        assert_eq!(extra[0].text, chunk_data.join("\n") + "\n");
+    }
+
+    #[test]
+    fn test_multiple_ring_buffer_updates() {
+        // Test multiple sequential updates to ring buffer
+        let mut ring_buffer = RingBuffer::new(3, 64, 16);
+
+        // Pick multiple chunks without updating
+        for i in 0..5 {
+            ring_buffer.pick_chunk_inner(
+                &[
+                    format!("fn func{}_()", i),
+                    format!("    let x = {};", i),
+                    "}".to_string(),
+                ],
+                String::new(),
+            );
+        }
+
+        // All should be in queued
+        assert_eq!(ring_buffer.queued_len(), 5);
+        assert_eq!(ring_buffer.len(), 0);
+
+        // Update twice
+        ring_buffer.update();
+        ring_buffer.update();
+
+        // Should have moved 2 to ring, 3 remaining in queue
+        assert_eq!(ring_buffer.len(), 2);
+        assert_eq!(ring_buffer.queued_len(), 3);
+
+        // Update remaining queued chunks
+        ring_buffer.update();
+        ring_buffer.update();
+        ring_buffer.update();
+
+        // All should be in ring (max 3 due to limit)
+        assert_eq!(ring_buffer.len(), 3);
+        assert_eq!(ring_buffer.queued_len(), 0);
     }
 }

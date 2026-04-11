@@ -34,7 +34,7 @@ pub use {
 use {
     diagnostics::{debug_output_diagnostics, handle_diagnostic_changed},
     diff_chunk::calculate_diff_between_contents,
-    fim::{fim_cycle_next, fim_cycle_prev, fim_try_hint},
+    fim::fim_try_hint,
     nvim_oxi::{Dictionary, Function},
     plugin_state::{get_state, init_state, PluginState},
     router::process_pending_display,

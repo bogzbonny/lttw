@@ -1,10 +1,12 @@
 use {
-    crate::fim::fim_try_hint_skip_debounce,
-    crate::fim::trim_suggestion_and_suffix_on_curr_line,
-    crate::fim_hide_inner,
-    crate::plugin_state::get_state,
-    crate::utils::{get_current_buffer_id, set_buf_lines, set_window_cursor},
-    crate::LttwResult,
+    super::render::trim_suggestion_and_suffix_on_curr_line,
+    crate::{
+        fim::fim_try_hint_skip_debounce,
+        fim_hide_inner,
+        plugin_state::get_state,
+        utils::{get_current_buffer_id, set_buf_lines, set_window_cursor},
+        LttwResult,
+    },
 };
 
 #[derive(Clone, Debug)]

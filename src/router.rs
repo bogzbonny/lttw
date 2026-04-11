@@ -1,5 +1,5 @@
 use crate::{
-    fim::{fim_try_hint, render_fim_suggestion},
+    fim::{fim_try_hint, render::render_fim_suggestion},
     fim_hide,
     lsp_completion::retrieve_lsp_completions,
     plugin_state::get_state,

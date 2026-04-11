@@ -129,3 +129,22 @@ pub fn compute_hashes(prefix: &str, middle: &str, suffix: &str) -> Vec<String> {
 
     hashes
 }
+
+#[cfg(test)]
+mod tests {
+    use {super::*, crate::context::LocalContext};
+
+    #[test]
+    fn test_compute_hashes() {
+        let ctx = LocalContext {
+            prefix: "fn main() {\n".to_string(),
+            middle: "    println!".to_string(),
+            suffix: "(\"hello\");\n}\n".to_string(),
+            ..Default::default()
+        };
+
+        let hashes = compute_hashes(&ctx.prefix, &ctx.middle, &ctx.suffix);
+
+        assert!(!hashes.is_empty());
+    }
+}

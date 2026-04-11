@@ -1,5 +1,5 @@
 use {
-    crate::{ring_buffer::ExtraContext, FimTimings},
+    crate::{ring_buffer::ExtraContext, Error, FimTimings, LttwResult},
     serde::{Deserialize, Serialize},
 };
 
@@ -64,14 +64,117 @@ pub struct FimResponse {
     pub truncated: bool,
 }
 
-// XXX to delete
-///// FIM completion result with timing info
-//#[derive(Debug, Clone, Serialize)]
-//pub struct FimResult {
-//    pub content: String,
-//    pub can_accept: bool,
-//    pub timings: Option<FimTimings>,
-//    pub tokens_cached: u64,
-//    pub truncated: bool,
-//    pub info: Option<String>,
-//}
+/// Send FIM request to the server
+#[tracing::instrument]
+pub async fn send_fim_request(
+    request: &FimRequest,
+    endpoint_fim: String,
+    model_fim: String,
+    api_key: String,
+) -> LttwResult<String> {
+    let client = reqwest::Client::new();
+
+    let mut request_body = serde_json::to_value(request)?;
+
+    // Add model if specified
+    if !model_fim.is_empty() {
+        request_body["model"] = serde_json::Value::String(model_fim.clone());
+    }
+
+    let mut builder = client.post(&endpoint_fim).json(&request_body);
+
+    // Add API key if specified
+    if !api_key.is_empty() {
+        builder = builder.bearer_auth(&api_key);
+    }
+
+    let response = builder.send().await?;
+
+    if response.status().is_success() {
+        Ok(response.text().await?)
+    } else {
+        Err(Error::Server(format!(
+            "Server returned status: {}",
+            response.status()
+        )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, crate::ring_buffer::RingBuffer};
+    #[test]
+    fn test_fim_request_serialization_with_extra() {
+        // Test that FIM request properly serializes with extra context
+        let mut ring_buffer = RingBuffer::new(2, 64, 16);
+
+        // Add some chunks to the ring buffer
+        ring_buffer.pick_chunk_inner(
+            &[
+                "mod module1;".to_string(),
+                "mod module2;".to_string(),
+                "mod module3;".to_string(),
+            ],
+            String::new(),
+        );
+        ring_buffer.update();
+
+        let extra = ring_buffer.get_extra();
+
+        let request = FimRequest {
+            id_slot: 0,
+            input_prefix: "fn main() {".to_string(),
+            input_suffix: "}".to_string(),
+            input_extra: extra,
+            prompt: "    println!(\"hello\"".to_string(),
+            n_predict: 32,
+            stop: vec![],
+            n_indent: 4,
+            top_k: 40,
+            top_p: 0.90,
+            samplers: vec!["top_k".to_string(), "top_p".to_string()],
+            t_max_prompt_ms: 500,
+            t_max_predict_ms: 1000,
+            response_fields: vec!["content".to_string()],
+        };
+
+        let json = serde_json::to_string(&request).expect("Request should serialize to JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("JSON should be parseable");
+
+        // Verify input_extra contains the chunk data
+        let extra_array = parsed["input_extra"].as_array().unwrap();
+        assert_eq!(extra_array.len(), 1);
+        assert!(extra_array[0].get("text").is_some());
+    }
+
+    #[test]
+    fn test_fim_request_with_ring_buffer_extra() {
+        // Test that FIM request properly includes extra context from ring buffer
+        let ring_buffer = RingBuffer::new(2, 64, 16);
+
+        let request = FimRequest {
+            id_slot: 0,
+            input_prefix: "fn main() {".to_string(),
+            input_suffix: "}".to_string(),
+            input_extra: ring_buffer.get_extra(),
+            prompt: "    println!(\"hello\"".to_string(),
+            n_predict: 32,
+            stop: vec![],
+            n_indent: 4,
+            top_k: 40,
+            top_p: 0.90,
+            samplers: vec!["top_k".to_string(), "top_p".to_string()],
+            t_max_prompt_ms: 500,
+            t_max_predict_ms: 1000,
+            response_fields: vec!["content".to_string()],
+        };
+
+        let json = serde_json::to_string(&request).expect("Request should serialize to JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("JSON should be parseable");
+
+        // Verify input_extra is an empty array when ring buffer is empty
+        assert_eq!(parsed["input_extra"].as_array().unwrap().len(), 0);
+    }
+}
