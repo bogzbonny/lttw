@@ -41,8 +41,12 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 // TODO log error
-                let _ = set_mode_in_state();
-                let _ = mode_change_maybe_start_processing_ring_updates();
+                if let Err(e) = set_mode_in_state() {
+                    error!(e)
+                }
+                if let Err(e) = mode_change_maybe_start_processing_ring_updates() {
+                    error!(e)
+                }
                 false
             })
             .build(),
@@ -54,7 +58,9 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         ["CompleteDone"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
-                let _ = on_move();
+                if let Err(e) = on_move() {
+                    error!(e)
+                }
                 false
             })
             .build(),
@@ -68,7 +74,9 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
             ["CursorMoved", "CursorMovedI"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
                 .callback(|_| {
-                    let _ = on_move();
+                    if let Err(e) = on_move() {
+                        error!(e)
+                    }
                     false
                 })
                 .build(),
@@ -83,7 +91,9 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 info!("DiagnosticChanged autocmd fired");
-                let _ = handle_diagnostic_changed(nvim_oxi::Object::nil());
+                if let Err(e) = handle_diagnostic_changed(nvim_oxi::Object::nil()) {
+                    error!(e)
+                }
                 false
             })
             .build(),
@@ -97,7 +107,9 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         ["BufModifiedSet", "BufEnter"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
-                let _ = set_cur_buffer_info_in_state();
+                if let Err(e) = set_cur_buffer_info_in_state() {
+                    error!(e)
+                }
                 false
             })
             .build(),
@@ -112,7 +124,9 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
                 info!("BufEnter diff_tracking_enabled autocmd fired");
-                let _ = on_buf_enter_update_file_contents();
+                if let Err(e) = on_buf_enter_update_file_contents() {
+                    error!(e)
+                }
                 false
             })
             .build(),
@@ -125,7 +139,9 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         ["TextYankPost"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
-                let _ = on_text_yank_post();
+                if let Err(e) = on_text_yank_post() {
+                    error!(e)
+                }
                 false
             })
             .build(),
@@ -138,7 +154,9 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         ["BufLeave"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
-                let _ = on_buf_leave();
+                if let Err(e) = on_buf_leave() {
+                    error!(e)
+                }
                 false
             })
             .build(),
@@ -155,7 +173,9 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
             ["BufWritePost"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
                 .callback(|_| {
-                    let _ = on_buf_write_post();
+                    if let Err(e) = on_buf_write_post() {
+                        error!(e)
+                    }
                     false
                 })
                 .build(),
@@ -169,8 +189,9 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
         ["InsertLeave"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
-                let _ = fim_hide();
-                // TODO log error
+                if let Err(e) = fim_hide() {
+                    error!(e)
+                }
                 false
             })
             .build(),
@@ -217,10 +238,14 @@ pub fn setup_filetype_autocmd() -> LttwResult<()> {
         ["BufEnter"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
             .callback(|_| {
-                let _ = on_buf_enter_check_filetype(); // TODO log error
+                if let Err(e) = on_buf_enter_check_filetype() {
+                    error!(e)
+                }
 
                 // Also gather ring buffer chunks
-                let _ = on_buf_enter_gather_chunks(); // TODO log error
+                if let Err(e) = on_buf_enter_gather_chunks() {
+                    error!(e)
+                }
 
                 false // DO NOT DELETE this autocommand once used
             })

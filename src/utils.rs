@@ -94,12 +94,12 @@ where
     R: RangeBounds<usize>,
 {
     assert_not_tokio_worker();
-    // Safety: handle get_lines error gracefully
-    // Use Buffer::current() directly in the match to avoid lifetime issues
     match Buffer::current().get_lines(line_range, false) {
         Ok(iter) => iter.map(|s| s.to_string()).collect(),
-        // TODO log error
-        Err(_) => Vec::new(), // Return empty vec on error
+        Err(e) => {
+            error!(e);
+            Vec::new()
+        }
     }
 }
 

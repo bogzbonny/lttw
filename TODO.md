@@ -1,3 +1,4 @@
+05. better global error printing/handling https://github.com/noib3/nvim-oxi/issues/231
 
 ^^^^^^^^^ DONE
 
@@ -11,9 +12,6 @@
 01. reduce lsp flicker. - not sure why.. maybe because if nothing is computed it
     sends an additional recomputation which automatically triggers the lsp
       - if retry is some then DONT render lsp
-
-05. better global error printing/handling https://github.com/noib3/nvim-oxi/issues/231
-
 
 ------------------------
 LSP Completions improvements

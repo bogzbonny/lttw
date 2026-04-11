@@ -236,12 +236,14 @@ pub fn fim_try_hint_inner(
 
         if let Some(content) = prev_for_next_fim.clone() {
             // regenerate the context to make a speculative FIM
-            let Ok((new_x, new_y, final_content)) =
-                fim_accept_inner(FimAcceptType::Full, pos_x, pos_y, ctx.line_cur, content)
-            else {
-                // TODO log error
-                return;
-            };
+            let (new_x, new_y, final_content) =
+                match fim_accept_inner(FimAcceptType::Full, pos_x, pos_y, ctx.line_cur, content) {
+                    Ok((new_x, new_y, final_content)) => (new_x, new_y, final_content),
+                    Err(e) => {
+                        error!(e);
+                        return;
+                    }
+                };
 
             // overwrite pos_y with all the final_content
             let mut virtual_lines = lines;
@@ -249,7 +251,7 @@ pub fn fim_try_hint_inner(
 
             let virtual_ctx = get_local_context(&virtual_lines, new_x, new_y, &state.config.read());
 
-            let _ = spawn_fim_completion_worker(
+            if let Err(e) = spawn_fim_completion_worker(
                 state,
                 virtual_ctx,
                 seq,
@@ -264,10 +266,13 @@ pub fn fim_try_hint_inner(
                 force_regenerate,
                 retry,
             )
-            .await;
+            .await
+            {
+                error!(e);
+            }
         } else {
             // TODO log error
-            let _ = spawn_fim_completion_worker(
+            if let Err(e) = spawn_fim_completion_worker(
                 state,
                 ctx,
                 seq,
@@ -282,7 +287,10 @@ pub fn fim_try_hint_inner(
                 force_regenerate,
                 retry,
             )
-            .await;
+            .await
+            {
+                error!(e);
+            }
         }
     });
     Ok(())
@@ -627,9 +635,12 @@ pub async fn fim_completion(
         ],
     };
 
-    let Ok(tx) = state.get_fim_completion_tx() else {
-        // TODO log error
-        return Ok(());
+    let tx = match state.get_fim_completion_tx() {
+        Ok(tx) => tx,
+        Err(e) => {
+            error!(e);
+            return Ok(());
+        }
     };
 
     let last_pick = state.fim_state.read().get_last_pick_buf_id_pos_y();
