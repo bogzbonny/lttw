@@ -1,5 +1,7 @@
 use {
     crate::fim::fim_try_hint_skip_debounce,
+    crate::fim::trim_suggestion_and_suffix_on_curr_line,
+    crate::fim_hide_inner,
     crate::plugin_state::get_state,
     crate::utils::{get_current_buffer_id, set_buf_lines, set_window_cursor},
     crate::LttwResult,
@@ -26,7 +28,7 @@ impl std::fmt::Display for FimAcceptType {
 //
 /// NOTE Processed on main Neovim thread
 #[tracing::instrument]
-fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
+pub fn fim_accept(accept_type: FimAcceptType) -> LttwResult<()> {
     // Log before releasing the lock
     let state = get_state();
     info!("fim_accept_triggered for {}", accept_type);
@@ -85,7 +87,7 @@ pub fn fim_accept_inner(
 ) -> LttwResult<(usize, usize, Vec<String>)> {
     // Use the accept_fim_suggestion function from fim module
     let (new_line, rest, inline_loc) =
-        fim::accept_fim_suggestion(accept_type, pos_x, &line_cur, &content);
+        accept_fim_suggestion(accept_type, pos_x, &line_cur, &content);
 
     // Check if the new_line contains "…" character and find its position
     let ellipsis_pos = new_line.find('…');

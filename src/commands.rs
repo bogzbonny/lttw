@@ -1,10 +1,10 @@
 use {
     crate::{
-        autocmd::clear_filetype_autocommand, debug_word_statistics,
-        diagnostics::debug_output_diagnostics, disable_info, disable_plugin, enable_info,
-        enable_plugin, instruction, is_enabled, toggle_auto_fim, LttwResult,
+        autocmd, autocmd::clear_filetype_autocommand, diagnostics::debug_output_diagnostics,
+        fim_hide, get_state, instruction, keymap, utils::get_current_filetype, LttwResult,
     },
-    nvim_oxi::api::create_user_command,
+    nvim_oxi::api::{create_user_command, del_autocmd},
+    std::sync::atomic::Ordering,
 };
 
 /// Register nvim-oxi commands for the plugin
@@ -159,7 +159,7 @@ fn is_enabled() -> bool {
 
 /// Enable the plugin - sets up keymaps, autocmds, and state
 #[tracing::instrument]
-fn enable_plugin() -> LttwResult<()> {
+pub fn enable_plugin() -> LttwResult<()> {
     let state = get_state();
 
     // Check if already enabled
@@ -193,7 +193,7 @@ fn enable_plugin() -> LttwResult<()> {
 
 /// Disable the plugin - removes keymaps, clears autocmds, and hides hints
 #[tracing::instrument]
-fn disable_plugin() -> LttwResult<()> {
+pub fn disable_plugin() -> LttwResult<()> {
     let state = get_state();
 
     // Check if already disabled

@@ -26,29 +26,23 @@ pub mod utils;
 
 pub use {
     error::{Error, LttwResult},
-    llama_client::{FimRequest, FimResponse, FimTimings},
-    router::{DisplayMessage, FimCompletionMessage, FimTimingsData},
+    fim::FimTimings,
+    llama_client::{FimRequest, FimResponse},
+    router::{DisplayMessage, FimCompletionMessage},
 };
 
 use {
     diagnostics::{debug_output_diagnostics, handle_diagnostic_changed},
     diff_chunk::calculate_diff_between_contents,
-    fim::{
-        fim_cycle_next, fim_cycle_prev, fim_try_hint, fim_try_hint_skip_debounce,
-        render_fim_suggestion, FimAcceptType, FimResponse, FimTimings,
-    },
-    lsp_completion::retrieve_lsp_completions,
+    fim::{fim_cycle_next, fim_cycle_prev, fim_try_hint},
     nvim_oxi::{Dictionary, Function},
     plugin_state::{get_state, init_state, PluginState},
-    std::{
-        sync::atomic::Ordering,
-        time::{Duration, Instant},
-    },
+    router::process_pending_display,
+    std::time::Duration,
     tokio::sync::mpsc,
     utils::{
-        clear_buf_namespace_objects, del_autocmd, get_buf_filename, get_buf_line, get_buf_lines,
-        get_current_buffer_id, get_current_buffer_info, get_current_filetype, get_mode_bz, get_pos,
-        get_yanked_text, in_insert_mode, set_buf_lines, set_window_cursor,
+        clear_buf_namespace_objects, get_buf_filename, get_buf_lines, get_current_buffer_id,
+        get_current_buffer_info, get_mode_bz, get_pos, get_yanked_text, in_insert_mode,
     },
 };
 

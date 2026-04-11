@@ -1,4 +1,7 @@
-use {crate::fmt::info_stats::FimTimings, crate::ring_buffer::ExtraContext, serde::Serialize};
+use {
+    crate::{ring_buffer::ExtraContext, FimTimings},
+    serde::{Deserialize, Serialize},
+};
 
 /// FIM completion request
 #[derive(Debug, Clone, Serialize)]

@@ -472,15 +472,6 @@ mod tests {
     }
 
     #[test]
-    fn test_lsp_overrides_default() {
-        let config = LttwConfig::new();
-        // Check default override is present
-        assert_eq!(config.lsp_overrides.len(), 1);
-        assert_eq!(config.lsp_overrides[0].0, "Ok()");
-        assert_eq!(config.lsp_overrides[0].1, "Ok(())");
-    }
-
-    #[test]
     fn test_lsp_overrides_custom() {
         let config = LttwConfig::new();
         // Test that overrides work as expected

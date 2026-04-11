@@ -1,12 +1,17 @@
-use crate::{
-    diagnostics::handle_diagnostic_changed,
-    filetype::on_buf_enter_check_filetype,
-    fim_hide, get_state, on_buf_enter_gather_chunks, on_buf_enter_update_file_contents,
-    on_buf_leave, on_buf_write_post, on_move, on_text_yank_post,
-    ring_buffer::mode_change_maybe_start_processing_ring_updates,
-    set_cur_buffer_info_in_state, set_mode_in_state,
-    utils::{create_autocmd, del_autocmd},
-    LttwResult,
+use {
+    crate::{
+        calculate_diff_between_contents,
+        commands::{disable_plugin, enable_plugin},
+        diagnostics::handle_diagnostic_changed,
+        filetype::should_be_enabled,
+        fim_hide, fim_try_hint, get_buf_filename, get_buf_lines, get_current_buffer_id,
+        get_current_buffer_info, get_mode_bz, get_pos, get_state, get_yanked_text,
+        ring_buffer::mode_change_maybe_start_processing_ring_updates,
+        utils::{create_autocmd, del_autocmd},
+        LttwResult,
+    },
+    std::sync::atomic::Ordering,
+    std::time::Instant,
 };
 
 /// Setup autocmds function - creates autocmds for auto-triggering FIM and ring buffer
@@ -351,6 +356,25 @@ fn on_buf_enter_update_file_contents() -> LttwResult<()> {
     // Save the current file content for future diff comparison
     state.set_file_contents(filename.clone(), new_content);
 
+    Ok(())
+}
+
+/// Filetype check autocmd handler - enables/disables plugin based on filetype
+#[tracing::instrument]
+pub fn on_buf_enter_check_filetype() -> LttwResult<()> {
+    let is_enabled = {
+        let state = get_state();
+        state.enabled.load(Ordering::SeqCst)
+    };
+
+    // Check if current filetype should enable/disable the plugin
+    let should_be_enabled = should_be_enabled();
+
+    if should_be_enabled && !is_enabled {
+        enable_plugin()?;
+    } else if !should_be_enabled && is_enabled {
+        disable_plugin()?;
+    }
     Ok(())
 }
 

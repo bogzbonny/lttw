@@ -4,7 +4,7 @@
 // eviction policy to manage memory usage and improve performance.
 
 use {
-    crate::{fim::FimResponse, utils::hash_input},
+    crate::{utils::hash_input, FimResponse},
     ahash::{HashMap, HashMapExt},
     serde::{Deserialize, Serialize},
     std::collections::VecDeque,

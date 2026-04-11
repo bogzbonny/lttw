@@ -4,9 +4,9 @@
 // diagnostic information by buffer and line number.
 
 use {
-    crate::{LttwResult, get_state},
+    crate::{get_state, LttwResult},
     ahash::{HashMap, HashMapExt},
-    nvim_oxi::{Dictionary, String as NvimString, api::Buffer},
+    nvim_oxi::{api::Buffer, Dictionary, String as NvimString},
 };
 
 /// Represents a single diagnostic entry
