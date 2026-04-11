@@ -11,6 +11,14 @@
      - having a predictable reusable pattern for this is funny though
      - maybe this is one for the rematch routine
 
+Add a new configuration option "lsp_overrides" which is an array of string pairs.
+For the default value of this add one override pair: ("Ok()", "Ok(())"). 
+In lsp_completions.rs right at the end of generating the lsp text, add compare
+the final text generated against this list of rematches, if a match is found
+then modify the text to the override provided. For example if Ok() was found
+modify to Ok(()). Add comments as to how one would use this in their config in
+README.md
+
 ------------------------
 
 05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
