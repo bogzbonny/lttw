@@ -131,7 +131,11 @@ impl PluginState {
 
     /// Send FIM update buffer request to the server
     #[tracing::instrument]
-    pub async fn send_fim_request_buffer(&self, extra: Vec<ExtraContext>) -> LttwResult<()> {
+    pub async fn send_fim_request_buffer(
+        &self,
+        extra: Vec<ExtraContext>,
+        m: FimModel,
+    ) -> LttwResult<()> {
         let mut request_body = serde_json::json!({
             "input_extra": extra,
             "cache_prompt": true
@@ -140,21 +144,25 @@ impl PluginState {
         let (model_fim, endpoint_fim, api_key) = {
             let config = self.config.read();
             (
-                config.model_fim.clone(),
-                config.endpoint_fim.clone(),
-                config.api_key.clone(),
+                config.get_fim_model_name(m),
+                config.get_model_fim(m),
+                config.get_api_key(m),
             )
         };
 
         // Add model if specified
-        if let Some(model_fim) = model_fim {
+        if let Some(model_fim) = model_fim
+            && !model_fim.is_empty()
+        {
             request_body["model"] = serde_json::Value::String(model_fim.clone());
         }
 
         let mut builder = self.client.post(&endpoint_fim).json(&request_body);
 
         // Add API key if specified
-        if let Some(api_key) = api_key {
+        if let Some(api_key) = api_key
+            && !api_key.is_empty()
+        {
             builder = builder.bearer_auth(&api_key);
         }
 
@@ -177,14 +185,18 @@ impl PluginState {
         };
 
         // Add model if specified
-        if let Some(model_fim) = model_fim {
+        if let Some(model_fim) = model_fim
+            && !model_fim.is_empty()
+        {
             request_body["model"] = serde_json::Value::String(model_fim.clone());
         }
 
         let mut builder = self.client.post(&endpoint_fim).json(&request_body);
 
         // Add API key if specified
-        if let Some(api_key) = api_key {
+        if let Some(api_key) = api_key
+            && !api_key.is_empty()
+        {
             builder = builder.bearer_auth(&api_key);
         }
 

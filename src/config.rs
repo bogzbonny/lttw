@@ -101,7 +101,7 @@ impl Default for LttwConfig {
             single_line_prediction_within_line: true,
             show_info: 2,
             auto_fim: true,
-            max_cache_keys: 250,
+            max_cache_keys: 32, // can be small due to recaching
             keymap_fim_trigger: "<leader>llf".to_string(),
             keymap_fim_accept_full: "<Tab>".to_string(),
             keymap_fim_accept_line: "<S-Tab>".to_string(),
@@ -545,98 +545,6 @@ impl LttwConfig {
             })
         };
 
-        // Helper to get i64 field from dictionary
-        let get_i64 = |key: &str| -> Option<i64> {
-            dict.get(key)
-                .and_then(|obj| i64::try_from(obj.clone()).ok())
-        };
-
-        // Override string fields
-        if let Some(v) = get_string("endpoint_fim") {
-            config.endpoint_fim = v;
-        }
-        if let Some(v) = get_string("endpoint_inst") {
-            config.endpoint_inst = v;
-        }
-        if let Some(v) = get_string("model_fim")
-            && !v.is_empty()
-        {
-            config.model_fim = Some(v);
-        }
-        if let Some(v) = get_string("model_inst")
-            && !v.is_empty()
-        {
-            config.model_inst = Some(v);
-        }
-        if let Some(v) = get_string("api_key")
-            && !v.is_empty()
-        {
-            config.api_key = Some(v);
-        }
-        if let Some(v) = get_string("keymap_fim_trigger") {
-            config.keymap_fim_trigger = v;
-        }
-        if let Some(v) = get_string("keymap_inst_trigger") {
-            config.keymap_inst_trigger = v;
-        }
-
-        // Override numeric fields
-        if let Some(v) = get_i64("n_prefix") {
-            config.n_prefix = v as u32;
-        }
-        if let Some(v) = get_i64("n_suffix") {
-            config.n_suffix = v as u32;
-        }
-        if let Some(v) = get_i64("n_predict_inner") {
-            config.n_predict_inner = v as u32;
-        }
-        if let Some(v) = get_i64("n_predict_end") {
-            config.n_predict_end = v as u32;
-        }
-        if let Some(v) = get_i64("t_max_prompt_ms") {
-            config.t_max_prompt_ms = v as u32;
-        }
-        if let Some(v) = get_i64("t_max_predict_ms") {
-            config.t_max_predict_ms = v as u32;
-        }
-        if let Some(v) = get_i64("debounce_min_ms") {
-            config.debounce_min_ms = v as u64;
-        }
-        if let Some(v) = get_i64("debounce_max_ms") {
-            config.debounce_max_ms = v as u64;
-        }
-        if let Some(v) = get_i64("max_concurrent_fim_requests") {
-            config.max_concurrent_fim_requests = v as u32;
-        }
-        if let Some(v) = get_i64("show_info") {
-            let v = v.clamp(0, 2) as u8;
-            config.show_info = v;
-        }
-        if let Some(v) = get_i64("max_line_suffix") {
-            config.max_line_suffix = v as u32;
-        }
-        if let Some(v) = get_i64("max_cache_keys") {
-            config.max_cache_keys = v as u32;
-        }
-        if let Some(v) = get_i64("ring_n_chunks") {
-            config.ring_n_chunks = v as u32;
-        }
-        if let Some(v) = get_i64("ring_chunk_size") {
-            config.ring_chunk_size = v as u32;
-        }
-        if let Some(v) = get_i64("ring_scope") {
-            config.ring_scope = v as u32;
-        }
-        if let Some(v) = get_i64("ring_update_ms") {
-            config.ring_update_ms = v as u64;
-        }
-        if let Some(v) = get_i64("ring_queue_length") {
-            config.ring_queue_length = v as usize;
-        }
-        if let Some(v) = get_i64("ring_n_picks") {
-            config.ring_n_picks = v as u32;
-        }
-
         // Helper to get bool field from dictionary
         let get_bool = |key: &str| -> Option<bool> {
             dict.get(key)
@@ -654,6 +562,209 @@ impl LttwConfig {
                 })
             })
         };
+
+        // Helper to get i64 field from dictionary
+        let get_i64 = |key: &str| -> Option<i64> {
+            dict.get(key)
+                .and_then(|obj| i64::try_from(obj.clone()).ok())
+        };
+
+        if let Some(v) = get_string("instr_endpoint") {
+            config.instr_endpoint = v;
+        }
+        if let Some(v) = get_string("instr_model_name")
+            && !v.is_empty()
+        {
+            config.instr_model = Some(v);
+        }
+        if let Some(v) = get_string("instr_api_key")
+            && !v.is_empty()
+        {
+            config.instr_api_key = Some(v);
+        }
+
+        if let Some(v) = get_i64("show_info") {
+            let v = v.clamp(0, 2) as u8;
+            config.show_info = v;
+        }
+        if let Some(v) = get_string("keymap_fim_trigger") {
+            config.keymap_fim_trigger = v;
+        }
+        if let Some(v) = get_string("keymap_inst_trigger") {
+            config.keymap_inst_trigger = v;
+        }
+        if let Some(v) = get_i64("debounce_min_ms") {
+            config.debounce_min_ms = v as u64;
+        }
+        if let Some(v) = get_i64("debounce_max_ms") {
+            config.debounce_max_ms = v as u64;
+        }
+        if let Some(v) = get_i64("max_concurrent_fim_requests") {
+            config.max_concurrent_fim_requests = v as u32;
+        }
+        if let Some(v) = get_i64("max_cache_keys") {
+            config.max_cache_keys = v as u32;
+        }
+
+        // ------------------
+        if let Some(v) = get_string("fim_endpoint") {
+            config.default_fim_config.endpoint = v;
+        }
+        if let Some(v) = get_string("fim_model_name")
+            && !v.is_empty()
+        {
+            config.default_fim_config.model_name = Some(v);
+        }
+        if let Some(v) = get_string("fim_api_key")
+            && !v.is_empty()
+        {
+            config.default_fim_config.api_key = Some(v);
+        }
+        if let Some(v) = get_i64("n_prefix") {
+            config.default_fim_config.n_prefix = v as u32;
+        }
+        if let Some(v) = get_i64("n_suffix") {
+            config.default_fim_config.n_suffix = v as u32;
+        }
+        if let Some(v) = get_i64("n_predict_inner") {
+            config.default_fim_config.n_predict_inner = v as u32;
+        }
+        if let Some(v) = get_i64("n_predict_end") {
+            config.default_fim_config.n_predict_end = v as u32;
+        }
+        if let Some(v) = get_i64("t_max_prompt_ms") {
+            config.default_fim_config.t_max_prompt_ms = v as u32;
+        }
+        if let Some(v) = get_i64("t_max_predict_ms") {
+            config.default_fim_config.t_max_predict_ms = v as u32;
+        }
+        if let Some(v) = get_i64("max_line_suffix") {
+            config.default_fim_config.max_line_suffix = v as u32;
+        }
+        if let Some(v) = get_i64("ring_n_chunks") {
+            config.default_fim_config.ring_n_chunks = v as u32;
+        }
+        if let Some(v) = get_i64("ring_chunk_size") {
+            config.default_fim_config.ring_chunk_size = v as u32;
+        }
+        if let Some(v) = get_i64("ring_scope") {
+            config.default_fim_config.ring_scope = v as u32;
+        }
+        if let Some(v) = get_i64("ring_update_ms") {
+            config.default_fim_config.ring_update_ms = v as u64;
+        }
+        if let Some(v) = get_i64("ring_queue_length") {
+            config.default_fim_config.ring_queue_length = v as usize;
+        }
+        if let Some(v) = get_i64("ring_n_picks") {
+            config.default_fim_config.ring_n_picks = v as u32;
+        }
+        // ------------------
+        if let Some(v) = get_string("fast_fim_endpoint") {
+            config.fast_fim_config.endpoint = Some(v);
+        }
+        if let Some(v) = get_string("fast_fim_model_name")
+            && !v.is_empty()
+        {
+            config.fast_fim_config.model_name = Some(v);
+        }
+        if let Some(v) = get_string("fast_fim_api_key")
+            && !v.is_empty()
+        {
+            config.fast_fim_config.api_key = Some(v);
+        }
+        if let Some(v) = get_i64("fast_fim_n_prefix") {
+            config.fast_fim_config.n_prefix = Some(v as u32);
+        }
+        if let Some(v) = get_i64("fast_fim_n_suffix") {
+            config.fast_fim_config.n_suffix = Some(v as u32);
+        }
+        if let Some(v) = get_i64("fast_fim_n_predict_inner") {
+            config.fast_fim_config.n_predict_inner = Some(v as u32);
+        }
+        if let Some(v) = get_i64("fast_fim_n_predict_end") {
+            config.fast_fim_config.n_predict_end = Some(v as u32);
+        }
+        if let Some(v) = get_i64("fast_fim_t_max_prompt_ms") {
+            config.fast_fim_config.t_max_prompt_ms = Some(v as u32);
+        }
+        if let Some(v) = get_i64("fast_fim_t_max_predict_ms") {
+            config.fast_fim_config.t_max_predict_ms = Some(v as u32);
+        }
+        if let Some(v) = get_i64("fast_fim_max_line_suffix") {
+            config.fast_fim_config.max_line_suffix = Some(v as u32);
+        }
+        if let Some(v) = get_i64("fast_fim_ring_n_chunks") {
+            config.fast_fim_config.ring_n_chunks = Some(v as u32);
+        }
+        if let Some(v) = get_i64("fast_fim_ring_chunk_size") {
+            config.fast_fim_config.ring_chunk_size = Some(v as u32);
+        }
+        if let Some(v) = get_i64("fast_fim_ring_scope") {
+            config.fast_fim_config.ring_scope = Some(v as u32);
+        }
+        if let Some(v) = get_i64("fast_fim_ring_update_ms") {
+            config.fast_fim_config.ring_update_ms = Some(v as u64);
+        }
+        if let Some(v) = get_i64("fast_fim_ring_queue_length") {
+            config.fast_fim_config.ring_queue_length = Some(v as usize);
+        }
+        if let Some(v) = get_i64("fast_fim_ring_n_picks") {
+            config.fast_fim_config.ring_n_picks = Some(v as u32);
+        }
+        // ------------------
+        if let Some(v) = get_string("slow_fim_endpoint") {
+            config.slow_fim_config.endpoint = Some(v);
+        }
+        if let Some(v) = get_string("slow_fim_model_name")
+            && !v.is_empty()
+        {
+            config.slow_fim_config.model_name = Some(v);
+        }
+        if let Some(v) = get_string("slow_fim_api_key")
+            && !v.is_empty()
+        {
+            config.slow_fim_config.api_key = Some(v);
+        }
+        if let Some(v) = get_i64("slow_fim_n_prefix") {
+            config.slow_fim_config.n_prefix = Some(v as u32);
+        }
+        if let Some(v) = get_i64("slow_fim_n_suffix") {
+            config.slow_fim_config.n_suffix = Some(v as u32);
+        }
+        if let Some(v) = get_i64("slow_fim_n_predict_inner") {
+            config.slow_fim_config.n_predict_inner = Some(v as u32);
+        }
+        if let Some(v) = get_i64("slow_fim_n_predict_end") {
+            config.slow_fim_config.n_predict_end = Some(v as u32);
+        }
+        if let Some(v) = get_i64("slow_fim_t_max_prompt_ms") {
+            config.slow_fim_config.t_max_prompt_ms = Some(v as u32);
+        }
+        if let Some(v) = get_i64("slow_fim_t_max_predict_ms") {
+            config.slow_fim_config.t_max_predict_ms = Some(v as u32);
+        }
+        if let Some(v) = get_i64("slow_fim_max_line_suffix") {
+            config.slow_fim_config.max_line_suffix = Some(v as u32);
+        }
+        if let Some(v) = get_i64("slow_fim_ring_n_chunks") {
+            config.slow_fim_config.ring_n_chunks = Some(v as u32);
+        }
+        if let Some(v) = get_i64("slow_fim_ring_chunk_size") {
+            config.slow_fim_config.ring_chunk_size = Some(v as u32);
+        }
+        if let Some(v) = get_i64("slow_fim_ring_scope") {
+            config.slow_fim_config.ring_scope = Some(v as u32);
+        }
+        if let Some(v) = get_i64("slow_fim_ring_update_ms") {
+            config.slow_fim_config.ring_update_ms = Some(v as u64);
+        }
+        if let Some(v) = get_i64("slow_fim_ring_queue_length") {
+            config.slow_fim_config.ring_queue_length = Some(v as usize);
+        }
+        if let Some(v) = get_i64("slow_fim_ring_n_picks") {
+            config.slow_fim_config.ring_n_picks = Some(v as u32);
+        }
 
         // Override bool fields
         if let Some(v) = get_bool("single_line_prediction_within_line") {
