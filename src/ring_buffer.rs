@@ -82,8 +82,12 @@ pub async fn start_processing_ring_updates() {
     state.ring_updating_active.store(true, Ordering::SeqCst);
     let _ = tokio::spawn(async move {
         loop {
-            let Ok(stop) = ring_update().await else {
-                break;
+            let stop = match ring_update().await {
+                Ok(stop) => stop,
+                Err(e) => {
+                    error!(e);
+                    true // don't want an infinite loop
+                }
             };
             if stop {
                 break;
@@ -120,24 +124,8 @@ async fn ring_update() -> LttwResult<bool> {
 
     if chunk_count > 0 {
         info!("Processing {chunk_count} ring buffer chunks");
-
-        // TODO should n-predict be 0 here?? test
-        // Build request with ring buffer context
         let extra = state.ring_buffer.read().get_extra();
-        let request = serde_json::json!({
-            "input_extra": extra,
-            "cache_prompt": true
-        });
-
-        // Send to server (fire and forget - non-blocking)
-        let config = state.config.read().clone();
-        let client = reqwest::Client::new();
-        let _ = client
-            .post(&config.endpoint_fim)
-            .json(&request)
-            .bearer_auth(&config.api_key)
-            .send()
-            .await;
+        state.send_fim_request_buffer(extra).await?;
     }
 
     Ok(false)

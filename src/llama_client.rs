@@ -1,5 +1,8 @@
 use {
-    crate::{ring_buffer::ExtraContext, Error, FimTimings, LttwResult},
+    crate::{
+        context::LocalContext, ring_buffer::ExtraContext, Error, FimTimings, LttwResult,
+        PluginState,
+    },
     serde::{Deserialize, Serialize},
 };
 
@@ -64,39 +67,122 @@ pub struct FimResponse {
     pub truncated: bool,
 }
 
-/// Send FIM request to the server
-#[tracing::instrument]
-pub async fn send_fim_request(
-    request: &FimRequest,
-    endpoint_fim: String,
-    model_fim: String,
-    api_key: String,
-) -> LttwResult<String> {
-    let client = reqwest::Client::new();
+impl PluginState {
+    /// Send a full FIM completion request to the server
+    #[tracing::instrument]
+    pub async fn send_fim_request_full(
+        &self,
+        ctx: &LocalContext,
+        extra: Vec<ExtraContext>,
+        t_max_prompt_ms: u32,
+        t_max_predict_ms: u32,
+        n_predict: u32,
+    ) -> LttwResult<String> {
+        let request = FimRequest {
+            id_slot: 0,
+            input_prefix: ctx.prefix.clone(),
+            input_suffix: ctx.suffix.clone(),
+            input_extra: extra,
+            prompt: ctx.middle.clone(),
+            n_predict,
+            stop: Vec::with_capacity(0),
+            n_indent: ctx.indent,
+            top_k: 40,
+            top_p: 0.90,
+            samplers: vec![
+                "top_k".to_string(),
+                "top_p".to_string(),
+                "infill".to_string(),
+            ],
+            t_max_prompt_ms,
+            t_max_predict_ms,
+            response_fields: vec![
+                "content".to_string(),
+                "timings/prompt_n".to_string(),
+                "timings/prompt_ms".to_string(),
+                "timings/prompt_per_token_ms".to_string(),
+                "timings/prompt_per_second".to_string(),
+                "timings/predicted_n".to_string(),
+                "timings/predicted_ms".to_string(),
+                "timings/predicted_per_token_ms".to_string(),
+                "timings/predicted_per_second".to_string(),
+                "truncated".to_string(),
+                "tokens_cached".to_string(),
+            ],
+        };
 
-    let mut request_body = serde_json::to_value(request)?;
-
-    // Add model if specified
-    if !model_fim.is_empty() {
-        request_body["model"] = serde_json::Value::String(model_fim.clone());
+        self.send_fim_request(&request).await
     }
 
-    let mut builder = client.post(&endpoint_fim).json(&request_body);
+    /// Send FIM update buffer request to the server
+    #[tracing::instrument]
+    pub async fn send_fim_request_buffer(&self, extra: Vec<ExtraContext>) -> LttwResult<()> {
+        let mut request_body = serde_json::json!({
+            "input_extra": extra,
+            "cache_prompt": true
+        });
 
-    // Add API key if specified
-    if !api_key.is_empty() {
-        builder = builder.bearer_auth(&api_key);
+        let (model_fim, endpoint_fim, api_key) = {
+            let config = self.config.read();
+            (
+                config.model_fim.clone(),
+                config.endpoint_fim.clone(),
+                config.api_key.clone(),
+            )
+        };
+
+        // Add model if specified
+        if !model_fim.is_empty() {
+            request_body["model"] = serde_json::Value::String(model_fim.clone());
+        }
+
+        let mut builder = self.client.post(&endpoint_fim).json(&request_body);
+
+        // Add API key if specified
+        if !api_key.is_empty() {
+            builder = builder.bearer_auth(&api_key);
+        }
+
+        let _ = builder.send().await?;
+        Ok(())
     }
 
-    let response = builder.send().await?;
+    /// Send FIM request to the server
+    #[tracing::instrument]
+    async fn send_fim_request(&self, request: &FimRequest) -> LttwResult<String> {
+        let mut request_body = serde_json::to_value(request)?;
 
-    if response.status().is_success() {
-        Ok(response.text().await?)
-    } else {
-        Err(Error::Server(format!(
-            "Server returned status: {}",
-            response.status()
-        )))
+        let (model_fim, endpoint_fim, api_key) = {
+            let config = self.config.read();
+            (
+                config.model_fim.clone(),
+                config.endpoint_fim.clone(),
+                config.api_key.clone(),
+            )
+        };
+
+        // Add model if specified
+        if !model_fim.is_empty() {
+            request_body["model"] = serde_json::Value::String(model_fim.clone());
+        }
+
+        let mut builder = self.client.post(&endpoint_fim).json(&request_body);
+
+        // Add API key if specified
+        if !api_key.is_empty() {
+            builder = builder.bearer_auth(&api_key);
+        }
+
+        let response = builder.send().await?;
+
+        if response.status().is_success() {
+            Ok(response.text().await?)
+        } else {
+            Err(Error::Server(format!(
+                "Server returned status: {}",
+                response.status()
+            )))
+        }
     }
 }
 

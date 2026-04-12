@@ -8,6 +8,20 @@
 
 ^^^^^^^^^ DONE
 
+10. multiple models, first attempt to get the result from the small model (maybe
+    even do a retry) then once we've gotten a result maybe launch the slower
+    model on the same location to get a potentially better solution.
+     - single llama.cpp server in router mode should be able to handle
+       concurrent/series requests to multiple models 
+     - experiment with running two models concurrently (see how much it slows
+       down the fast model) 
+     - SHOULD allow for all the llm settings to be different between the two
+       models, importantly the ring buffer settings, pick settings, and context
+       window settings.
+     - Some kind of minimum lag before launching the heavy model is probably
+       appropriate - like even a full second, just so it's not constantly
+       running.
+
 ------------------------
 LSP Completions improvements
 
@@ -24,20 +38,6 @@ LSP Completions improvements
 
 ------------------------
 GENERAL
-
-10. multiple models, first attempt to get the result from the small model (maybe
-    even do a retry) then once we've gotten a result maybe launch the slower
-    model on the same location to get a potentially better solution.
-     - single llama.cpp server in router mode should be able to handle
-       concurrent/series requests to multiple models 
-     - experiment with running two models concurrently (see how much it slows
-       down the fast model) 
-     - SHOULD allow for all the llm settings to be different between the two
-       models, importantly the ring buffer settings, pick settings, and context
-       window settings.
-     - Some kind of minimum lag before launching the heavy model is probably
-       appropriate - like even a full second, just so it's not constantly
-       running.
 
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
@@ -71,6 +71,18 @@ GENERAL
      - When using a normal chunks for eviction:
         - evict git-diff chunks by comparing the chunk similarity to the
           git-diff chunks UPDATED information.
+
+20. LLM backmatching; when hitting backspace initiate matching in the backwards
+    direction (missing some more characters). Example, the line is: 
+      "client: " then the user backspaces: "client:" - llm should be initiated
+      for "client" (missing one more character. Potentially the next time I
+      backspace (lets say I now backspaced to "client") then maybe two
+      characters could be removed so the llm would make a call for "clie" 
+      - as soon as you started typing forwards again it would reset to normal
+        matching
+      - probably max out at stripping off like "5" characters, could get crazy
+        fast if holding down the backspace 
+      - DEFINATELY an option not default behavior 
 
 20. integrate definitions of all nearby objects 
      - add to extra_input

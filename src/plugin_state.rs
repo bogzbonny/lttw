@@ -40,6 +40,8 @@ pub fn get_state() -> Arc<PluginState> {
 #[derive(Clone, Debug)]
 pub struct PluginState {
     pub config: Arc<RwLock<config::LttwConfig>>,
+    pub client: reqwest::Client, // Lllama.cpp client, Arc internally no need to wrap
+
     //pub otel_guard: Arc<RwLock<Option<crate::otel::OtelGuard>>>,
     pub cache: Arc<RwLock<cache::Cache>>,
     pub ring_buffer: Arc<RwLock<ring_buffer::RingBuffer>>,
@@ -128,9 +130,11 @@ impl PluginState {
                 panic!("Failed to create tokio runtime: {}", e);
             }
         };
+        let client = reqwest::Client::new();
 
         Self {
             config: Arc::new(RwLock::new(config)),
+            client,
             cache: Arc::new(RwLock::new(cache::Cache::new(max_cache_keys))),
             ring_buffer: Arc::new(RwLock::new(ring_buffer::RingBuffer::new(
                 ring_n_chunks,

@@ -165,6 +165,7 @@ impl Default for LttwConfig {
                 ("fn …() {".to_string(), "fn ".to_string()),
                 ("trait … {".to_string(), "trait ".to_string()),
                 ("enum … {".to_string(), "enum ".to_string()),
+                ("impl … {".to_string(), "impl ".to_string()),
             ],
             enable_at_startup: true,
             tracing_enabled: false,

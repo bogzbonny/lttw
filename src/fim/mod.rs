@@ -13,7 +13,6 @@ use {
         context::LocalContext,
         filetype::should_be_enabled,
         fim_hide, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
-        llama_client::{send_fim_request, FimRequest},
         plugin_state::{get_state, PluginState},
         utils::{self, filter_tail, get_buf_filename, is_in_comment},
         DisplayMessage, FimCompletionMessage, FimResponse, LttwResult,
@@ -435,25 +434,13 @@ pub async fn fim_completion(
     force_regenerate: bool,
     retry: Option<usize>,
 ) -> LttwResult<()> {
-    let (
-        n_predict_inner,
-        n_predict_end,
-        t_max_prompt_ms,
-        mut t_max_predict_ms,
-        model,
-        endpoint_fim,
-        api_key,
-        ring_chunk_size,
-    ) = {
+    let (n_predict_inner, n_predict_end, t_max_prompt_ms, mut t_max_predict_ms, ring_chunk_size) = {
         let config = state.config.read();
         (
             config.n_predict_inner,
             config.n_predict_end,
             config.t_max_prompt_ms,
             config.t_max_predict_ms,
-            config.model_fim.clone(),
-            config.endpoint_fim.clone(),
-            config.api_key.clone(),
             config.ring_chunk_size,
         )
     };
@@ -523,39 +510,6 @@ pub async fn fim_completion(
     // Build request
     let extra = state.ring_buffer.read().get_extra();
 
-    let request = FimRequest {
-        id_slot: 0,
-        input_prefix: ctx.prefix.clone(),
-        input_suffix: ctx.suffix.clone(),
-        input_extra: extra,
-        prompt: ctx.middle.clone(),
-        n_predict,
-        stop: Vec::with_capacity(0),
-        n_indent: ctx.indent,
-        top_k: 40,
-        top_p: 0.90,
-        samplers: vec![
-            "top_k".to_string(),
-            "top_p".to_string(),
-            "infill".to_string(),
-        ],
-        t_max_prompt_ms,
-        t_max_predict_ms,
-        response_fields: vec![
-            "content".to_string(),
-            "timings/prompt_n".to_string(),
-            "timings/prompt_ms".to_string(),
-            "timings/prompt_per_token_ms".to_string(),
-            "timings/prompt_per_second".to_string(),
-            "timings/predicted_n".to_string(),
-            "timings/predicted_ms".to_string(),
-            "timings/predicted_per_token_ms".to_string(),
-            "timings/predicted_per_second".to_string(),
-            "truncated".to_string(),
-            "tokens_cached".to_string(),
-        ],
-    };
-
     let tx = match state.get_fim_completion_tx() {
         Ok(tx) => tx,
         Err(e) => {
@@ -576,7 +530,10 @@ pub async fn fim_completion(
 
     let state__ = state.clone();
     let handle = tokio::spawn(async move {
-        let response_text = match send_fim_request(&request, endpoint_fim, model, api_key).await {
+        let response_text = match state__
+            .send_fim_request_full(&ctx, extra, t_max_prompt_ms, t_max_predict_ms, n_predict)
+            .await
+        {
             Ok(response_text) => response_text,
             Err(e) => {
                 info!("send_request error: {}", e);

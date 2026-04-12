@@ -49,6 +49,54 @@ lua require('llama').setup()
 }
 ```
 
+
+## LSP Completion Overrides
+
+The `lsp_overrides` configuration option allows you to transform LSP completion text
+after it's generated. This is useful for cases where the LSP provides completions
+that need slight modifications to be valid.
+
+### Configuration Format
+
+```lua
+config = function()
+  require('llama').setup({
+    lsp_overrides = {
+      -- Each entry is a pair: {pattern, replacement}
+      {"Ok()", "Ok(())"},  -- Transform Ok() to Ok(()) for unit type returns
+      -- Add more overrides as needed
+    }
+  })
+end
+```
+
+### How It Works
+
+- The plugin compares the final completion text against each pattern in order
+- When a match is found, the text is replaced with the corresponding replacement string
+- Only the first matching override is applied (breaks after first match)
+- Patterns are matched exactly (string equality), not as regex
+
+## Do you ever find yourself ... 
+
+... waiting for the llm to send you a code completion only to received something
+incorrect, all the while if you had just not waited you could have already had
+correct code? Yeah that's the feeling of your brain rotting. LTTW prevents
+cognitive offloading in three ways: 
+ 1. All code completions which come late in while you're typing are checked
+    against to newly typed characters and SALVAGED if possible and used in
+    partial form. Practically this means that you should never, not for an iota,
+    stop typing to wait for the llm. Even if you make a typo, the code
+    completion is always cached and you can backspace to get to the
+    still-correct location and poof your cached code completion will come up. 
+ 2. While typing in comments all completions are disabled by default, stay sharp
+    and offer your own insight into what the code base is doing rather than
+    filling the space with slop. 
+ 3. reduce_cognitive_offloading_ratio so you can never be totally sure as to
+    whether you're waiting for llm to complete of if the completion call has
+    been silently cancelled. 
+
+
 ## CREDIT WHERE CREDIT IS DUE
 
 Originally this codebase was translated from
@@ -81,33 +129,6 @@ code.
  - attempt to still use valid late llm completions which come in after the user has
    typed more since the llm completion was requested.  
  - numerous small micro-optimizations throughout
-
-## LSP Completion Overrides
-
-The `lsp_overrides` configuration option allows you to transform LSP completion text
-after it's generated. This is useful for cases where the LSP provides completions
-that need slight modifications to be valid.
-
-### Configuration Format
-
-```lua
-config = function()
-  require('llama').setup({
-    lsp_overrides = {
-      -- Each entry is a pair: {pattern, replacement}
-      {"Ok()", "Ok(())"},  -- Transform Ok() to Ok(()) for unit type returns
-      -- Add more overrides as needed
-    }
-  })
-end
-```
-
-### How It Works
-
-- The plugin compares the final completion text against each pattern in order
-- When a match is found, the text is replaced with the corresponding replacement string
-- Only the first matching override is applied (breaks after first match)
-- Patterns are matched exactly (string equality), not as regex
 
 ### Example Use Cases
 
