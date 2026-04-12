@@ -13,6 +13,7 @@
 00. allow multiple responses to be stored in the cache (instead of just a single
     one, the others get overwriten)
 00. output info that it WAS a cache being retrieved
+00. ring update notifications through extmarks 
 
 
 10. multiple models, first attempt to get the result from the small model (maybe
@@ -45,6 +46,7 @@ LSP Completions improvements
 
 ------------------------
 GENERAL
+
 
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 

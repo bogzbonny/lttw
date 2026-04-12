@@ -20,7 +20,7 @@ pub struct CacheEntry {
 /// Cache with LRU eviction
 #[derive(Debug, Clone)]
 pub struct Cache {
-    data: HashMap<String, FimResponse>,
+    data: HashMap<String, Vec<FimResponse>>,
     lru_order: VecDeque<String>,
     max_keys: usize,
 }
@@ -47,8 +47,19 @@ impl Cache {
             self.data.remove(&lru_key);
         }
 
+        // don't cache if empty response
+        if value.content.is_empty() {
+            return;
+        }
+
         // Update the cache
-        self.data.insert(key.clone(), value);
+        if let Some(v) = self.data.get_mut(&key) {
+            // cached value exists, push
+            v.push(value);
+        } else {
+            // first time getting the value
+            self.data.insert(key.clone(), vec![value]);
+        }
 
         // Update LRU order - remove key if it exists and add to end (most recent)
         self.lru_order.retain(|k| k != &key);
@@ -57,7 +68,7 @@ impl Cache {
 
     /// Get a value from the cache and update LRU order
     #[tracing::instrument]
-    pub fn get(&mut self, key: &str) -> Option<FimResponse> {
+    pub fn get(&mut self, key: &str) -> Option<Vec<FimResponse>> {
         if !self.data.contains_key(key) {
             return None;
         }
@@ -89,7 +100,7 @@ impl Cache {
 
     /// Get a FIM response from the cache (without updating LRU order)
     #[tracing::instrument]
-    pub fn get_fim(&self, key: &str) -> Option<FimResponse> {
+    pub fn get_fim(&self, key: &str) -> Option<Vec<FimResponse>> {
         self.data.get(key).cloned()
     }
 
@@ -114,7 +125,8 @@ impl Cache {
         let mut completions_idx = 0;
         let mut all_completions: Vec<(FimResponse, bool)> = Vec::new();
         let find_better_completion = if let Some(resp) = response {
-            all_completions.push((resp, false));
+            let comps: Vec<(FimResponse, bool)> = resp.into_iter().map(|c| (c, false)).collect();
+            all_completions.extend(comps);
             false
         } else {
             true
@@ -124,12 +136,6 @@ impl Cache {
         // Looks at the previous 128 characters to see if a completion is cached.
         let pm = format!("{}{}", ctx.prefix, ctx.middle);
         let mut best_len = 0;
-
-        // Only search if pm has enough characters
-        if pm.len() < 2 {
-            let completions = all_completions.into_iter().map(|(c, _)| c).collect();
-            return (completions, completions_idx);
-        }
 
         // iterate through the prefix+midde string while removing characters from the tail
         //
@@ -146,37 +152,38 @@ impl Cache {
             let new_prefix_middle = format!("{}Î{}", pm_with_less_tail, ctx.suffix);
             let hash_new = hash_input(&new_prefix_middle);
 
-            if let Some(response_) = self.get(&hash_new) {
-                let content = &response_.content;
-                if content.is_empty() {
-                    continue;
-                }
+            if let Some(responses) = self.get(&hash_new) {
+                for response_ in responses {
+                    let content = &response_.content;
 
-                // Check that the removed text matches the beginning of the cached response
-                // NOTE 'i' always is == removed.len()
-                // don't bother if i == content.len() because then there isn't any additional
-                // predicted text
-                if content.starts_with(removed) {
-                    // Found a match - use the rest of the content
-                    let Some(remaining) = content.strip_prefix(removed) else {
-                        continue;
-                    };
+                    // Check that the removed text matches the beginning of the cached response
+                    // NOTE 'i' always is == removed.len()
+                    // don't bother if i == content.len() because then there isn't any additional
+                    // predicted text
+                    if content.starts_with(removed) {
+                        // Found a match - use the rest of the content
+                        let Some(remaining) = content.strip_prefix(removed) else {
+                            continue;
+                        };
 
-                    all_completions.push((
-                        FimResponse {
-                            content: remaining.to_string(),
-                            timings: response_.timings,
-                            tokens_cached: response_.tokens_cached,
-                            truncated: response_.truncated,
-                        },
-                        true,
-                    )); // recache = true
+                        all_completions.push((
+                            FimResponse {
+                                content: remaining.to_string(),
+                                timings: response_.timings,
+                                tokens_cached: response_.tokens_cached,
+                                truncated: response_.truncated,
+                            },
+                            true,
+                        )); // recache = true
 
-                    // could use chars().count() but it's not to important
-                    if find_better_completion && !remaining.is_empty() && remaining.len() > best_len
-                    {
-                        best_len = remaining.len();
-                        completions_idx = all_completions.len() - 1;
+                        // could use chars().count() but it's not to important
+                        if find_better_completion
+                            && !remaining.is_empty()
+                            && remaining.len() > best_len
+                        {
+                            best_len = remaining.len();
+                            completions_idx = all_completions.len() - 1;
+                        }
                     }
                 }
             }
