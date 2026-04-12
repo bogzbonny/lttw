@@ -4,6 +4,7 @@ use {
         PluginState,
     },
     serde::{Deserialize, Serialize},
+    std::hash::{Hash, Hasher},
 };
 
 /// FIM completion request
@@ -65,6 +66,20 @@ pub struct FimResponse {
     pub tokens_cached: u64,
     #[serde(default)]
     pub truncated: bool,
+}
+
+impl PartialEq for FimResponse {
+    fn eq(&self, other: &Self) -> bool {
+        self.content == other.content
+    }
+}
+
+impl Eq for FimResponse {}
+
+impl Hash for FimResponse {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.content.hash(state);
+    }
 }
 
 impl PluginState {

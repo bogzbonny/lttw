@@ -5,7 +5,7 @@
 
 use {
     crate::{context::LocalContext, utils::hash_input, FimResponse},
-    ahash::{HashMap, HashMapExt},
+    ahash::{HashMap, HashMapExt, HashSet},
     serde::{Deserialize, Serialize},
     std::collections::VecDeque,
 };
@@ -20,7 +20,7 @@ pub struct CacheEntry {
 /// Cache with LRU eviction
 #[derive(Debug, Clone)]
 pub struct Cache {
-    data: HashMap<String, Vec<FimResponse>>,
+    data: HashMap<String, HashSet<FimResponse>>,
     lru_order: VecDeque<String>,
     max_keys: usize,
 }
@@ -55,10 +55,13 @@ impl Cache {
         // Update the cache
         if let Some(v) = self.data.get_mut(&key) {
             // cached value exists, push
-            v.push(value);
+            v.insert(value);
         } else {
             // first time getting the value
-            self.data.insert(key.clone(), vec![value]);
+            let mut set = HashSet::default();
+            set.insert(value);
+
+            self.data.insert(key.clone(), set);
         }
 
         // Update LRU order - remove key if it exists and add to end (most recent)
@@ -68,7 +71,7 @@ impl Cache {
 
     /// Get a value from the cache and update LRU order
     #[tracing::instrument]
-    pub fn get(&mut self, key: &str) -> Option<Vec<FimResponse>> {
+    pub fn get(&mut self, key: &str) -> Option<HashSet<FimResponse>> {
         if !self.data.contains_key(key) {
             return None;
         }
@@ -92,16 +95,9 @@ impl Cache {
         self.data.len()
     }
 
-    /// Check if the cache is empty
     #[tracing::instrument]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
-    }
-
-    /// Get a FIM response from the cache (without updating LRU order)
-    #[tracing::instrument]
-    pub fn get_fim(&self, key: &str) -> Option<Vec<FimResponse>> {
-        self.data.get(key).cloned()
     }
 
     /// Get the maximum number of keys
