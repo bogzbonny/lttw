@@ -20,6 +20,8 @@ pub fn trigger_lsp_completions_async() -> LttwResult<()> {
 
     // For testing directly in neovim
     // :lua vim.print(vim.lsp.buf_request_sync(0, 'textDocument/completion', vim.lsp.util.make_position_params(0, 'utf-8'), 1000))
+    // :lua print(vim.inspect(vim.lsp.buf_request_sync(0, 'textDocument/completion', vim.lsp.util.make_position_params(0, 'utf-8'), 1000)))
+    //:lua local r = vim.lsp.buf_request_sync(0, 'textDocument/completion', vim.lsp.util.make_position_params(0, 'utf-8'), 1000); if r and r[1] and r[1].result and r[1].result.items then for _, item in ipairs(r[1].result.items) do vim.print(item.filterText) end end
 
     // get the completions through LUA.
     // NOTE we filter the content in lua before sending to rust and if we didn't we would be
