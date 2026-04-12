@@ -190,7 +190,7 @@ require('llama').setup({
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `t_max_prompt_ms` | integer | `500` | Max alloted time for the prompt processing (not yet supported) |
+| `t_max_prompt_ms` | integer | `500` | Max alloted time for the prompt processing (not yet supported in llama.cpp) |
 | `t_max_predict_ms` | integer | `1000` | Max alloted time for the prediction |
 | `debounce_min_ms` | integer | `20` | Minimum debounce time in milliseconds |
 | `debounce_max_ms` | integer | `200` | Maximum debounce time in milliseconds (used when queue is full) |

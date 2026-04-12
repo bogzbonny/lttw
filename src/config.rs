@@ -11,30 +11,8 @@ use {
 /// Configuration options for the lttw plugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LttwConfig {
-    // FIM (Fill-in-Middle) configuration
-    pub endpoint_fim: String,
-    pub endpoint_inst: String,
-
-    pub model_fim: String,
-    pub model_inst: String,
-    pub api_key: String,
-
-    // Context configuration
-    // NOTE even though we feed in the following 'n' number of lines for prefix and suffix,
-    // those lines will be trucated further in the FIM completion system within llama.cpp which
-    // balances prefix:suffix content to being 3:1 AND ensures that all of that content fits into a
-    // single batch (`--batch-size` flag)
-    pub n_prefix: u32, // number of prefix lines fed into the inline endpoint
-    pub n_suffix: u32, // number of suffix lines fed into the inline endpoint
-
-    // Dynamic n_predict configuration
-    // n_predict_inner: tokens to predict when there are non-whitespace chars to the right of cursor
-    // n_predict_end: tokens to predict when at end of line or only whitespace to the right
-    pub n_predict_inner: u32,
-    pub n_predict_end: u32,
-
-    pub t_max_prompt_ms: u32,
-    pub t_max_predict_ms: u32,
+    //-------------------------------------------
+    // GENERAL CONFIG
     pub debounce_min_ms: u64,
     pub debounce_max_ms: u64,
     pub max_concurrent_fim_requests: u32,
@@ -43,24 +21,11 @@ pub struct LttwConfig {
     // Display configuration
     pub show_info: u8,
     pub auto_fim: bool,
-    pub max_line_suffix: u32,
 
     // Cache configuration
     pub max_cache_keys: u32,
 
-    // Ring buffer configuration
-    pub ring_n_chunks: u32,
-    pub ring_chunk_size: u32,
-    pub ring_scope: u32,
-    pub ring_update_ms: u64,
-    pub ring_queue_length: usize,
-    /// Number of chunks to pick from the scope when the cursor moves significantly
-    /// or to a new buffer. The greater this number, the greater the scope should be
-    /// to reduce overlapping picks.
-    pub ring_n_picks: u32,
-
-    // Keymap configuration
-
+    // TODO actually use
     // Keymap configuration
     pub keymap_fim_trigger: String,
     pub keymap_fim_accept_full: String,
@@ -82,6 +47,21 @@ pub struct LttwConfig {
     pub llm_completions: bool,
     pub reduce_cognitive_offloading_percentage: u8,
 
+    // Startup configuration
+    pub enable_at_startup: bool,
+    pub tracing_enabled: bool,
+    pub tracing_log_file: bool,
+    pub tracing_level: String,
+
+    // cleanup of old virt text (used for debugging)
+    // TODO eventually remove this
+    pub disable_cleanup: bool,
+
+    pub disabled_filetypes: Vec<String>,
+    pub enabled_filetypes: Vec<String>,
+
+    //-------------------------------------------
+    // LSP
     pub lsp_completions: bool,
     pub lsp_comp_truncate_vars: bool,
     pub lsp_comp_insert_one_var: bool,
@@ -92,18 +72,44 @@ pub struct LttwConfig {
     /// Example: [("Ok()", "Ok(())")] will transform Ok() to Ok(())
     pub lsp_overrides: Vec<(String, String)>,
 
-    // Startup configuration
-    pub enable_at_startup: bool,
-    pub tracing_enabled: bool,
-    pub tracing_log_file: bool,
-    pub tracing_level: String,
+    //-------------------------------------------
+    // PER MODEL CONFIG
+    pub endpoint_fim: String,
+    pub endpoint_inst: String,
 
-    // cleanup of old virt text
-    // TODO eventually remove this
-    pub disable_cleanup: bool,
+    pub model_fim: Option<String>,
+    pub model_inst: Option<String>,
+    pub api_key: Option<String>,
 
-    pub disabled_filetypes: Vec<String>,
-    pub enabled_filetypes: Vec<String>,
+    // Context configuration
+    // NOTE even though we feed in the following 'n' number of lines for prefix and suffix,
+    // those lines will be trucated further in the FIM completion system within llama.cpp which
+    // balances prefix:suffix content to being 3:1 AND ensures that all of that content fits into a
+    // single batch (`--batch-size` flag)
+    pub n_prefix: u32, // number of prefix lines fed into the inline endpoint
+    pub n_suffix: u32, // number of suffix lines fed into the inline endpoint
+
+    // Dynamic n_predict configuration
+    // n_predict_inner: tokens to predict when there are non-whitespace chars to the right of cursor
+    // n_predict_end: tokens to predict when at end of line or only whitespace to the right
+    pub n_predict_inner: u32,
+    pub n_predict_end: u32,
+
+    pub t_max_prompt_ms: u32,
+    pub t_max_predict_ms: u32,
+
+    pub max_line_suffix: u32,
+
+    // Ring buffer configuration
+    pub ring_n_chunks: u32,
+    pub ring_chunk_size: u32,
+    pub ring_scope: u32,
+    pub ring_update_ms: u64,
+    pub ring_queue_length: usize,
+    /// Number of chunks to pick from the scope when the cursor moves significantly
+    /// or to a new buffer. The greater this number, the greater the scope should be
+    /// to reduce overlapping picks.
+    pub ring_n_picks: u32,
 }
 
 impl Default for LttwConfig {
@@ -111,9 +117,9 @@ impl Default for LttwConfig {
         Self {
             endpoint_fim: "http://127.0.0.1:8012/infill".to_string(),
             endpoint_inst: "http://127.0.0.1:8012/v1/chat/completions".to_string(),
-            model_fim: String::new(),
-            model_inst: String::new(),
-            api_key: String::new(),
+            model_fim: None,
+            model_inst: None,
+            api_key: None,
             n_prefix: 256,
             n_suffix: 64,
             n_predict_inner: 16,
@@ -221,13 +227,19 @@ impl LttwConfig {
             config.endpoint_inst = v;
         }
         if let Some(v) = get_string("model_fim") {
-            config.model_fim = v;
+            if !v.is_empty() {
+                config.model_fim = Some(v);
+            }
         }
         if let Some(v) = get_string("model_inst") {
-            config.model_inst = v;
+            if !v.is_empty() {
+                config.model_inst = Some(v);
+            }
         }
         if let Some(v) = get_string("api_key") {
-            config.api_key = v;
+            if !v.is_empty() {
+                config.api_key = Some(v);
+            }
         }
         if let Some(v) = get_string("keymap_fim_trigger") {
             config.keymap_fim_trigger = v;
@@ -400,29 +412,6 @@ impl LttwConfig {
 
         if let Some(v) = get_string_pairs("lsp_overrides") {
             config.lsp_overrides = v;
-        }
-
-        // Handle deprecated key names (rename old keys to new ones)
-        if let Some(v) = get_string("endpoint") {
-            config.endpoint_fim = v;
-        }
-        if let Some(v) = get_string("model") {
-            config.model_fim = v;
-        }
-        if let Some(v) = get_string("keymap_trigger") {
-            config.keymap_fim_trigger = v;
-        }
-        if let Some(v) = get_string("keymap_accept_full") {
-            config.keymap_fim_accept_full = v;
-        }
-        if let Some(v) = get_string("keymap_accept_line") {
-            config.keymap_fim_accept_line = v;
-        }
-        if let Some(v) = get_string("keymap_accept_word") {
-            config.keymap_fim_accept_word = v;
-        }
-        if let Some(v) = get_string("keymap_debug") {
-            config.keymap_debug_toggle = v;
         }
 
         config

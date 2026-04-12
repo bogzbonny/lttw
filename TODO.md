@@ -12,8 +12,8 @@
 
 ^^^^^^^^^ DONE
 
-00. output info that it WAS a cache being retrieved
-00. ring update notifications through extmarks 
+00. improve llm response to match suffix if we remove the last bracket (similar
+    to how we do it in lsp) 
 
 10. multiple models, first attempt to get the result from the small model (maybe
     even do a retry) then once we've gotten a result maybe launch the slower
@@ -126,6 +126,11 @@ local query_string = [[
        - probably want to have a config option for all the words which we don't
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
+
+10. actually use keymaps in config
+
+30. output info that it WAS a cache being retrieved
+30. ring update notifications through extmarks 
 
 
 ------------------------

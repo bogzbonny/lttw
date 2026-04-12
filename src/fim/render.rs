@@ -271,11 +271,9 @@ pub fn trim_suggestion_and_suffix_on_curr_line<'a>(
 
         let new_suffix = utils::remove_matching_prefix(sug_one_less, suffix);
         if new_suffix.len() == suffix.len() {
-            //return (suggestion, None, suggestion.len() < suffix.len());
             return (suggestion, None, true);
         };
 
-        // If suggestion.len() less than suffix then assume infill display as okay
         (suggestion, Some(new_suffix), false) // do not infill we must overlay
     }
 }

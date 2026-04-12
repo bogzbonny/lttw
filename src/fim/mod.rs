@@ -458,8 +458,7 @@ pub async fn fim_completion(
 
     // Get local context
 
-    // Skip auto FIM if too much suffix characters, might be the case for dense text
-    // where there's simply a lot of chs on a few suffix lines
+    // Skip auto FIM if too many suffix lines, this might be the case for not dense text
     if ctx.line_cur_suffix.len() > state.config.read().max_line_suffix as usize {
         info!(
             "Skipping FIM due to large suffix ({} chars)",
