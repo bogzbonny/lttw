@@ -21,6 +21,7 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
 
     let state = get_state();
     let mut ids = Vec::new();
+    let auto_fim = state.config.read().auto_fim;
 
     let id = create_autocmd(
         ["InsertLeavePre", "CompleteChanged"],
@@ -39,11 +40,25 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
     let id = create_autocmd(
         ["ModeChanged"],
         &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .callback(|_| {
+            .callback(move |_| {
                 // TODO log error
                 if let Err(e) = set_mode_in_state() {
                     error!(e)
                 }
+                if auto_fim {
+                    match state.in_insert_mode() {
+                        Ok(true) => {
+                            if let Err(e) = on_move() {
+                                error!(e)
+                            }
+                        }
+                        Err(e) => {
+                            error!(e)
+                        }
+                        _ => {}
+                    }
+                }
+
                 if let Err(e) = mode_change_maybe_start_processing_ring_updates() {
                     error!(e)
                 }
@@ -54,24 +69,24 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
     .unwrap_or(0);
     ids.push(id);
 
-    let id = create_autocmd(
-        ["CompleteDone"],
-        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .callback(|_| {
-                if let Err(e) = on_move() {
-                    error!(e)
-                }
-                false
-            })
-            .build(),
-    )
-    .unwrap_or(0);
-    ids.push(id);
+    if auto_fim {
+        let id = create_autocmd(
+            ["CompleteDone"],
+            &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+                .callback(|_| {
+                    if let Err(e) = on_move() {
+                        error!(e)
+                    }
+                    false
+                })
+                .build(),
+        )
+        .unwrap_or(0);
+        ids.push(id);
 
-    if state.config.read().auto_fim {
         info!("registering auto fim autocmds");
         let id = create_autocmd(
-            ["CursorMoved", "CursorMovedI"],
+            ["CursorMoved", "CursorMovedI", "InsertEnter"],
             &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
                 .callback(|_| {
                     if let Err(e) = on_move() {

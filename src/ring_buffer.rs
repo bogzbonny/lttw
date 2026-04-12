@@ -65,7 +65,7 @@ pub fn mode_change_maybe_start_processing_ring_updates() -> LttwResult<()> {
     let state = get_state();
     if !state.ring_updating_active.load(Ordering::SeqCst)
         && let Ok(nm) = state.in_normal_mode()
-        && (nm || (*state.last_move_time.read()).elapsed() < Duration::from_secs(3))
+        && (nm || (*state.last_move_time.read()).elapsed() > Duration::from_secs(3))
     {
         let rt = state.tokio_runtime.clone();
         rt.read().spawn(async move {

@@ -5,8 +5,15 @@
     nothing!).
      - reduce_cognitive_offloading_ratio = 25%
      - NOTE this should not apply to LSP predictions
+00. allow lsp completions to occur at the moment of entering Insert mode (seems
+    to only trigger on a movement) 
 
 ^^^^^^^^^ DONE
+
+00. allow multiple responses to be stored in the cache (instead of just a single
+    one, the others get overwriten)
+00. output info that it WAS a cache being retrieved
+
 
 10. multiple models, first attempt to get the result from the small model (maybe
     even do a retry) then once we've gotten a result maybe launch the slower
