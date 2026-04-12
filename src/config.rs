@@ -47,6 +47,10 @@ pub struct LttwConfig {
     pub llm_completions: bool,
     pub reduce_cognitive_offloading_percentage: u8,
 
+    pub duel_model_mode: bool,
+    pub run_duel_models_concurrently: bool,
+    pub duel_models_ring_buffer_prioritization: DuelModelPrioritization, // "concurrent", "series", "series_zip"
+
     // Startup configuration
     pub enable_at_startup: bool,
     pub tracing_enabled: bool,
@@ -73,12 +77,87 @@ pub struct LttwConfig {
     pub lsp_overrides: Vec<(String, String)>,
 
     //-------------------------------------------
-    // PER MODEL CONFIG
-    pub endpoint_fim: String,
-    pub endpoint_inst: String,
+    // INSTRUCTION
+    pub instr_endpoint: String,
+    pub instr_model: Option<String>,
+    pub instr_api_key: Option<String>,
 
-    pub model_fim: Option<String>,
-    pub model_inst: Option<String>,
+    //-------------------------------------------
+    // PER MODEL CONFIG
+    default_fim_config: FimModelConfig,
+    fast_fim_config: FimModelConfigOverrides,
+    slow_fim_config: FimModelConfigOverrides,
+}
+
+impl Default for LttwConfig {
+    fn default() -> Self {
+        Self {
+            instr_endpoint: "http://127.0.0.1:8012/v1/chat/completions".to_string(),
+            instr_model: None,
+            instr_api_key: None,
+            debounce_min_ms: 20,
+            debounce_max_ms: 200,
+            max_concurrent_fim_requests: 3, // good to be larger than 1 to allow for speculative FIM
+            single_line_prediction_within_line: true,
+            show_info: 2,
+            auto_fim: true,
+            max_cache_keys: 250,
+            keymap_fim_trigger: "<leader>llf".to_string(),
+            keymap_fim_accept_full: "<Tab>".to_string(),
+            keymap_fim_accept_line: "<S-Tab>".to_string(),
+            keymap_fim_accept_word: "<leader>ll]".to_string(),
+            keymap_debug_toggle: "<leader>lld".to_string(),
+            keymap_inst_trigger: "<leader>lli".to_string(),
+            keymap_inst_rerun: "<leader>llr".to_string(),
+            keymap_inst_continue: "<leader>llc".to_string(),
+            keymap_inst_accept: "<Tab>".to_string(),
+            keymap_inst_cancel: "<Esc>".to_string(),
+            diff_tracking_enabled: true,
+            no_fim_in_comments: true,
+            llm_completions: true,
+            duel_model_mode: true,
+            run_duel_models_concurrently: false,
+            duel_models_ring_buffer_prioritization: DuelModelPrioritization::SeriesZip,
+            reduce_cognitive_offloading_percentage: 0,
+            lsp_completions: true,
+            lsp_comp_truncate_vars: true,
+            lsp_comp_insert_one_var: false,
+            // Default override: transform Ok() to Ok(()) for unit type returns
+            lsp_overrides: vec![
+                ("Ok()".to_string(), "Ok(())".to_string()),
+                ("unwrap_or()".to_string(), "unwrap_or(…)".to_string()),
+                ("if … {".to_string(), "if ".to_string()),
+                ("if let … =  {".to_string(), "if let ".to_string()),
+                ("match … {".to_string(), "match ".to_string()),
+                ("let … = ;".to_string(), "let ".to_string()),
+                ("let mut … = ;".to_string(), "let mut ".to_string()),
+                ("for … in  {".to_string(), "for ".to_string()),
+                ("while … {".to_string(), "while ".to_string()),
+                ("fn …() {".to_string(), "fn ".to_string()),
+                ("trait … {".to_string(), "trait ".to_string()),
+                ("enum … {".to_string(), "enum ".to_string()),
+                ("impl … {".to_string(), "impl ".to_string()),
+            ],
+            enable_at_startup: true,
+            tracing_enabled: false,
+            tracing_log_file: false,
+            tracing_level: "DEBUG".to_string(),
+            disable_cleanup: false,
+            disabled_filetypes: Vec::new(),
+            enabled_filetypes: Vec::new(),
+            default_fim_config: FimModelConfig::default(),
+            fast_fim_config: FimModelConfigOverrides::default(),
+            slow_fim_config: FimModelConfigOverrides::default(),
+        }
+    }
+}
+
+/// Configuration options for each model
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FimModelConfig {
+    pub endpoint: String,
+
+    pub model_name: Option<String>,
     pub api_key: Option<String>,
 
     // Context configuration
@@ -112,13 +191,32 @@ pub struct LttwConfig {
     pub ring_n_picks: u32,
 }
 
-impl Default for LttwConfig {
+/// Configuration options for each model
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FimModelConfigOverrides {
+    pub endpoint: Option<String>,
+    pub model_name: Option<String>,
+    pub api_key: Option<String>,
+    pub n_prefix: Option<u32>,
+    pub n_suffix: Option<u32>,
+    pub n_predict_inner: Option<u32>,
+    pub n_predict_end: Option<u32>,
+    pub t_max_prompt_ms: Option<u32>,
+    pub t_max_predict_ms: Option<u32>,
+    pub max_line_suffix: Option<u32>,
+    pub ring_n_chunks: Option<u32>,
+    pub ring_chunk_size: Option<u32>,
+    pub ring_scope: Option<u32>,
+    pub ring_update_ms: Option<u64>,
+    pub ring_queue_length: Option<usize>,
+    pub ring_n_picks: Option<u32>,
+}
+
+impl Default for FimModelConfig {
     fn default() -> Self {
         Self {
-            endpoint_fim: "http://127.0.0.1:8012/infill".to_string(),
-            endpoint_inst: "http://127.0.0.1:8012/v1/chat/completions".to_string(),
-            model_fim: None,
-            model_inst: None,
+            endpoint: "http://127.0.0.1:8012/infill".to_string(),
+            model_name: None,
             api_key: None,
             n_prefix: 256,
             n_suffix: 64,
@@ -126,60 +224,294 @@ impl Default for LttwConfig {
             n_predict_end: 256,
             t_max_prompt_ms: 500,
             t_max_predict_ms: 1000,
-            debounce_min_ms: 20,
-            debounce_max_ms: 200,
-            max_concurrent_fim_requests: 3, // good to be larger than 1 to allow for speculative FIM
-            single_line_prediction_within_line: true,
-            show_info: 2,
-            auto_fim: true,
             max_line_suffix: 8,
-            max_cache_keys: 250,
             ring_n_chunks: 16,
             ring_chunk_size: 64,
             ring_scope: 1024,
             ring_update_ms: 1000,
             ring_queue_length: 16,
             ring_n_picks: 1, // Default to 1 - number of chunks to pick from scope
-            keymap_fim_trigger: "<leader>llf".to_string(),
-            keymap_fim_accept_full: "<Tab>".to_string(),
-            keymap_fim_accept_line: "<S-Tab>".to_string(),
-            keymap_fim_accept_word: "<leader>ll]".to_string(),
-            keymap_debug_toggle: "<leader>lld".to_string(),
-            keymap_inst_trigger: "<leader>lli".to_string(),
-            keymap_inst_rerun: "<leader>llr".to_string(),
-            keymap_inst_continue: "<leader>llc".to_string(),
-            keymap_inst_accept: "<Tab>".to_string(),
-            keymap_inst_cancel: "<Esc>".to_string(),
-            diff_tracking_enabled: true,
-            no_fim_in_comments: true,
-            llm_completions: true,
-            reduce_cognitive_offloading_percentage: 0,
-            lsp_completions: true,
-            lsp_comp_truncate_vars: true,
-            lsp_comp_insert_one_var: false,
-            // Default override: transform Ok() to Ok(()) for unit type returns
-            lsp_overrides: vec![
-                ("Ok()".to_string(), "Ok(())".to_string()),
-                ("unwrap_or()".to_string(), "unwrap_or(…)".to_string()),
-                ("if … {".to_string(), "if ".to_string()),
-                ("if let … =  {".to_string(), "if let ".to_string()),
-                ("match … {".to_string(), "match ".to_string()),
-                ("let … = ;".to_string(), "let ".to_string()),
-                ("let mut … = ;".to_string(), "let mut ".to_string()),
-                ("for … in  {".to_string(), "for ".to_string()),
-                ("while … {".to_string(), "while ".to_string()),
-                ("fn …() {".to_string(), "fn ".to_string()),
-                ("trait … {".to_string(), "trait ".to_string()),
-                ("enum … {".to_string(), "enum ".to_string()),
-                ("impl … {".to_string(), "impl ".to_string()),
-            ],
-            enable_at_startup: true,
-            tracing_enabled: false,
-            tracing_log_file: false,
-            tracing_level: "DEBUG".to_string(),
-            disable_cleanup: false,
-            disabled_filetypes: Vec::new(),
-            enabled_filetypes: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum FimModel {
+    Slow,
+    Fast,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DuelModelPrioritization {
+    Concurrent,
+    Series,
+    SeriesZip,
+}
+
+impl DuelModelPrioritization {
+    pub fn as_str(&self) -> &str {
+        match self {
+            DuelModelPrioritization::Concurrent => "concurrent",
+            DuelModelPrioritization::Series => "series",
+            DuelModelPrioritization::SeriesZip => "series_zip",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "concurrent" => Self::Concurrent,
+            "series" => Self::Series,
+            "series_zip" => Self::SeriesZip,
+            _ => Self::SeriesZip,
+        }
+    }
+}
+
+impl LttwConfig {
+    pub fn get_endpoint(&self, m: FimModel) -> String {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .endpoint
+                .clone()
+                .unwrap_or(self.default_fim_config.endpoint.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .endpoint
+                .clone()
+                .unwrap_or(self.default_fim_config.endpoint.clone()),
+        }
+    }
+
+    pub fn get_fim_model_name(&self, m: FimModel) -> Option<String> {
+        match m {
+            FimModel::Slow => {
+                if let Some(ref model_name) = self.slow_fim_config.model_name {
+                    Some(model_name.to_string())
+                } else {
+                    self.default_fim_config.model_name.clone()
+                }
+            }
+            FimModel::Fast => {
+                if let Some(ref model_name) = self.fast_fim_config.model_name {
+                    Some(model_name.to_string())
+                } else {
+                    self.default_fim_config.model_name.clone()
+                }
+            }
+        }
+    }
+
+    pub fn get_api_key(&self, m: FimModel) -> Option<String> {
+        match m {
+            FimModel::Slow => {
+                if let Some(ref api_key) = self.slow_fim_config.api_key {
+                    Some(api_key.to_string())
+                } else {
+                    self.default_fim_config.api_key.clone()
+                }
+            }
+            FimModel::Fast => {
+                if let Some(ref api_key) = self.fast_fim_config.api_key {
+                    Some(api_key.to_string())
+                } else {
+                    self.default_fim_config.api_key.clone()
+                }
+            }
+        }
+    }
+
+    pub fn get_n_prefix(&self, m: FimModel) -> u32 {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .n_prefix
+                .clone()
+                .unwrap_or(self.default_fim_config.n_prefix.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .n_prefix
+                .clone()
+                .unwrap_or(self.default_fim_config.n_prefix.clone()),
+        }
+    }
+
+    pub fn get_n_suffix(&self, m: FimModel) -> u32 {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .n_suffix
+                .clone()
+                .unwrap_or(self.default_fim_config.n_suffix.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .n_suffix
+                .clone()
+                .unwrap_or(self.default_fim_config.n_suffix.clone()),
+        }
+    }
+
+    pub fn get_n_predict_inner(&self, m: FimModel) -> u32 {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .n_predict_inner
+                .clone()
+                .unwrap_or(self.default_fim_config.n_predict_inner.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .n_predict_inner
+                .clone()
+                .unwrap_or(self.default_fim_config.n_predict_inner.clone()),
+        }
+    }
+
+    pub fn get_n_predict_end(&self, m: FimModel) -> u32 {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .n_predict_end
+                .clone()
+                .unwrap_or(self.default_fim_config.n_predict_end.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .n_predict_end
+                .clone()
+                .unwrap_or(self.default_fim_config.n_predict_end.clone()),
+        }
+    }
+
+    pub fn get_t_max_prompt_ms(&self, m: FimModel) -> u32 {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .t_max_prompt_ms
+                .clone()
+                .unwrap_or(self.default_fim_config.t_max_prompt_ms.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .t_max_prompt_ms
+                .clone()
+                .unwrap_or(self.default_fim_config.t_max_prompt_ms.clone()),
+        }
+    }
+
+    pub fn get_t_max_predict_ms(&self, m: FimModel) -> u32 {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .t_max_predict_ms
+                .clone()
+                .unwrap_or(self.default_fim_config.t_max_predict_ms.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .t_max_predict_ms
+                .clone()
+                .unwrap_or(self.default_fim_config.t_max_predict_ms.clone()),
+        }
+    }
+
+    pub fn get_max_line_suffix(&self, m: FimModel) -> u32 {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .max_line_suffix
+                .clone()
+                .unwrap_or(self.default_fim_config.max_line_suffix.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .max_line_suffix
+                .clone()
+                .unwrap_or(self.default_fim_config.max_line_suffix.clone()),
+        }
+    }
+
+    pub fn get_ring_n_chunks(&self, m: FimModel) -> u32 {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .ring_n_chunks
+                .clone()
+                .unwrap_or(self.default_fim_config.ring_n_chunks.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .ring_n_chunks
+                .clone()
+                .unwrap_or(self.default_fim_config.ring_n_chunks.clone()),
+        }
+    }
+
+    pub fn get_ring_chunk_size(&self, m: FimModel) -> u32 {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .ring_chunk_size
+                .clone()
+                .unwrap_or(self.default_fim_config.ring_chunk_size.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .ring_chunk_size
+                .clone()
+                .unwrap_or(self.default_fim_config.ring_chunk_size.clone()),
+        }
+    }
+
+    pub fn get_ring_scope(&self, m: FimModel) -> u32 {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .ring_scope
+                .clone()
+                .unwrap_or(self.default_fim_config.ring_scope.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .ring_scope
+                .clone()
+                .unwrap_or(self.default_fim_config.ring_scope.clone()),
+        }
+    }
+
+    pub fn get_ring_update_ms(&self, m: FimModel) -> u64 {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .ring_update_ms
+                .clone()
+                .unwrap_or(self.default_fim_config.ring_update_ms.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .ring_update_ms
+                .clone()
+                .unwrap_or(self.default_fim_config.ring_update_ms.clone()),
+        }
+    }
+
+    pub fn get_ring_queue_length(&self, m: FimModel) -> usize {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .ring_queue_length
+                .clone()
+                .unwrap_or(self.default_fim_config.ring_queue_length.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .ring_queue_length
+                .clone()
+                .unwrap_or(self.default_fim_config.ring_queue_length.clone()),
+        }
+    }
+    pub fn get_ring_n_picks(&self, m: FimModel) -> u32 {
+        match m {
+            FimModel::Slow => self
+                .slow_fim_config
+                .ring_n_picks
+                .clone()
+                .unwrap_or(self.default_fim_config.ring_n_picks.clone()),
+            FimModel::Fast => self
+                .fast_fim_config
+                .ring_n_picks
+                .clone()
+                .unwrap_or(self.default_fim_config.ring_n_picks.clone()),
         }
     }
 }
@@ -365,6 +697,15 @@ impl LttwConfig {
         if let Some(v) = get_bool("llm_completions") {
             config.llm_completions = v;
         }
+        if let Some(v) = get_bool("duel_model_mode") {
+            config.duel_model_mode = v;
+        }
+        if let Some(v) = get_bool("run_duel_models_concurrently") {
+            config.run_duel_models_concurrently = v;
+        }
+        if let Some(v) = get_string("duel_models_ring_buffer_prioritization") {
+            config.duel_models_ring_buffer_prioritization = DuelModelPrioritization::from_str(&v);
+        }
         if let Some(v) = get_i64("reduce_cognitive_offloading_percentage") {
             let v = v.clamp(0, 100) as u8;
             config.reduce_cognitive_offloading_percentage = v;
@@ -434,78 +775,5 @@ impl LttwConfig {
                 .any(|ft| ft == filetype || ft == "*");
         }
         enabled
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_config() {
-        let config = LttwConfig::new();
-        assert_eq!(config.endpoint_fim, "http://127.0.0.1:8012/infill");
-        assert_eq!(
-            config.endpoint_inst,
-            "http://127.0.0.1:8012/v1/chat/completions"
-        );
-        assert_eq!(config.n_prefix, 256);
-        assert_eq!(config.n_suffix, 64);
-        assert_eq!(config.n_predict_inner, 16);
-        assert_eq!(config.n_predict_end, 256);
-    }
-
-    #[test]
-    fn test_filetype_enabled() {
-        let mut config = LttwConfig::new();
-
-        // Test with empty enabled_filetypes (should use disabled_filetypes)
-        assert!(config.is_filetype_enabled("rust"));
-
-        // Add rust to disabled
-        config.disabled_filetypes.push("rust".to_string());
-        assert!(!config.is_filetype_enabled("rust"));
-        assert!(config.is_filetype_enabled("python"));
-
-        // Test with enabled_filetypes (should override disabled)
-        config.enabled_filetypes.push("python".to_string());
-        assert!(config.is_filetype_enabled("python"));
-        assert!(!config.is_filetype_enabled("rust"));
-
-        // Test wildcard
-        config.enabled_filetypes.clear();
-        config.enabled_filetypes.push("*".to_string());
-        assert!(config.is_filetype_enabled("any"));
-    }
-
-    #[test]
-    fn test_config_defaults() {
-        let config = LttwConfig::new();
-
-        assert_eq!(config.endpoint_fim, "http://127.0.0.1:8012/infill");
-        assert_eq!(
-            config.endpoint_inst,
-            "http://127.0.0.1:8012/v1/chat/completions"
-        );
-        assert_eq!(config.n_prefix, 256);
-        assert_eq!(config.n_suffix, 64);
-        assert_eq!(config.n_predict_inner, 16);
-        assert_eq!(config.n_predict_end, 256);
-        assert!(config.auto_fim);
-    }
-
-    #[test]
-    fn test_lsp_overrides_custom() {
-        let config = LttwConfig::new();
-        // Test that overrides work as expected
-        let text = "Ok()";
-        let mut modified = text.to_string();
-        for (pattern, replacement) in &config.lsp_overrides {
-            if modified == *pattern {
-                modified = replacement.clone();
-                break;
-            }
-        }
-        assert_eq!(modified, "Ok(())");
     }
 }
