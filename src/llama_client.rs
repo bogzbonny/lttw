@@ -147,14 +147,14 @@ impl PluginState {
         };
 
         // Add model if specified
-        if !model_fim.is_empty() {
+        if let Some(model_fim) = model_fim {
             request_body["model"] = serde_json::Value::String(model_fim.clone());
         }
 
         let mut builder = self.client.post(&endpoint_fim).json(&request_body);
 
         // Add API key if specified
-        if !api_key.is_empty() {
+        if let Some(api_key) = api_key {
             builder = builder.bearer_auth(&api_key);
         }
 
@@ -177,14 +177,14 @@ impl PluginState {
         };
 
         // Add model if specified
-        if !model_fim.is_empty() {
+        if let Some(model_fim) = model_fim {
             request_body["model"] = serde_json::Value::String(model_fim.clone());
         }
 
         let mut builder = self.client.post(&endpoint_fim).json(&request_body);
 
         // Add API key if specified
-        if !api_key.is_empty() {
+        if let Some(api_key) = api_key {
             builder = builder.bearer_auth(&api_key);
         }
 

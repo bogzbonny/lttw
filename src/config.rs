@@ -226,20 +226,20 @@ impl LttwConfig {
         if let Some(v) = get_string("endpoint_inst") {
             config.endpoint_inst = v;
         }
-        if let Some(v) = get_string("model_fim") {
-            if !v.is_empty() {
-                config.model_fim = Some(v);
-            }
+        if let Some(v) = get_string("model_fim")
+            && !v.is_empty()
+        {
+            config.model_fim = Some(v);
         }
-        if let Some(v) = get_string("model_inst") {
-            if !v.is_empty() {
-                config.model_inst = Some(v);
-            }
+        if let Some(v) = get_string("model_inst")
+            && !v.is_empty()
+        {
+            config.model_inst = Some(v);
         }
-        if let Some(v) = get_string("api_key") {
-            if !v.is_empty() {
-                config.api_key = Some(v);
-            }
+        if let Some(v) = get_string("api_key")
+            && !v.is_empty()
+        {
+            config.api_key = Some(v);
         }
         if let Some(v) = get_string("keymap_fim_trigger") {
             config.keymap_fim_trigger = v;

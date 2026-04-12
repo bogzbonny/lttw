@@ -5,10 +5,10 @@
 
 use {
     crate::{
-        Error, LttwResult,
         config::LttwConfig,
         get_buf_lines, get_pos, get_state,
         utils::{del_buf_extmark, get_current_buffer_id, set_buf_extmark, set_buf_lines},
+        Error, LttwResult,
     },
     nvim_oxi::Dictionary,
     serde::{Deserialize, Serialize},
@@ -168,14 +168,14 @@ pub async fn send_instruction_warmup(config: &LttwConfig) -> LttwResult<()> {
         n_predict: Some(1),
         stream: Some(false), // Non-streaming for warm-up
         cache_prompt: Some(true),
-        model: config.model_inst.clone(),
+        model: config.model_inst.clone().unwrap_or_default(),
     };
 
     let client = reqwest::Client::new();
     let mut builder = client.post(&config.endpoint_inst).json(&request);
 
-    if !config.api_key.is_empty() {
-        builder = builder.bearer_auth(&config.api_key);
+    if let Some(ref api_key) = config.api_key {
+        builder = builder.bearer_auth(api_key);
     }
 
     let response = builder.send().await?;
@@ -207,14 +207,14 @@ pub async fn send_instruction_stream(
         n_predict: None,
         stream: Some(true), // Always streaming for real requests
         cache_prompt: Some(true),
-        model: config.model_inst.clone(),
+        model: config.model_inst.clone().unwrap_or_default(),
     };
 
     let client = reqwest::Client::new();
     let mut builder = client.post(&config.endpoint_inst).json(&request);
 
-    if !config.api_key.is_empty() {
-        builder = builder.bearer_auth(&config.api_key);
+    if let Some(ref api_key) = config.api_key {
+        builder = builder.bearer_auth(api_key);
     }
 
     let response = builder.send().await?;
@@ -288,11 +288,9 @@ mod tests {
 
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "system");
-        assert!(
-            messages[0]
-                .content
-                .contains("You are a text-editing assistant")
-        );
+        assert!(messages[0]
+            .content
+            .contains("You are a text-editing assistant"));
         assert_eq!(messages[1].role, "user");
         assert!(messages[1].content.contains("INSTRUCTION: make it shorter"));
     }
