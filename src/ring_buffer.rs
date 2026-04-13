@@ -38,10 +38,15 @@ pub fn setup_ring_buffer_timer() -> LttwResult<()> {
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    if !state_.ring_updating_active.load(Ordering::SeqCst)
-                        && let Ok(nm) = state_.in_normal_mode()
-                        && (nm || (*state_.last_move_time.read()).elapsed() < Duration::from_secs(3))
+                    let mut start = false;
+                    if let Ok(nm) = state_.in_normal_mode()
+                        && nm
                     {
+                        start = true;
+                    } else if (*state_.last_move_time.read()).elapsed() > Duration::from_secs(3) {
+                        start = true;
+                    }
+                    if start {
                         start_processing_ring_updates().await;
                     }
                 }
@@ -63,14 +68,21 @@ pub fn setup_ring_buffer_timer() -> LttwResult<()> {
 #[tracing::instrument]
 pub fn mode_change_maybe_start_processing_ring_updates() -> LttwResult<()> {
     let state = get_state();
-    if !state.ring_updating_active.load(Ordering::SeqCst)
-        && let Ok(nm) = state.in_normal_mode()
-        && (nm || (*state.last_move_time.read()).elapsed() > Duration::from_secs(3))
-    {
-        let rt = state.tokio_runtime.clone();
-        rt.read().spawn(async move {
-            start_processing_ring_updates().await;
-        });
+    if !state.ring_updating_active.load(Ordering::SeqCst) {
+        let mut start = false;
+        if let Ok(nm) = state.in_normal_mode()
+            && nm
+        {
+            start = true;
+        } else if (*state.last_move_time.read()).elapsed() > Duration::from_secs(3) {
+            start = true;
+        }
+        if start {
+            let rt = state.tokio_runtime.clone();
+            rt.read().spawn(async move {
+                start_processing_ring_updates().await;
+            });
+        }
     }
     Ok(())
 }
@@ -105,7 +117,7 @@ pub async fn start_processing_ring_updates() {
 async fn ring_update(m: FimLLM) -> LttwResult<bool> {
     let state = get_state();
 
-    // skip update if we're not in normal mode and cursor movement is recent
+    // stop updates if we're not in normal mode and cursor movement is recent
     if !state.in_normal_mode()? && (*state.last_move_time.read()).elapsed() < Duration::from_secs(3)
     {
         return Ok(true);
@@ -281,18 +293,6 @@ impl RingBuffer {
             })
             .collect()
     }
-
-    // XXX delete
-    ///// Get the number of chunks in the ring buffer
-    //#[tracing::instrument]
-    //pub fn len(&self) -> usize {
-    //    self.chunks.len()
-    //}
-    ///// Check if the ring buffer is empty
-    //#[tracing::instrument]
-    //pub fn is_empty(&self) -> bool {
-    //    self.chunks.is_empty()
-    //}
 
     /// Get the number of queued chunks
     #[tracing::instrument]

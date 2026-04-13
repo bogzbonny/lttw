@@ -94,7 +94,7 @@ pub fn register_commands() -> LttwResult<()> {
     let _ = create_user_command(
         "LttwDebugClear",
         |_| -> LttwResult<()> {
-            //debug_clear()?; // XXX
+            //debug_clear()?; // TODO update
             Ok(())
         },
         &Default::default(),

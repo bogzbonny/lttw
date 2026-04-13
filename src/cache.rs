@@ -60,7 +60,14 @@ impl Cache {
             v.insert(value);
         } else {
             // first time getting the value
-            let mut set = HashSet::default();
+            let mut set: HashSet<FimResponseWithInfo> = HashSet::default();
+            if set.len() > 5 {
+                // max 5 entries per location before we start cutting random entries
+                let rand_entry = set.iter().next().cloned();
+                if let Some(rand_entry) = rand_entry {
+                    set.remove(&rand_entry);
+                }
+            }
             set.insert(value);
 
             self.data.insert(key.clone(), set);

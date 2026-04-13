@@ -42,7 +42,6 @@ pub struct PluginState {
     pub config: Arc<RwLock<config::LttwConfig>>,
     pub client: reqwest::Client, // Lllama.cpp client, Arc internally no need to wrap
 
-    //pub otel_guard: Arc<RwLock<Option<crate::otel::OtelGuard>>>,
     pub cache: Arc<RwLock<cache::Cache>>,
 
     pub ring_buffer_fast: Arc<RwLock<ring_buffer::RingBuffer>>,
@@ -53,7 +52,8 @@ pub struct PluginState {
     pub last_pick_buf_id_pos_y_slow: Arc<RwLock<Option<(u64, usize)>>>,
 
     pub nvim_mode: Arc<RwLock<Vec<u8>>>, // string bytes for the mode name
-    pub last_move_time: Arc<RwLock<Instant>>, // (vim s:t_last_move)
+    // last time the cursor was moved (entering into insert mode counts as a move here)
+    pub last_move_time: Arc<RwLock<Instant>>,
     pub instruction_requests: Arc<RwLock<HashMap<i64, InstructionRequestState>>>,
     pub tracing_enabled: Arc<AtomicBool>,
     pub enabled: Arc<AtomicBool>,

@@ -13,12 +13,9 @@
     to how we do it in lsp) 
      - DON'T DO gets confusing and doesn't work that good because would have to
        delete the final comma 
+00. max cache size per location
 
 ^^^^^^^^^ DONE
-
-00. don't actually process every lsp completion I think this is slowing things
-    down - use the AsyncHandle for sending lsp completions as well (route the
-    current biz)
 
 10. multiple models, first attempt to get the result from the small model (maybe
     even do a retry) then once we've gotten a result maybe launch the slower
