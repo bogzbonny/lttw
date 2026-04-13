@@ -186,7 +186,7 @@ pub fn render_fim_suggestion(
         // The info string shows inference statistics like timing, cache status, etc.
         if show_info > 0 {
             // Build the info string using stored timing data
-            let info_string = if let Some(t) = timings {
+            let mut info_string = if let Some(t) = timings {
                 let ring_buffer = match completion.model {
                     FimModel::LLMFast => state.get_ring_buffer(FimLLM::Fast),
                     FimModel::LLMSlow => state.get_ring_buffer(FimLLM::Slow),
@@ -217,6 +217,8 @@ pub fn render_fim_suggestion(
 
                 build_info_string(
                     &ft,
+                    completion.cached,
+                    completion.model,
                     t.tokens_cached,
                     t.truncated,
                     ring_chunks,
@@ -231,6 +233,10 @@ pub fn render_fim_suggestion(
                 // No timing data available, return empty string
                 String::new()
             };
+
+            if let FimModel::LSP = completion.model {
+                info_string = format!("{}", completion.model);
+            }
 
             if !info_string.is_empty()
                 && let Err(e) = set_buf_extmark_top_right(ns_id, info_string)

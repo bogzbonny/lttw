@@ -30,6 +30,16 @@ pub enum FimModel {
     LLMSlow,
 }
 
+impl std::fmt::Display for FimModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FimModel::LSP => write!(f, "LSP"),
+            FimModel::LLMFast => write!(f, "LLMFast"),
+            FimModel::LLMSlow => write!(f, "LLMSlow"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum FimLLM {
     Fast,

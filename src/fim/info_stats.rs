@@ -1,4 +1,7 @@
-use serde::{Deserialize, Serialize};
+use {
+    crate::fim::FimModel,
+    serde::{Deserialize, Serialize},
+};
 
 /// FIM timing information (matches server response format with flat keys)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -26,11 +29,12 @@ pub struct FimTimings {
 #[tracing::instrument]
 pub fn build_info_string(
     timings: &FimTimings,
+    cached: bool,
+    model: FimModel,
     tokens_cached: u64,
     truncated: bool,
     ring_chunks: usize,
     ring_n_chunks: usize,
-
     ring_n_evict: usize,
     ring_queued: usize,
     ring_queue_length: usize,
@@ -45,6 +49,7 @@ pub fn build_info_string(
     let n_predict = timings.predicted_n.unwrap_or(0);
     let t_predict_ms = timings.predicted_ms.unwrap_or(1.0);
     let s_predict = timings.predicted_per_second.unwrap_or(0.0);
+    let cached_str = if cached { "[CACHED] " } else { "" };
 
     // Build info string
     if truncated {
@@ -54,7 +59,16 @@ pub fn build_info_string(
         )
     } else {
         format!(
-            " | c: {}, r: {}/{}, e: {}, q: {}/{}, C: {}/{} | p: {} ({:.2} ms, {:.2} t/s) | g: {} ({:.2} ms, {:.2} t/s)",
+            "{}{}\n\
+            tokens cached: {}\n\
+            ring chunks: {}/{}\n\
+            evicted from ring: {}\n\
+            ring queue: {}/{}\n\
+            cache size: {}/{}\n\
+            new prompt tokens: {}\n({:.1} ms, {:.1} tok/s)\n\
+            generated tokens: {}\n({:.1} ms, {:.1} tok/s)",
+            cached_str,
+            model,
             tokens_cached,
             ring_chunks,
             ring_n_chunks,

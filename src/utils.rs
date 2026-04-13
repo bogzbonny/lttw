@@ -130,23 +130,25 @@ pub fn set_buf_extmark(
 }
 
 #[tracing::instrument]
-pub fn set_buf_extmark_top_right(ns_id: u32, message: String) -> LttwResult<u32> {
+pub fn set_buf_extmark_top_right(ns_id: u32, message: String) -> LttwResult<()> {
     assert_not_tokio_worker();
-
-    let mut info_opts = SetExtmarkOptsBuilder::default();
-    let info_virt_text = vec![(message, LTTW_FIM_HIGHLIGHT)];
-    info_opts.virt_text(info_virt_text);
-
-    // Use RightAlign positioning for the info string
-    // This displays the info at the right side of the window
-    info_opts.virt_text_pos(ExtmarkVirtTextPosition::RightAlign);
-
-    info_opts.virt_text_pos(ExtmarkVirtTextPosition::RightAlign);
     let top_line: usize = api::call_function("line", ("w0",)).unwrap_or(0);
     let top_line = top_line.saturating_sub(1); // Adjust for 0-based indexing in Neovim API
 
     let mut buf = Buffer::current();
-    Ok(buf.set_extmark(ns_id, top_line, 0, &info_opts.build())?)
+    for (i, line) in message.lines().enumerate() {
+        let mut info_opts = SetExtmarkOptsBuilder::default();
+        let info_virt_text = vec![(line, LTTW_FIM_HIGHLIGHT)];
+        info_opts.virt_text(info_virt_text);
+
+        // Use RightAlign positioning for the info string
+        // This displays the info at the right side of the window
+        info_opts.virt_text_pos(ExtmarkVirtTextPosition::RightAlign);
+
+        buf.set_extmark(ns_id, top_line + i, 0, &info_opts.build())?;
+    }
+
+    Ok(())
 }
 
 #[tracing::instrument]
