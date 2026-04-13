@@ -4,8 +4,10 @@
 // configuration into a strongly-typed Rust struct.
 
 use {
+    crate::fim::FimLLM,
     nvim_oxi::conversion::FromObject,
     serde::{Deserialize, Serialize},
+    std::str::FromStr,
 };
 
 /// Configuration options for the lttw plugin
@@ -24,6 +26,9 @@ pub struct LttwConfig {
 
     // Cache configuration
     pub max_cache_keys: u32,
+
+    // how often to check if we should start the ring update sequence
+    pub ring_update_ms: u64,
 
     // TODO actually use
     // Keymap configuration
@@ -81,6 +86,17 @@ pub struct LttwConfig {
     pub instr_endpoint: String,
     pub instr_model: Option<String>,
     pub instr_api_key: Option<String>,
+    pub instr_n_prefix: u32, // number of prefix lines fed into the inline endpoint
+    pub instr_n_suffix: u32, // number of suffix lines fed into the inline endpoint
+
+    //-------------------------------------------
+    // FIM Context configuration
+    // NOTE even though we feed in the following 'n' number of lines for prefix and suffix,
+    // those lines will be trucated further in the FIM completion system within llama.cpp which
+    // balances prefix:suffix content to being 3:1 AND ensures that all of that content fits into a
+    // single batch (`--batch-size` flag)
+    pub n_prefix: u32, // number of prefix lines fed into the inline endpoint
+    pub n_suffix: u32, // number of suffix lines fed into the inline endpoint
 
     //-------------------------------------------
     // PER MODEL CONFIG
@@ -92,9 +108,6 @@ pub struct LttwConfig {
 impl Default for LttwConfig {
     fn default() -> Self {
         Self {
-            instr_endpoint: "http://127.0.0.1:8012/v1/chat/completions".to_string(),
-            instr_model: None,
-            instr_api_key: None,
             debounce_min_ms: 20,
             debounce_max_ms: 200,
             max_concurrent_fim_requests: 3, // good to be larger than 1 to allow for speculative FIM
@@ -102,6 +115,7 @@ impl Default for LttwConfig {
             show_info: 2,
             auto_fim: true,
             max_cache_keys: 32, // can be small due to recaching
+            ring_update_ms: 1000,
             keymap_fim_trigger: "<leader>llf".to_string(),
             keymap_fim_accept_full: "<Tab>".to_string(),
             keymap_fim_accept_line: "<S-Tab>".to_string(),
@@ -137,6 +151,15 @@ impl Default for LttwConfig {
                 ("trait … {".to_string(), "trait ".to_string()),
                 ("enum … {".to_string(), "enum ".to_string()),
                 ("impl … {".to_string(), "impl ".to_string()),
+                ("Arc<>".to_string(), "Arc<".to_string()),
+                ("RwLock<>".to_string(), "RwLock<".to_string()),
+                ("Box<>".to_string(), "Box<".to_string()),
+                ("Option<>".to_string(), "Option<".to_string()),
+                ("Result<>".to_string(), "Result<".to_string()),
+                ("Mutex<>".to_string(), "Mutex<".to_string()),
+                ("Rc<>".to_string(), "Rc<".to_string()),
+                ("RefCell<>".to_string(), "RefCell<".to_string()),
+                ("Vec<>".to_string(), "Vec<".to_string()),
             ],
             enable_at_startup: true,
             tracing_enabled: false,
@@ -145,6 +168,16 @@ impl Default for LttwConfig {
             disable_cleanup: false,
             disabled_filetypes: Vec::new(),
             enabled_filetypes: Vec::new(),
+
+            instr_endpoint: "http://127.0.0.1:8012/v1/chat/completions".to_string(),
+            instr_model: None,
+            instr_api_key: None,
+            instr_n_prefix: 256,
+            instr_n_suffix: 64,
+
+            n_prefix: 256,
+            n_suffix: 64,
+
             default_fim_config: FimModelConfig::default(),
             fast_fim_config: FimModelConfigOverrides::default(),
             slow_fim_config: FimModelConfigOverrides::default(),
@@ -159,14 +192,6 @@ pub struct FimModelConfig {
 
     pub model_name: Option<String>,
     pub api_key: Option<String>,
-
-    // Context configuration
-    // NOTE even though we feed in the following 'n' number of lines for prefix and suffix,
-    // those lines will be trucated further in the FIM completion system within llama.cpp which
-    // balances prefix:suffix content to being 3:1 AND ensures that all of that content fits into a
-    // single batch (`--batch-size` flag)
-    pub n_prefix: u32, // number of prefix lines fed into the inline endpoint
-    pub n_suffix: u32, // number of suffix lines fed into the inline endpoint
 
     // Dynamic n_predict configuration
     // n_predict_inner: tokens to predict when there are non-whitespace chars to the right of cursor
@@ -183,7 +208,6 @@ pub struct FimModelConfig {
     pub ring_n_chunks: u32,
     pub ring_chunk_size: u32,
     pub ring_scope: u32,
-    pub ring_update_ms: u64,
     pub ring_queue_length: usize,
     /// Number of chunks to pick from the scope when the cursor moves significantly
     /// or to a new buffer. The greater this number, the greater the scope should be
@@ -207,7 +231,6 @@ pub struct FimModelConfigOverrides {
     pub ring_n_chunks: Option<u32>,
     pub ring_chunk_size: Option<u32>,
     pub ring_scope: Option<u32>,
-    pub ring_update_ms: Option<u64>,
     pub ring_queue_length: Option<usize>,
     pub ring_n_picks: Option<u32>,
 }
@@ -218,8 +241,6 @@ impl Default for FimModelConfig {
             endpoint: "http://127.0.0.1:8012/infill".to_string(),
             model_name: None,
             api_key: None,
-            n_prefix: 256,
-            n_suffix: 64,
             n_predict_inner: 16,
             n_predict_end: 256,
             t_max_prompt_ms: 500,
@@ -228,19 +249,11 @@ impl Default for FimModelConfig {
             ring_n_chunks: 16,
             ring_chunk_size: 64,
             ring_scope: 1024,
-            ring_update_ms: 1000,
             ring_queue_length: 16,
             ring_n_picks: 1, // Default to 1 - number of chunks to pick from scope
         }
     }
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum FimModel {
-    Slow,
-    Fast,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DuelModelPrioritization {
     Concurrent,
@@ -256,262 +269,200 @@ impl DuelModelPrioritization {
             DuelModelPrioritization::SeriesZip => "series_zip",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
+impl std::str::FromStr for DuelModelPrioritization {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "concurrent" => Self::Concurrent,
-            "series" => Self::Series,
-            "series_zip" => Self::SeriesZip,
-            _ => Self::SeriesZip,
+            "concurrent" => Ok(Self::Concurrent),
+            "series" => Ok(Self::Series),
+            "series_zip" => Ok(Self::SeriesZip),
+            _ => Ok(Self::SeriesZip),
         }
     }
 }
 
 impl LttwConfig {
-    pub fn get_endpoint(&self, m: FimModel) -> String {
+    pub fn get_endpoint(&self, m: FimLLM) -> String {
         match m {
-            FimModel::Slow => self
-                .slow_fim_config
+            FimLLM::Fast => self
+                .fast_fim_config
                 .endpoint
                 .clone()
                 .unwrap_or(self.default_fim_config.endpoint.clone()),
-            FimModel::Fast => self
-                .fast_fim_config
+            FimLLM::Slow => self
+                .slow_fim_config
                 .endpoint
                 .clone()
                 .unwrap_or(self.default_fim_config.endpoint.clone()),
         }
     }
 
-    pub fn get_fim_model_name(&self, m: FimModel) -> Option<String> {
+    pub fn get_fim_model_name(&self, m: FimLLM) -> Option<String> {
         match m {
-            FimModel::Slow => {
-                if let Some(ref model_name) = self.slow_fim_config.model_name {
-                    Some(model_name.to_string())
-                } else {
-                    self.default_fim_config.model_name.clone()
-                }
-            }
-            FimModel::Fast => {
+            FimLLM::Fast => {
                 if let Some(ref model_name) = self.fast_fim_config.model_name {
                     Some(model_name.to_string())
                 } else {
                     self.default_fim_config.model_name.clone()
                 }
             }
+            FimLLM::Slow => {
+                if let Some(ref model_name) = self.slow_fim_config.model_name {
+                    Some(model_name.to_string())
+                } else {
+                    self.default_fim_config.model_name.clone()
+                }
+            }
         }
     }
 
-    pub fn get_api_key(&self, m: FimModel) -> Option<String> {
+    pub fn get_api_key(&self, m: FimLLM) -> Option<String> {
         match m {
-            FimModel::Slow => {
-                if let Some(ref api_key) = self.slow_fim_config.api_key {
-                    Some(api_key.to_string())
-                } else {
-                    self.default_fim_config.api_key.clone()
-                }
-            }
-            FimModel::Fast => {
+            FimLLM::Fast => {
                 if let Some(ref api_key) = self.fast_fim_config.api_key {
                     Some(api_key.to_string())
                 } else {
                     self.default_fim_config.api_key.clone()
                 }
             }
+            FimLLM::Slow => {
+                if let Some(ref api_key) = self.slow_fim_config.api_key {
+                    Some(api_key.to_string())
+                } else {
+                    self.default_fim_config.api_key.clone()
+                }
+            }
         }
     }
 
-    pub fn get_n_prefix(&self, m: FimModel) -> u32 {
+    pub fn get_n_predict_inner(&self, m: FimLLM) -> u32 {
         match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .n_prefix
-                .clone()
-                .unwrap_or(self.default_fim_config.n_prefix.clone()),
-            FimModel::Fast => self
-                .fast_fim_config
-                .n_prefix
-                .clone()
-                .unwrap_or(self.default_fim_config.n_prefix.clone()),
-        }
-    }
-
-    pub fn get_n_suffix(&self, m: FimModel) -> u32 {
-        match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .n_suffix
-                .clone()
-                .unwrap_or(self.default_fim_config.n_suffix.clone()),
-            FimModel::Fast => self
-                .fast_fim_config
-                .n_suffix
-                .clone()
-                .unwrap_or(self.default_fim_config.n_suffix.clone()),
-        }
-    }
-
-    pub fn get_n_predict_inner(&self, m: FimModel) -> u32 {
-        match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .n_predict_inner
-                .clone()
-                .unwrap_or(self.default_fim_config.n_predict_inner.clone()),
-            FimModel::Fast => self
+            FimLLM::Fast => self
                 .fast_fim_config
                 .n_predict_inner
-                .clone()
-                .unwrap_or(self.default_fim_config.n_predict_inner.clone()),
+                .unwrap_or(self.default_fim_config.n_predict_inner),
+            FimLLM::Slow => self
+                .slow_fim_config
+                .n_predict_inner
+                .unwrap_or(self.default_fim_config.n_predict_inner),
         }
     }
 
-    pub fn get_n_predict_end(&self, m: FimModel) -> u32 {
+    pub fn get_n_predict_end(&self, m: FimLLM) -> u32 {
         match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .n_predict_end
-                .clone()
-                .unwrap_or(self.default_fim_config.n_predict_end.clone()),
-            FimModel::Fast => self
+            FimLLM::Fast => self
                 .fast_fim_config
                 .n_predict_end
-                .clone()
-                .unwrap_or(self.default_fim_config.n_predict_end.clone()),
+                .unwrap_or(self.default_fim_config.n_predict_end),
+            FimLLM::Slow => self
+                .slow_fim_config
+                .n_predict_end
+                .unwrap_or(self.default_fim_config.n_predict_end),
         }
     }
 
-    pub fn get_t_max_prompt_ms(&self, m: FimModel) -> u32 {
+    pub fn get_t_max_prompt_ms(&self, m: FimLLM) -> u32 {
         match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .t_max_prompt_ms
-                .clone()
-                .unwrap_or(self.default_fim_config.t_max_prompt_ms.clone()),
-            FimModel::Fast => self
+            FimLLM::Fast => self
                 .fast_fim_config
                 .t_max_prompt_ms
-                .clone()
-                .unwrap_or(self.default_fim_config.t_max_prompt_ms.clone()),
+                .unwrap_or(self.default_fim_config.t_max_prompt_ms),
+            FimLLM::Slow => self
+                .slow_fim_config
+                .t_max_prompt_ms
+                .unwrap_or(self.default_fim_config.t_max_prompt_ms),
         }
     }
 
-    pub fn get_t_max_predict_ms(&self, m: FimModel) -> u32 {
+    pub fn get_t_max_predict_ms(&self, m: FimLLM) -> u32 {
         match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .t_max_predict_ms
-                .clone()
-                .unwrap_or(self.default_fim_config.t_max_predict_ms.clone()),
-            FimModel::Fast => self
+            FimLLM::Fast => self
                 .fast_fim_config
                 .t_max_predict_ms
-                .clone()
-                .unwrap_or(self.default_fim_config.t_max_predict_ms.clone()),
+                .unwrap_or(self.default_fim_config.t_max_predict_ms),
+            FimLLM::Slow => self
+                .slow_fim_config
+                .t_max_predict_ms
+                .unwrap_or(self.default_fim_config.t_max_predict_ms),
         }
     }
 
-    pub fn get_max_line_suffix(&self, m: FimModel) -> u32 {
+    pub fn get_max_line_suffix(&self, m: FimLLM) -> u32 {
         match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .max_line_suffix
-                .clone()
-                .unwrap_or(self.default_fim_config.max_line_suffix.clone()),
-            FimModel::Fast => self
+            FimLLM::Fast => self
                 .fast_fim_config
                 .max_line_suffix
-                .clone()
-                .unwrap_or(self.default_fim_config.max_line_suffix.clone()),
+                .unwrap_or(self.default_fim_config.max_line_suffix),
+            FimLLM::Slow => self
+                .slow_fim_config
+                .max_line_suffix
+                .unwrap_or(self.default_fim_config.max_line_suffix),
         }
     }
 
-    pub fn get_ring_n_chunks(&self, m: FimModel) -> u32 {
+    pub fn get_ring_n_chunks(&self, m: FimLLM) -> u32 {
         match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .ring_n_chunks
-                .clone()
-                .unwrap_or(self.default_fim_config.ring_n_chunks.clone()),
-            FimModel::Fast => self
+            FimLLM::Fast => self
                 .fast_fim_config
                 .ring_n_chunks
-                .clone()
-                .unwrap_or(self.default_fim_config.ring_n_chunks.clone()),
+                .unwrap_or(self.default_fim_config.ring_n_chunks),
+            FimLLM::Slow => self
+                .slow_fim_config
+                .ring_n_chunks
+                .unwrap_or(self.default_fim_config.ring_n_chunks),
         }
     }
 
-    pub fn get_ring_chunk_size(&self, m: FimModel) -> u32 {
+    pub fn get_ring_chunk_size(&self, m: FimLLM) -> u32 {
         match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .ring_chunk_size
-                .clone()
-                .unwrap_or(self.default_fim_config.ring_chunk_size.clone()),
-            FimModel::Fast => self
+            FimLLM::Fast => self
                 .fast_fim_config
                 .ring_chunk_size
-                .clone()
-                .unwrap_or(self.default_fim_config.ring_chunk_size.clone()),
+                .unwrap_or(self.default_fim_config.ring_chunk_size),
+            FimLLM::Slow => self
+                .slow_fim_config
+                .ring_chunk_size
+                .unwrap_or(self.default_fim_config.ring_chunk_size),
         }
     }
 
-    pub fn get_ring_scope(&self, m: FimModel) -> u32 {
+    pub fn get_ring_scope(&self, m: FimLLM) -> u32 {
         match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .ring_scope
-                .clone()
-                .unwrap_or(self.default_fim_config.ring_scope.clone()),
-            FimModel::Fast => self
+            FimLLM::Fast => self
                 .fast_fim_config
                 .ring_scope
-                .clone()
-                .unwrap_or(self.default_fim_config.ring_scope.clone()),
+                .unwrap_or(self.default_fim_config.ring_scope),
+            FimLLM::Slow => self
+                .slow_fim_config
+                .ring_scope
+                .unwrap_or(self.default_fim_config.ring_scope),
         }
     }
 
-    pub fn get_ring_update_ms(&self, m: FimModel) -> u64 {
+    pub fn get_ring_queue_length(&self, m: FimLLM) -> usize {
         match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .ring_update_ms
-                .clone()
-                .unwrap_or(self.default_fim_config.ring_update_ms.clone()),
-            FimModel::Fast => self
-                .fast_fim_config
-                .ring_update_ms
-                .clone()
-                .unwrap_or(self.default_fim_config.ring_update_ms.clone()),
-        }
-    }
-
-    pub fn get_ring_queue_length(&self, m: FimModel) -> usize {
-        match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .ring_queue_length
-                .clone()
-                .unwrap_or(self.default_fim_config.ring_queue_length.clone()),
-            FimModel::Fast => self
+            FimLLM::Fast => self
                 .fast_fim_config
                 .ring_queue_length
-                .clone()
-                .unwrap_or(self.default_fim_config.ring_queue_length.clone()),
+                .unwrap_or(self.default_fim_config.ring_queue_length),
+            FimLLM::Slow => self
+                .slow_fim_config
+                .ring_queue_length
+                .unwrap_or(self.default_fim_config.ring_queue_length),
         }
     }
-    pub fn get_ring_n_picks(&self, m: FimModel) -> u32 {
+    pub fn get_ring_n_picks(&self, m: FimLLM) -> u32 {
         match m {
-            FimModel::Slow => self
-                .slow_fim_config
-                .ring_n_picks
-                .clone()
-                .unwrap_or(self.default_fim_config.ring_n_picks.clone()),
-            FimModel::Fast => self
+            FimLLM::Fast => self
                 .fast_fim_config
                 .ring_n_picks
-                .clone()
-                .unwrap_or(self.default_fim_config.ring_n_picks.clone()),
+                .unwrap_or(self.default_fim_config.ring_n_picks),
+            FimLLM::Slow => self
+                .slow_fim_config
+                .ring_n_picks
+                .unwrap_or(self.default_fim_config.ring_n_picks),
         }
     }
 }
@@ -582,6 +533,12 @@ impl LttwConfig {
         {
             config.instr_api_key = Some(v);
         }
+        if let Some(v) = get_i64("instr_n_prefix") {
+            config.instr_n_prefix = v as u32;
+        }
+        if let Some(v) = get_i64("instr_n_suffix") {
+            config.instr_n_suffix = v as u32;
+        }
 
         if let Some(v) = get_i64("show_info") {
             let v = v.clamp(0, 2) as u8;
@@ -605,6 +562,15 @@ impl LttwConfig {
         if let Some(v) = get_i64("max_cache_keys") {
             config.max_cache_keys = v as u32;
         }
+        if let Some(v) = get_i64("ring_update_ms") {
+            config.ring_update_ms = v as u64;
+        }
+        if let Some(v) = get_i64("n_prefix") {
+            config.n_prefix = v as u32;
+        }
+        if let Some(v) = get_i64("n_suffix") {
+            config.n_suffix = v as u32;
+        }
 
         // ------------------
         if let Some(v) = get_string("fim_endpoint") {
@@ -619,12 +585,6 @@ impl LttwConfig {
             && !v.is_empty()
         {
             config.default_fim_config.api_key = Some(v);
-        }
-        if let Some(v) = get_i64("n_prefix") {
-            config.default_fim_config.n_prefix = v as u32;
-        }
-        if let Some(v) = get_i64("n_suffix") {
-            config.default_fim_config.n_suffix = v as u32;
         }
         if let Some(v) = get_i64("n_predict_inner") {
             config.default_fim_config.n_predict_inner = v as u32;
@@ -649,9 +609,6 @@ impl LttwConfig {
         }
         if let Some(v) = get_i64("ring_scope") {
             config.default_fim_config.ring_scope = v as u32;
-        }
-        if let Some(v) = get_i64("ring_update_ms") {
-            config.default_fim_config.ring_update_ms = v as u64;
         }
         if let Some(v) = get_i64("ring_queue_length") {
             config.default_fim_config.ring_queue_length = v as usize;
@@ -703,9 +660,6 @@ impl LttwConfig {
         if let Some(v) = get_i64("fast_fim_ring_scope") {
             config.fast_fim_config.ring_scope = Some(v as u32);
         }
-        if let Some(v) = get_i64("fast_fim_ring_update_ms") {
-            config.fast_fim_config.ring_update_ms = Some(v as u64);
-        }
         if let Some(v) = get_i64("fast_fim_ring_queue_length") {
             config.fast_fim_config.ring_queue_length = Some(v as usize);
         }
@@ -755,9 +709,6 @@ impl LttwConfig {
         }
         if let Some(v) = get_i64("slow_fim_ring_scope") {
             config.slow_fim_config.ring_scope = Some(v as u32);
-        }
-        if let Some(v) = get_i64("slow_fim_ring_update_ms") {
-            config.slow_fim_config.ring_update_ms = Some(v as u64);
         }
         if let Some(v) = get_i64("slow_fim_ring_queue_length") {
             config.slow_fim_config.ring_queue_length = Some(v as usize);
@@ -815,7 +766,8 @@ impl LttwConfig {
             config.run_duel_models_concurrently = v;
         }
         if let Some(v) = get_string("duel_models_ring_buffer_prioritization") {
-            config.duel_models_ring_buffer_prioritization = DuelModelPrioritization::from_str(&v);
+            config.duel_models_ring_buffer_prioritization =
+                DuelModelPrioritization::from_str(&v).expect("Invalid DuelModelPrioritization");
         }
         if let Some(v) = get_i64("reduce_cognitive_offloading_percentage") {
             let v = v.clamp(0, 100) as u8;

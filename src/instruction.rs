@@ -83,7 +83,7 @@ pub fn build_instruction_payload(
 
     // Add prefix
     let prefix_start = if l0 > 0 {
-        l0.saturating_sub(config.n_prefix as usize)
+        l0.saturating_sub(config.instr_n_prefix as usize)
     } else {
         0
     };
@@ -109,7 +109,7 @@ pub fn build_instruction_payload(
     system_prompt.push('\n');
 
     // Add suffix
-    let suffix_end = std::cmp::min(lines.len(), l1 + 1 + config.n_suffix as usize);
+    let suffix_end = std::cmp::min(lines.len(), l1 + 1 + config.instr_n_suffix as usize);
     let suffix: Vec<String> = if l1 + 1 < suffix_end {
         lines[l1 + 1..suffix_end].to_vec()
     } else {
@@ -168,13 +168,13 @@ pub async fn send_instruction_warmup(config: &LttwConfig) -> LttwResult<()> {
         n_predict: Some(1),
         stream: Some(false), // Non-streaming for warm-up
         cache_prompt: Some(true),
-        model: config.model_inst.clone().unwrap_or_default(),
+        model: config.instr_model.clone().unwrap_or_default(),
     };
 
     let client = reqwest::Client::new();
-    let mut builder = client.post(&config.endpoint_inst).json(&request);
+    let mut builder = client.post(&config.instr_endpoint).json(&request);
 
-    if let Some(ref api_key) = config.api_key {
+    if let Some(ref api_key) = config.instr_api_key {
         builder = builder.bearer_auth(api_key);
     }
 
@@ -207,13 +207,13 @@ pub async fn send_instruction_stream(
         n_predict: None,
         stream: Some(true), // Always streaming for real requests
         cache_prompt: Some(true),
-        model: config.model_inst.clone().unwrap_or_default(),
+        model: config.instr_model.clone().unwrap_or_default(),
     };
 
     let client = reqwest::Client::new();
-    let mut builder = client.post(&config.endpoint_inst).json(&request);
+    let mut builder = client.post(&config.instr_endpoint).json(&request);
 
-    if let Some(ref api_key) = config.api_key {
+    if let Some(ref api_key) = config.instr_api_key {
         builder = builder.bearer_auth(api_key);
     }
 

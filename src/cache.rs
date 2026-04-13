@@ -4,7 +4,7 @@
 // eviction policy to manage memory usage and improve performance.
 
 use {
-    crate::{context::LocalContext, utils::hash_input, FimResponse},
+    crate::{context::LocalContext, utils::hash_input, FimResponse, FimResponseWithInfo},
     ahash::{HashMap, HashMapExt, HashSet},
     serde::{Deserialize, Serialize},
     std::collections::VecDeque,
@@ -20,7 +20,7 @@ pub struct CacheEntry {
 /// Cache with LRU eviction
 #[derive(Debug, Clone)]
 pub struct Cache {
-    data: HashMap<String, HashSet<FimResponse>>,
+    data: HashMap<String, HashSet<FimResponseWithInfo>>,
     lru_order: VecDeque<String>,
     max_keys: usize,
 }
@@ -39,7 +39,7 @@ impl Cache {
     /// Insert a value into the cache
     /// Evicts the least recently used entry if the cache is full
     #[tracing::instrument]
-    pub fn insert(&mut self, key: String, value: FimResponse) {
+    pub fn insert(&mut self, key: String, mut value: FimResponseWithInfo) {
         // Check if we need to evict an entry
         if self.data.len() >= self.max_keys
             && let Some(lru_key) = self.lru_order.pop_front()
@@ -48,9 +48,11 @@ impl Cache {
         }
 
         // don't cache if empty response
-        if value.content.is_empty() {
+        if value.resp.content.is_empty() {
             return;
         }
+
+        value.cached = true;
 
         // Update the cache
         if let Some(v) = self.data.get_mut(&key) {
@@ -71,7 +73,7 @@ impl Cache {
 
     /// Get a value from the cache and update LRU order
     #[tracing::instrument]
-    pub fn get(&mut self, key: &str) -> Option<HashSet<FimResponse>> {
+    pub fn get(&mut self, key: &str) -> Option<HashSet<FimResponseWithInfo>> {
         if !self.data.contains_key(key) {
             return None;
         }
@@ -109,7 +111,10 @@ impl Cache {
     // returns all the cache completions for the provided context, recaching them to a closer
     // position if found
     #[tracing::instrument]
-    pub fn get_cached_completion(&mut self, ctx: &LocalContext) -> (Vec<FimResponse>, usize) {
+    pub fn get_cached_completion(
+        &mut self,
+        ctx: &LocalContext,
+    ) -> (Vec<FimResponseWithInfo>, usize) {
         // Compute primary hash
         let primary_hash_inp = format!("{}{}Î{}", ctx.prefix, ctx.middle, ctx.suffix);
         let hash = hash_input(&primary_hash_inp);
@@ -119,9 +124,10 @@ impl Cache {
 
         // the bool in all_completions is "recache"
         let mut completions_idx = 0;
-        let mut all_completions: Vec<(FimResponse, bool)> = Vec::new();
+        let mut all_completions: Vec<(FimResponseWithInfo, bool)> = Vec::new();
         let find_better_completion = if let Some(resp) = response {
-            let comps: Vec<(FimResponse, bool)> = resp.into_iter().map(|c| (c, false)).collect();
+            let comps: Vec<(FimResponseWithInfo, bool)> =
+                resp.into_iter().map(|c| (c, false)).collect();
             all_completions.extend(comps);
             false
         } else {
@@ -150,7 +156,7 @@ impl Cache {
 
             if let Some(responses) = self.get(&hash_new) {
                 for response_ in responses {
-                    let content = &response_.content;
+                    let content = &response_.resp.content;
 
                     // Check that the removed text matches the beginning of the cached response
                     // NOTE 'i' always is == removed.len()
@@ -163,11 +169,15 @@ impl Cache {
                         };
 
                         all_completions.push((
-                            FimResponse {
-                                content: remaining.to_string(),
-                                timings: response_.timings,
-                                tokens_cached: response_.tokens_cached,
-                                truncated: response_.truncated,
+                            FimResponseWithInfo {
+                                resp: FimResponse {
+                                    content: remaining.to_string(),
+                                    timings: response_.resp.timings,
+                                    tokens_cached: response_.resp.tokens_cached,
+                                    truncated: response_.resp.truncated,
+                                },
+                                cached: response_.cached,
+                                model: response_.model,
                             },
                             true,
                         )); // recache = true

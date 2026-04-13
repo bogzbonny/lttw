@@ -37,7 +37,7 @@ pub fn fim_cycle_next() -> LttwResult<()> {
     };
     info!(
         "Cycled to next completion ({} chars)",
-        completion.content.len()
+        completion.resp.content.len()
     );
 
     // Re-display with new completion
@@ -85,7 +85,7 @@ pub fn fim_cycle_prev() -> LttwResult<()> {
 
     info!(
         "Cycled to previous completion ({} chars)",
-        completion.content.len()
+        completion.resp.content.len()
     );
 
     // Re-display with new completion

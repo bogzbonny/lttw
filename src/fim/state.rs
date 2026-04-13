@@ -1,10 +1,8 @@
-use crate::{llama_client::FimTimingsData, FimResponse};
+use crate::{llama_client::FimTimingsData, FimResponseWithInfo};
 
 #[derive(Debug, Clone, Default)]
 pub struct FimState {
     pub hint_shown: bool,
-    /// Last buffer id and cursor Y position where ring buffer chunks were picked
-    pub last_pick_buf_id_pos_y: Option<(u64, usize)>,
 
     pub pos_x: usize,
     pub pos_y: usize,
@@ -13,7 +11,7 @@ pub struct FimState {
     /// Timing data from the last completion for display in info string
     pub timings: Option<FimTimingsData>,
     /// Collection of completions for cycling (longest to shortest)
-    pub completion_cycle: Vec<FimResponse>,
+    pub completion_cycle: Vec<FimResponseWithInfo>,
     /// Index of currently displayed completion in the cycle
     pub completion_index: usize,
 }
@@ -45,25 +43,14 @@ impl FimState {
         self.pos_y = 0;
         self.line_cur.clear();
         self.content.clear();
-        self.last_pick_buf_id_pos_y = None;
         self.timings = None;
         self.completion_cycle.clear();
         self.completion_index = 0;
     }
 
-    /// Update the last pick position
-    pub fn set_last_pick_buf_id_pos_y(&mut self, buf_id: u64, pos_y: usize) {
-        self.last_pick_buf_id_pos_y = Some((buf_id, pos_y));
-    }
-
-    /// Get the last pick position
-    pub fn get_last_pick_buf_id_pos_y(&self) -> Option<(u64, usize)> {
-        self.last_pick_buf_id_pos_y
-    }
-
     /// Set the completion cycle list
     #[allow(dead_code)]
-    pub fn set_completion_cycle(&mut self, completions: Vec<FimResponse>, idx: usize) {
+    pub fn set_completion_cycle(&mut self, completions: Vec<FimResponseWithInfo>, idx: usize) {
         self.completion_cycle = completions;
         self.completion_index = idx;
     }
@@ -74,12 +61,12 @@ impl FimState {
     }
 
     /// Set the completion cycle list
-    pub fn push_completion_cycle_if_unique(&mut self, completions: FimResponse) -> bool {
+    pub fn push_completion_cycle_if_unique(&mut self, completions: FimResponseWithInfo) -> bool {
         // first check if this completion's contents are unique
         if self
             .completion_cycle
             .iter()
-            .any(|c| c.content == completions.content)
+            .any(|c| c.resp.content == completions.resp.content)
         {
             return false;
         }
@@ -93,7 +80,7 @@ impl FimState {
     }
 
     /// Cycle to next completion
-    pub fn cycle_next(&mut self) -> Option<FimResponse> {
+    pub fn cycle_next(&mut self) -> Option<FimResponseWithInfo> {
         if self.completion_cycle.is_empty() {
             return None;
         }
@@ -104,7 +91,7 @@ impl FimState {
     }
 
     /// Cycle to previous completion
-    pub fn cycle_prev(&mut self) -> Option<FimResponse> {
+    pub fn cycle_prev(&mut self) -> Option<FimResponseWithInfo> {
         if self.completion_cycle.is_empty() {
             return None;
         }

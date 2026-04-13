@@ -34,6 +34,8 @@
        appropriate - like even a full second, just so it's not constantly
        running.
 
+00. lsp_overrides to BTreeMap, Also parse out by language
+
 ------------------------
 LSP Completions improvements
 
@@ -44,6 +46,9 @@ LSP Completions improvements
        stats. This would be good for variable names.
      - probably just recompute with some frequency on line changes / finish
        insert mode - should be fast to compute async 
+
+10. Diff history as a part of the completion priority (of the most recent diffs,
+    look at all the additions, those have more priority)
 
 30. Option to allow for case-insenstive LSP so If I typed 'op' it could still match with
     Option<...>

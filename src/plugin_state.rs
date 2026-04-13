@@ -1,6 +1,6 @@
 use {
     crate::{
-        cache, config, diagnostics::DiagnosticTracker, fim::FimState,
+        cache, config, diagnostics::DiagnosticTracker, fim::FimLLM, fim::FimState,
         instruction::InstructionRequestState, ring_buffer, DisplayMessage, Error, LttwResult,
     },
     ahash::{HashMap, HashMapExt},
@@ -44,7 +44,14 @@ pub struct PluginState {
 
     //pub otel_guard: Arc<RwLock<Option<crate::otel::OtelGuard>>>,
     pub cache: Arc<RwLock<cache::Cache>>,
-    pub ring_buffer: Arc<RwLock<ring_buffer::RingBuffer>>,
+
+    pub ring_buffer_fast: Arc<RwLock<ring_buffer::RingBuffer>>,
+    pub ring_buffer_slow: Arc<RwLock<ring_buffer::RingBuffer>>,
+
+    /// Last buffer id and cursor Y position where ring buffer chunks were picked
+    pub last_pick_buf_id_pos_y_fast: Arc<RwLock<Option<(u64, usize)>>>,
+    pub last_pick_buf_id_pos_y_slow: Arc<RwLock<Option<(u64, usize)>>>,
+
     pub nvim_mode: Arc<RwLock<Vec<u8>>>, // string bytes for the mode name
     pub last_move_time: Arc<RwLock<Instant>>, // (vim s:t_last_move)
     pub instruction_requests: Arc<RwLock<HashMap<i64, InstructionRequestState>>>,
@@ -110,11 +117,15 @@ impl PluginState {
         let config = config::LttwConfig::from_object(obj);
         let enable_at_startup = config.enable_at_startup;
         let tracing_enabled = config.tracing_enabled;
-        let max_cache_keys = config.max_cache_keys as usize;
-        let ring_n_chunks = config.ring_n_chunks as usize;
-        let chunk_size = config.ring_chunk_size as usize;
         let max_req = config.max_concurrent_fim_requests as usize;
-        let ring_queue_length = config.ring_queue_length;
+        let max_cache_keys = config.max_cache_keys as usize;
+
+        let fast_ring_n_chunks = config.get_ring_n_chunks(FimLLM::Fast) as usize;
+        let fast_chunk_size = config.get_ring_chunk_size(FimLLM::Fast) as usize;
+        let fast_ring_queue_length = config.get_ring_queue_length(FimLLM::Fast);
+        let slow_ring_n_chunks = config.get_ring_n_chunks(FimLLM::Slow) as usize;
+        let slow_chunk_size = config.get_ring_chunk_size(FimLLM::Slow) as usize;
+        let slow_ring_queue_length = config.get_ring_queue_length(FimLLM::Slow);
 
         // Create namespaces for extmarks
         let extmark_ns = Some(create_namespace("lttw_fim"));
@@ -136,11 +147,18 @@ impl PluginState {
             config: Arc::new(RwLock::new(config)),
             client,
             cache: Arc::new(RwLock::new(cache::Cache::new(max_cache_keys))),
-            ring_buffer: Arc::new(RwLock::new(ring_buffer::RingBuffer::new(
-                ring_n_chunks,
-                chunk_size,
-                ring_queue_length,
+            ring_buffer_fast: Arc::new(RwLock::new(ring_buffer::RingBuffer::new(
+                fast_ring_n_chunks,
+                fast_chunk_size,
+                fast_ring_queue_length,
             ))),
+            ring_buffer_slow: Arc::new(RwLock::new(ring_buffer::RingBuffer::new(
+                slow_ring_n_chunks,
+                slow_chunk_size,
+                slow_ring_queue_length,
+            ))),
+            last_pick_buf_id_pos_y_fast: Arc::new(RwLock::new(None)),
+            last_pick_buf_id_pos_y_slow: Arc::new(RwLock::new(None)),
             nvim_mode: Arc::new(RwLock::new(Vec::new())),
             last_move_time: Arc::new(RwLock::new(Instant::now())),
             instruction_requests: Arc::new(RwLock::new(HashMap::new())),
@@ -208,6 +226,30 @@ impl PluginState {
             return Ok(false);
         };
         Ok(mode_char == &b'n')
+    }
+
+    // fast/slow model gets
+    pub fn get_ring_buffer(&self, m: FimLLM) -> Arc<RwLock<ring_buffer::RingBuffer>> {
+        match m {
+            FimLLM::Slow => self.ring_buffer_slow.clone(),
+            FimLLM::Fast => self.ring_buffer_fast.clone(),
+        }
+    }
+    pub fn get_last_pick_buf_id_pos_y(&self, m: FimLLM) -> Option<(u64, usize)> {
+        match m {
+            FimLLM::Slow => *self.last_pick_buf_id_pos_y_slow.read(),
+            FimLLM::Fast => *self.last_pick_buf_id_pos_y_fast.read(),
+        }
+    }
+    pub fn set_last_pick_buf_id_pos_y(&self, m: FimLLM, buf_id: u64, pos_y: usize) {
+        match m {
+            FimLLM::Slow => {
+                *self.last_pick_buf_id_pos_y_slow.write() = Some((buf_id, pos_y));
+            }
+            FimLLM::Fast => {
+                *self.last_pick_buf_id_pos_y_fast.write() = Some((buf_id, pos_y));
+            }
+        }
     }
 
     #[tracing::instrument]

@@ -9,8 +9,8 @@
 ///       currently happening.
 use {
     crate::{
-        context::chunk_similarity, get_state, plugin_state::PluginState, utils::random_range,
-        LttwResult,
+        context::chunk_similarity, fim::FimLLM, get_state, plugin_state::PluginState,
+        utils::random_range, LttwResult,
     },
     std::collections::VecDeque,
     std::sync::{atomic::Ordering, Arc},
@@ -82,7 +82,8 @@ pub async fn start_processing_ring_updates() {
     state.ring_updating_active.store(true, Ordering::SeqCst);
     let _ = tokio::spawn(async move {
         loop {
-            let stop = match ring_update().await {
+            let m = FimLLM::Fast; // XXX
+            let stop = match ring_update(m).await {
                 Ok(stop) => stop,
                 Err(e) => {
                     error!(e);
@@ -101,7 +102,7 @@ pub async fn start_processing_ring_updates() {
 /// Process ring buffer updates - moves queued chunks to active ring and sends to server
 ///  
 #[tracing::instrument]
-async fn ring_update() -> LttwResult<bool> {
+async fn ring_update(m: FimLLM) -> LttwResult<bool> {
     let state = get_state();
 
     // skip update if we're not in normal mode and cursor movement is recent
@@ -110,22 +111,17 @@ async fn ring_update() -> LttwResult<bool> {
         return Ok(true);
     }
 
-    if state.ring_buffer.read().queued.is_empty() {
+    if state.get_ring_buffer(m).read().queued.is_empty() {
         return Ok(true);
     }
 
     // Check if we have chunks before logging
-    let chunk_count = {
-        // Move first queued chunk to ring
-        let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.update();
-        ring_buffer_lock.len()
-    };
+    let chunk_count = state.get_ring_buffer(m).write().update();
 
     if chunk_count > 0 {
         info!("Processing {chunk_count} ring buffer chunks");
-        let extra = state.ring_buffer.read().get_extra();
-        state.send_fim_request_buffer(extra).await?;
+        let extra = state.get_ring_buffer(m).read().get_extra();
+        state.send_fim_request_buffer(m, extra).await?;
     }
 
     Ok(false)
@@ -146,12 +142,36 @@ pub struct Chunk {
 /// Ring buffer for extra context chunks
 #[derive(Debug, Clone)]
 pub struct RingBuffer {
-    chunks: Vec<Chunk>,
+    pub chunks: Vec<Chunk>,
     pub queued: VecDeque<Chunk>,
     n_evict: usize,
     ring_n_chunks: usize,
     ring_queue_length: usize,
     chunk_size: usize,
+}
+
+impl PluginState {
+    /// Pick a random chunk from the provided text and queue it for processing
+    ///
+    /// ## Arguments
+    ///  - `text` - Text to pick a chunk from
+    ///  - `no_mod` - If true, don't pick chunks from buffers with pending changes
+    #[tracing::instrument(skip(self, text, filename))]
+    pub fn pick_chunk(&self, text: &[String], filename: String) {
+        let info = self.get_cur_buffer_info();
+        if !(info.filepath == filename && info.is_loaded && info.is_readable) {
+            return;
+        }
+        // Pick chunk from yanked text
+        if self.config.read().duel_model_mode {
+            self.get_ring_buffer(FimLLM::Slow)
+                .write()
+                .pick_chunk_inner(text, filename.clone());
+        }
+        self.get_ring_buffer(FimLLM::Fast)
+            .write()
+            .pick_chunk_inner(text, filename);
+    }
 }
 
 impl RingBuffer {
@@ -174,15 +194,15 @@ impl RingBuffer {
     ///  - `text` - Text to pick a chunk from
     ///  - `no_mod` - If true, don't pick chunks from buffers with pending changes
     ///  - `do_evict` - If true, evict chunks that are very similar to the new one
-    #[tracing::instrument(skip(state, text, filename))]
-    pub fn pick_chunk(&mut self, state: &PluginState, text: &[String], filename: String) {
-        let info = state.get_cur_buffer_info();
-        if !(info.filepath == filename && info.is_loaded && info.is_readable) {
-            return;
-        }
+    //#[tracing::instrument(skip(state, text, filename))]
+    //pub fn pick_chunk(&mut self, state: &PluginState, text: &[String], filename: String) {
+    //    let info = state.get_cur_buffer_info();
+    //    if !(info.filepath == filename && info.is_loaded && info.is_readable) {
+    //        return;
+    //    }
 
-        self.pick_chunk_inner(text, filename);
-    }
+    //    self.pick_chunk_inner(text, filename);
+    //}
 
     #[tracing::instrument(skip(text, filename))]
     pub fn pick_chunk_inner(&mut self, text: &[String], filename: String) {
@@ -227,10 +247,11 @@ impl RingBuffer {
     }
 
     /// Move the first queued chunk to the ring buffer
+    /// returns the size of the ring buffer after completion
     #[tracing::instrument]
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> usize {
         if self.queued.is_empty() {
-            return;
+            return self.chunks.len();
         }
 
         // take from the front of the queue (oldest, but in order) and add to the ring buffer
@@ -246,6 +267,7 @@ impl RingBuffer {
         while self.chunks.len() > self.ring_n_chunks {
             self.chunks.remove(0);
         }
+        self.chunks.len()
     }
 
     /// Get extra context from the ring buffer
@@ -260,17 +282,17 @@ impl RingBuffer {
             .collect()
     }
 
-    /// Get the number of chunks in the ring buffer
-    #[tracing::instrument]
-    pub fn len(&self) -> usize {
-        self.chunks.len()
-    }
-
-    /// Check if the ring buffer is empty
-    #[tracing::instrument]
-    pub fn is_empty(&self) -> bool {
-        self.chunks.is_empty()
-    }
+    // XXX delete
+    ///// Get the number of chunks in the ring buffer
+    //#[tracing::instrument]
+    //pub fn len(&self) -> usize {
+    //    self.chunks.len()
+    //}
+    ///// Check if the ring buffer is empty
+    //#[tracing::instrument]
+    //pub fn is_empty(&self) -> bool {
+    //    self.chunks.is_empty()
+    //}
 
     /// Get the number of queued chunks
     #[tracing::instrument]
@@ -421,7 +443,7 @@ mod tests {
 
         ring.update();
 
-        assert_eq!(ring.len(), 1);
+        assert_eq!(ring.chunks.len(), 1);
         assert_eq!(ring.queued_len(), 1);
     }
 
@@ -458,7 +480,7 @@ mod tests {
         ring.update();
         ring.update();
 
-        assert_eq!(ring.len(), 2);
+        assert_eq!(ring.chunks.len(), 2);
 
         // The queued should be empty after 2 updates (3 queued - 2 updated = 1 remaining)
         // But we added 3 chunks, and 2 were moved to ring, so 1 should remain
@@ -490,12 +512,12 @@ mod tests {
 
         ring.update();
 
-        assert_eq!(ring.len(), 1);
+        assert_eq!(ring.chunks.len(), 1);
         assert_eq!(ring.queued_len(), 1);
 
         ring.update();
 
-        assert_eq!(ring.len(), 2);
+        assert_eq!(ring.chunks.len(), 2);
         assert_eq!(ring.queued_len(), 0);
     }
 
@@ -515,7 +537,7 @@ mod tests {
             ring.update();
         }
 
-        assert!(ring.len() <= 3);
+        assert!(ring.chunks.len() <= 3);
     }
 
     #[test]
@@ -593,13 +615,13 @@ mod tests {
         ring_buffer.pick_chunk_inner(&chunk, String::new());
         ring_buffer.update();
 
-        assert_eq!(ring_buffer.len(), 1);
+        assert_eq!(ring_buffer.chunks.len(), 1);
 
         // Try to add exact same chunk again (should be ignored)
         ring_buffer.pick_chunk_inner(&chunk, String::new());
 
         // Should still be 1 (no duplicate added)
-        assert_eq!(ring_buffer.len(), 1);
+        assert_eq!(ring_buffer.chunks.len(), 1);
 
         // Try to add same chunk via queued (should also be ignored)
         ring_buffer.pick_chunk_inner(&chunk, String::new());
@@ -624,7 +646,7 @@ mod tests {
         );
         ring_buffer.update();
 
-        assert_eq!(ring_buffer.len(), 1);
+        assert_eq!(ring_buffer.chunks.len(), 1);
         assert_eq!(ring_buffer.queued_len(), 0);
 
         // Add second chunk (should not evict first since they're different)
@@ -638,7 +660,7 @@ mod tests {
         );
         ring_buffer.update();
 
-        assert_eq!(ring_buffer.len(), 2);
+        assert_eq!(ring_buffer.chunks.len(), 2);
 
         // Add third chunk
         ring_buffer.pick_chunk_inner(
@@ -651,7 +673,7 @@ mod tests {
         );
         ring_buffer.update();
 
-        assert_eq!(ring_buffer.len(), 3);
+        assert_eq!(ring_buffer.chunks.len(), 3);
 
         // Add fourth chunk - should evict the oldest one due to max_chunks limit
         ring_buffer.pick_chunk_inner(
@@ -665,7 +687,7 @@ mod tests {
         ring_buffer.update();
 
         // Should still be at max_chunks (3)
-        assert_eq!(ring_buffer.len(), 3);
+        assert_eq!(ring_buffer.chunks.len(), 3);
     }
 
     #[test]
@@ -685,7 +707,7 @@ mod tests {
         ring_buffer.pick_chunk_inner(&chunk1, String::new());
         ring_buffer.update();
 
-        assert_eq!(ring_buffer.len(), 1);
+        assert_eq!(ring_buffer.chunks.len(), 1);
 
         // Add very similar chunk (should evict first due to >0.9 similarity)
         let mut chunk2 = chunk1.clone();
@@ -696,7 +718,7 @@ mod tests {
 
         // Due to high similarity, first chunk should be evicted
         // The exact behavior depends on the similarity threshold (0.9)
-        assert!(ring_buffer.len() <= 2);
+        assert!(ring_buffer.chunks.len() <= 2);
     }
 
     #[test]
@@ -738,6 +760,11 @@ mod tests {
         // Cache a response for these hashes
         let response = r#"{"content":" world","timings":{},"tokens_cached":0,"truncated":false}"#;
         let response = serde_json::from_str::<FimResponse>(response).unwrap();
+        let response = crate::llama_client::FimResponseWithInfo {
+            resp: response,
+            cached: false,
+            model: crate::fim::FimModel::LLMFast,
+        };
         for hash in &hashes {
             cache.insert(hash.clone(), response.clone());
         }
@@ -831,14 +858,14 @@ mod tests {
 
         // All should be in queued
         assert_eq!(ring_buffer.queued_len(), 5);
-        assert_eq!(ring_buffer.len(), 0);
+        assert_eq!(ring_buffer.chunks.len(), 0);
 
         // Update twice
         ring_buffer.update();
         ring_buffer.update();
 
         // Should have moved 2 to ring, 3 remaining in queue
-        assert_eq!(ring_buffer.len(), 2);
+        assert_eq!(ring_buffer.chunks.len(), 2);
         assert_eq!(ring_buffer.queued_len(), 3);
 
         // Update remaining queued chunks
@@ -847,7 +874,7 @@ mod tests {
         ring_buffer.update();
 
         // All should be in ring (max 3 due to limit)
-        assert_eq!(ring_buffer.len(), 3);
+        assert_eq!(ring_buffer.chunks.len(), 3);
         assert_eq!(ring_buffer.queued_len(), 0);
     }
 }

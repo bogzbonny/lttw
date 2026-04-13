@@ -1,10 +1,11 @@
 use {
     super::info_stats::build_info_string,
     crate::{
+        fim::{FimLLM, FimModel},
         llama_client::FimTimingsData,
         plugin_state::PluginState,
         utils::{self, clear_buf_namespace_objects, set_buf_extmark, set_buf_extmark_top_right},
-        FimResponse, FimTimings, LttwResult, LTTW_FIM_HIGHLIGHT,
+        FimResponseWithInfo, FimTimings, LttwResult, LTTW_FIM_HIGHLIGHT,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition},
     std::sync::Arc,
@@ -19,16 +20,16 @@ pub fn render_fim_suggestion(
     state: Arc<PluginState>,
     pos_x: usize,
     pos_y: usize,
-    completion: &FimResponse,
+    completion: &FimResponseWithInfo,
     line_cur: String,
 ) -> LttwResult<()> {
-    let sug_content = &*completion.content;
+    let sug_content = &*completion.resp.content;
 
-    let timings = completion.timings.as_ref().map(|timings| {
+    let timings = completion.resp.timings.as_ref().map(|timings| {
         FimTimingsData::new(
             timings.clone(),
-            completion.tokens_cached,
-            completion.truncated,
+            completion.resp.tokens_cached,
+            completion.resp.truncated,
         )
     });
 
@@ -85,36 +86,40 @@ pub fn render_fim_suggestion(
         pos_x,
         pos_y,
         line_cur.to_string(),
-        sug_lines,
-        timings,
+        sug_lines.clone(),
+        timings.clone(),
     );
 
-    // Display virtual text using extmarks
-    if hint_is_valid {
-        display_fim_text(&state)?;
+    if !hint_is_valid {
+        // nothing to diplay exit
+        return Ok(());
     }
-    Ok(())
-}
 
-/// Display FIM hint as virtual text using extmarks with optional inline info
-/// The info string is rendered with RightAlign positioning for right-justified display
-//
-/// NOTE this happens on the neovim main thread
-#[tracing::instrument]
-fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
+    ////////////////////////////////////////
+    // Display virtual text using extmarks
+
     // Lock the fim_state and config to get the data we need
-    let (content, extmark_ns, pos_y, pos_x, line_cur, config, timing_data) = {
-        let fs = state.fim_state.read();
-        let config = state.config.read().clone();
-        let timing_data = fs.timings.clone();
+    let (extmark_ns, show_info, max_cache_keys, ring_n_chunks, ring_queue_length) = {
+        let config = state.config.read();
+
+        let (ring_n_chunks, ring_queue_length) = match completion.model {
+            FimModel::LLMFast => (
+                config.get_ring_n_chunks(FimLLM::Fast),
+                config.get_ring_queue_length(FimLLM::Fast),
+            ),
+            FimModel::LLMSlow => (
+                config.get_ring_n_chunks(FimLLM::Slow),
+                config.get_ring_queue_length(FimLLM::Slow),
+            ),
+            _ => (0, 0),
+        };
+
         (
-            fs.content.clone(),
             state.extmark_ns,
-            fs.pos_y,
-            fs.pos_x,
-            fs.line_cur.clone(),
-            config,
-            timing_data,
+            config.show_info,
+            config.max_cache_keys,
+            ring_n_chunks,
+            ring_queue_length,
         )
     };
 
@@ -125,7 +130,7 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
 
     if let Some(ns_id) = extmark_ns {
         // Build virtual text string - first line of suggestion
-        let suggestion_text = content[0].clone();
+        let suggestion_text = sug_lines[0].clone();
 
         let suffix = if pos_x <= line_cur.len() {
             &line_cur[pos_x..]
@@ -151,7 +156,7 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
         let suggestion_virt_text = vec![(suggestion_text, LTTW_FIM_HIGHLIGHT.to_string())];
         suggestion_opts.virt_text(suggestion_virt_text);
 
-        let suggestion_pos = if content.len() == 1 && use_infill {
+        let suggestion_pos = if sug_lines.len() == 1 && use_infill {
             ExtmarkVirtTextPosition::Inline
         } else {
             ExtmarkVirtTextPosition::Overlay
@@ -159,9 +164,9 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
         suggestion_opts.virt_text_pos(suggestion_pos);
 
         // Add multi-line support for the suggestion - display rest of suggestion lines below
-        if content.len() > 1 {
+        if sug_lines.len() > 1 {
             let mut virt_lines: Vec<Vec<(String, String)>> = Vec::new();
-            for line in &content[1..] {
+            for line in &sug_lines[1..] {
                 virt_lines.push(vec![(line.clone(), LTTW_FIM_HIGHLIGHT.to_string())]);
             }
             suggestion_opts.virt_lines(virt_lines);
@@ -179,21 +184,25 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
 
         // Add build info string with RightAlign positioning when show_info is enabled
         // The info string shows inference statistics like timing, cache status, etc.
-        let show_info = config.show_info;
         if show_info > 0 {
-            // Get ring buffer and cache stats for info string
-            let ring_buffer = state.ring_buffer.read();
-            let cache = state.cache.read();
-
-            let ring_chunks = ring_buffer.len();
-            let ring_n_evict = ring_buffer.n_evict();
-            let ring_queued = ring_buffer.queued_len();
-
-            let cache_size = cache.len();
-            let max_cache_keys = config.max_cache_keys as usize;
-
             // Build the info string using stored timing data
-            let info_string = if let Some(t) = timing_data {
+            let info_string = if let Some(t) = timings {
+                let ring_buffer = match completion.model {
+                    FimModel::LLMFast => state.get_ring_buffer(FimLLM::Fast),
+                    FimModel::LLMSlow => state.get_ring_buffer(FimLLM::Slow),
+                    _ => return Ok(()),
+                };
+
+                // Get ring buffer and cache stats for info string
+                let cache = state.cache.read();
+
+                let (ring_chunks, ring_n_evict, ring_queued) = {
+                    let rb = ring_buffer.read();
+                    (rb.chunks.len(), rb.n_evict(), rb.queued_len())
+                };
+
+                let cache_size = cache.len();
+
                 // Convert FimTimingsData to FimTimings (for the build_info_string function)
                 let ft = FimTimings {
                     prompt_n: Some(t.n_prompt),
@@ -211,12 +220,12 @@ fn display_fim_text(state: &Arc<PluginState>) -> LttwResult<()> {
                     t.tokens_cached,
                     t.truncated,
                     ring_chunks,
-                    config.ring_n_chunks as usize,
+                    ring_n_chunks as usize,
                     ring_n_evict,
                     ring_queued,
-                    config.ring_queue_length,
+                    ring_queue_length,
                     cache_size,
-                    max_cache_keys,
+                    max_cache_keys as usize,
                 )
             } else {
                 // No timing data available, return empty string

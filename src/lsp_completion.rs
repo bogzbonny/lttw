@@ -1,8 +1,10 @@
 use {
     crate::{
+        fim::FimModel,
         plugin_state::strip_to_first_identifier,
         utils::{self, filter_tail_chars, get_buf_line, get_current_buffer_id, get_pos},
-        DisplayMessage, PluginState, {FimCompletionMessage, FimResponse, LttwResult},
+        DisplayMessage, PluginState,
+        {FimCompletionMessage, FimResponse, FimResponseWithInfo, LttwResult},
     },
     ahash::HashSet,
     regex::Regex,
@@ -168,13 +170,17 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<DisplayMe
             let ident = strip_to_first_identifier(&comp.text);
             let usage = state.get_word_statistic_usage(&ident);
 
-            let fim_resp = FimResponse {
-                content: text,
-                timings: None,
-                tokens_cached: 0,
-                truncated: false,
+            let fim_resp = FimResponseWithInfo {
+                resp: FimResponse {
+                    content: text,
+                    timings: None,
+                    tokens_cached: 0,
+                    truncated: false,
+                },
+                cached: false,
+                model: FimModel::LSP,
             };
-            info!("text: {}, usage: {}", fim_resp.content, usage);
+            info!("text: {}, usage: {}", fim_resp.resp.content, usage);
 
             Some((
                 FimCompletionMessage {

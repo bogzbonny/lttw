@@ -15,12 +15,35 @@ use {
         fim_hide, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
         plugin_state::{get_state, PluginState},
         utils::{self, filter_tail, get_buf_filename, is_in_comment},
-        DisplayMessage, FimCompletionMessage, FimResponse, LttwResult,
+        DisplayMessage, FimCompletionMessage, FimResponse, FimResponseWithInfo, LttwResult,
     },
     accept::{fim_accept_inner, FimAcceptType},
     std::sync::Arc,
     std::time::{Duration, Instant},
 };
+
+#[derive(Debug, Clone, Copy, Default)]
+pub enum FimModel {
+    LSP,
+    #[default]
+    LLMFast,
+    LLMSlow,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum FimLLM {
+    Fast,
+    Slow,
+}
+
+impl From<FimLLM> for FimModel {
+    fn from(llm: FimLLM) -> FimModel {
+        match llm {
+            FimLLM::Fast => FimModel::LLMFast,
+            FimLLM::Slow => FimModel::LLMSlow,
+        }
+    }
+}
 
 /// Determine n_predict based on cursor position
 /// Returns n_predict_inner if there are non-whitespace characters to the right of the cursor
@@ -225,7 +248,7 @@ pub fn fim_try_hint_inner(
         // if forcing to regenerate no need to render, there is already results on the screen and
         // rerendering would be disruptive
         if !force_regenerate && let Some(completion) = final_completion {
-            let prev_content = completion.content.clone();
+            let prev_content = completion.resp.content.clone();
             info!("found cached prev_content ({} chars)", prev_content.len());
             if !prev_content.is_empty() {
                 let msg = FimCompletionMessage {
@@ -396,6 +419,7 @@ async fn spawn_fim_completion_worker(
         *state.fim_worker_generating_for_pos.write() = Some((buffer_id, cursor_x, cursor_y));
         fim_completion(
             state.clone(),
+            FimLLM::Fast, // XXX
             ctx,
             cursor_x,
             cursor_y,
@@ -423,6 +447,7 @@ async fn spawn_fim_completion_worker(
 #[tracing::instrument]
 pub async fn fim_completion(
     state: Arc<PluginState>,
+    m: FimLLM,
     ctx: LocalContext,
     pos_x: usize,
     pos_y: usize,
@@ -437,11 +462,11 @@ pub async fn fim_completion(
     let (n_predict_inner, n_predict_end, t_max_prompt_ms, mut t_max_predict_ms, ring_chunk_size) = {
         let config = state.config.read();
         (
-            config.n_predict_inner,
-            config.n_predict_end,
-            config.t_max_prompt_ms,
-            config.t_max_predict_ms,
-            config.ring_chunk_size,
+            config.get_n_predict_inner(m),
+            config.get_n_predict_end(m),
+            config.get_t_max_prompt_ms(m),
+            config.get_t_max_predict_ms(m),
+            config.get_ring_chunk_size(m),
         )
     };
 
@@ -459,7 +484,7 @@ pub async fn fim_completion(
     // Get local context
 
     // Skip auto FIM if too many suffix lines, this might be the case for not dense text
-    if ctx.line_cur_suffix.len() > state.config.read().max_line_suffix as usize {
+    if ctx.line_cur_suffix.len() > state.config.read().get_max_line_suffix(m) as usize {
         info!(
             "Skipping FIM due to large suffix ({} chars)",
             ctx.line_cur_suffix.len()
@@ -498,16 +523,17 @@ pub async fn fim_completion(
     }
     let text = &lines[start_line..end_line];
     {
-        let mut rb = state.ring_buffer.write();
+        let rb = state.get_ring_buffer(m);
+        let mut rb_ = rb.write();
 
-        let chunk = rb.get_chunk_from_text(text);
+        let chunk = rb_.get_chunk_from_text(text);
         if !chunk.is_empty() {
-            rb.evict_similar_from_live(chunk, 0.5); // TODO parameterize this
+            rb_.evict_similar_from_live(chunk, 0.5); // TODO parameterize this
         }
     }
 
     // Build request
-    let extra = state.ring_buffer.read().get_extra();
+    let extra = state.get_ring_buffer(m).read().get_extra();
 
     let tx = match state.get_fim_completion_tx() {
         Ok(tx) => tx,
@@ -517,7 +543,7 @@ pub async fn fim_completion(
         }
     };
 
-    let last_pick = state.fim_state.read().get_last_pick_buf_id_pos_y();
+    let last_pick = state.get_last_pick_buf_id_pos_y(m);
     let state_ = state.clone();
 
     // get the next 10 lines past pos_y for tail filtering
@@ -530,7 +556,7 @@ pub async fn fim_completion(
     let state__ = state.clone();
     let handle = tokio::spawn(async move {
         let response_text = match state__
-            .send_fim_request_full(&ctx, extra, t_max_prompt_ms, t_max_predict_ms, n_predict)
+            .send_fim_request_full(m, &ctx, extra, t_max_prompt_ms, t_max_predict_ms, n_predict)
             .await
         {
             Ok(response_text) => response_text,
@@ -583,6 +609,12 @@ pub async fn fim_completion(
             .to_string();
         response.content = content.clone();
 
+        let response = FimResponseWithInfo {
+            resp: response,
+            cached: false,
+            model: m.into(),
+        };
+
         // Cache the response with timing info (new block for re-acquired locks)
         {
             let mut cache_lock = state__.cache.write();
@@ -623,43 +655,40 @@ pub async fn fim_completion(
         let (ring_scope, n_prefix, n_suffix, ring_chunk_size, ring_n_picks) = {
             let config = state_.config.read();
             (
-                config.ring_scope as usize,
+                config.get_ring_scope(m) as usize,
                 config.n_prefix as usize,
                 config.n_suffix as usize,
-                config.ring_chunk_size as usize,
-                config.ring_n_picks as usize,
+                config.get_ring_chunk_size(m) as usize,
+                config.get_ring_n_picks(m) as usize,
             )
         };
 
         let max_y = lines.len() - 1;
 
-        // Pick chunks from prefix scope - loop based on ring_n_picks
-        let prefix_start = pos_y.saturating_sub(ring_scope).min(max_y);
-        let prefix_end = pos_y.saturating_sub(n_prefix).min(max_y);
-        let prefix_lines = &lines[prefix_start..=prefix_end];
-        if !prefix_lines.is_empty() {
-            let mut ring_buffer_lock = state_.ring_buffer.write();
-            for _ in 0..ring_n_picks {
-                ring_buffer_lock.pick_chunk(&state_, prefix_lines, filename.clone())
+        {
+            // Pick chunks from prefix scope - loop based on ring_n_picks
+            let prefix_start = pos_y.saturating_sub(ring_scope).min(max_y);
+            let prefix_end = pos_y.saturating_sub(n_prefix).min(max_y);
+            let prefix_lines = &lines[prefix_start..=prefix_end];
+            if !prefix_lines.is_empty() {
+                for _ in 0..ring_n_picks {
+                    state_.pick_chunk(prefix_lines, filename.clone())
+                }
             }
-        }
 
-        // Pick chunks from suffix scope - loop based on ring_n_picks
-        let suffix_start = (pos_y + n_suffix).min(max_y);
-        let suffix_end = (pos_y + n_suffix + ring_chunk_size).min(max_y);
-        let suffix_lines = &lines[suffix_start..=suffix_end];
-        if !suffix_lines.is_empty() {
-            let mut ring_buffer_lock = state_.ring_buffer.write();
-            for _ in 0..ring_n_picks {
-                ring_buffer_lock.pick_chunk(&state_, suffix_lines, filename.clone())
+            // Pick chunks from suffix scope - loop based on ring_n_picks
+            let suffix_start = (pos_y + n_suffix).min(max_y);
+            let suffix_end = (pos_y + n_suffix + ring_chunk_size).min(max_y);
+            let suffix_lines = &lines[suffix_start..=suffix_end];
+            if !suffix_lines.is_empty() {
+                for _ in 0..ring_n_picks {
+                    state_.pick_chunk(suffix_lines, filename.clone())
+                }
             }
         }
 
         // Update the last pick position
-        state_
-            .fim_state
-            .write()
-            .set_last_pick_buf_id_pos_y(buffer_id, pos_y);
+        state_.set_last_pick_buf_id_pos_y(m, buffer_id, pos_y);
     }
 
     // wait until the request handle has completed before spawning

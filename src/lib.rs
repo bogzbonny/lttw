@@ -27,7 +27,7 @@ pub mod utils;
 pub use {
     error::{Error, LttwResult},
     fim::FimTimings,
-    llama_client::{FimRequest, FimResponse},
+    llama_client::{FimRequest, FimResponse, FimResponseWithInfo},
     router::{DisplayMessage, FimCompletionMessage},
 };
 

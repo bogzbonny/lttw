@@ -4,6 +4,7 @@ use {
         commands::{disable_plugin, enable_plugin},
         diagnostics::handle_diagnostic_changed,
         filetype::should_be_enabled,
+        fim::FimLLM,
         fim_hide, fim_try_hint, get_buf_filename, get_buf_lines, get_current_buffer_id,
         get_current_buffer_info, get_mode_bz, get_pos, get_state, get_yanked_text,
         ring_buffer::mode_change_maybe_start_processing_ring_updates,
@@ -325,8 +326,7 @@ fn on_text_yank_post() -> LttwResult<()> {
         info!("Yanked {} lines from {}", yanked.len(), filename,);
 
         // Pick chunk from yanked text
-        let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&state, &yanked, filename);
+        state.pick_chunk(&yanked, filename);
     }
 
     Ok(())
@@ -344,9 +344,7 @@ fn on_buf_enter_gather_chunks() -> LttwResult<()> {
 
         info!("Entered buffer with {} lines: {}", lines.len(), filename,);
 
-        // Pick chunk from buffer
-        let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&state, &lines, filename.clone());
+        state.pick_chunk(&lines, filename);
     }
 
     Ok(())
@@ -364,9 +362,7 @@ fn on_buf_leave() -> LttwResult<()> {
 
         info!("Leaving buffer with {} lines: {}", lines.len(), filename,);
 
-        // Pick chunk from buffer
-        let mut ring_buffer_lock = state.ring_buffer.write();
-        ring_buffer_lock.pick_chunk(&state, &lines, filename);
+        state.pick_chunk(&lines, filename);
     }
 
     Ok(())
@@ -431,10 +427,7 @@ fn on_buf_write_post() -> LttwResult<()> {
         info!("Buffer saved with {} lines: {filename}", lines.len(),);
 
         // Pick chunk from buffer
-        {
-            let mut ring_buffer_lock = state.ring_buffer.write();
-            ring_buffer_lock.pick_chunk(&state, &lines, filename.clone());
-        }
+        state.pick_chunk(&lines, filename.clone());
 
         if state.config.read().diff_tracking_enabled {
             let has_file = state.has_file_contents(&filename);
@@ -469,7 +462,21 @@ fn on_buf_write_post() -> LttwResult<()> {
                 // Process diff chunks
                 if !diff_chunks.is_empty() {
                     // Apply changes to ring buffer in a separate locked section
-                    let mut ring_buffer_lock = state.ring_buffer.write();
+                    if state.config.read().duel_model_mode {
+                        let rb = state.get_ring_buffer(FimLLM::Slow);
+                        let mut ring_buffer_lock = rb.write();
+
+                        // Perform additions (after removals)
+                        // TODO delete old intersecting chunks too
+                        for chunk in &diff_chunks {
+                            //let ring_chunk = chunk.to_ring_chunk();
+                            ring_buffer_lock
+                                .pick_chunk_inner(&chunk.content, chunk.filepath.clone());
+                            info!("diff_chunk_added Added to queued: {}", chunk.filepath,);
+                        }
+                    }
+                    let rb = state.get_ring_buffer(FimLLM::Fast);
+                    let mut ring_buffer_lock = rb.write();
 
                     // Perform additions (after removals)
                     // TODO delete old intersecting chunks too

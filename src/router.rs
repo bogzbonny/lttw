@@ -4,7 +4,7 @@ use crate::{
     lsp_completion::retrieve_lsp_completions,
     plugin_state::get_state,
     utils::{get_buf_line, get_current_buffer_id, get_pos, in_insert_mode},
-    FimResponse, LttwResult,
+    FimResponse, FimResponseWithInfo, LttwResult,
 };
 
 /// Message to be passed for displaying
@@ -32,11 +32,11 @@ impl From<Vec<DisplayMessage>> for DisplayMessage {
 /// Message sent from async worker to main thread when completion is ready
 #[derive(Debug, Clone)]
 pub struct FimCompletionMessage {
-    pub buffer_id: u64,          // Buffer handle to ensure we're still in same buffer
+    pub buffer_id: u64,   // Buffer handle to ensure we're still in same buffer
     pub line_cur: String, // the current line where the completion was calculated (without completion)
     pub cursor_x: usize,  // Cursor position X
     pub cursor_y: usize,  // Cursor position Y
-    pub completion: FimResponse, // All available completions for cycling
+    pub completion: FimResponseWithInfo, // All available completions for cycling
     pub do_render: bool,
     pub retry: Option<usize>, // the retry count for this completion
 }
@@ -191,7 +191,7 @@ fn valid_adjusted_msg_to_display(
     true_curr_line: &str,
 ) -> Option<FimCompletionMessage> {
     info!("{:?}", msg);
-    if msg.completion.content.is_empty() || msg.completion.content.trim().is_empty() {
+    if msg.completion.resp.content.is_empty() || msg.completion.resp.content.trim().is_empty() {
         return None;
     }
     if buffer_id != msg.buffer_id {
@@ -219,10 +219,10 @@ fn valid_adjusted_msg_to_display(
             .skip(msg.cursor_x)
             .take(x_diff)
             .collect::<String>();
-        if !msg.completion.content.starts_with(&newly_typed) {
+        if !msg.completion.resp.content.starts_with(&newly_typed) {
             return None;
         }
-        let trimmed_completion = msg.completion.content.strip_prefix(&newly_typed)?;
+        let trimmed_completion = msg.completion.resp.content.strip_prefix(&newly_typed)?;
         if trimmed_completion.is_empty() {
             return None;
         }
@@ -234,8 +234,11 @@ fn valid_adjusted_msg_to_display(
             line_cur: new_msg_line,
             cursor_x: true_pos_x, // current actual x
             cursor_y: true_pos_y, // current actual y
-            completion: FimResponse {
-                content: trimmed_completion.to_string(),
+            completion: FimResponseWithInfo {
+                resp: FimResponse {
+                    content: trimmed_completion.to_string(),
+                    ..msg.completion.resp.clone()
+                },
                 ..msg.completion.clone()
             },
             do_render: msg.do_render,
@@ -261,8 +264,11 @@ mod tests {
             line_cur: "fn ma".to_string(),
             cursor_x: 5,
             cursor_y: 0,
-            completion: FimResponse {
-                content: "in(test".to_string(),
+            completion: FimResponseWithInfo {
+                resp: FimResponse {
+                    content: "in(test".to_string(),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             do_render: true,
@@ -274,7 +280,7 @@ mod tests {
         let result = result.unwrap();
         assert_eq!(result.cursor_x, 8);
         assert_eq!(result.cursor_y, 0);
-        assert_eq!(result.completion.content, "test"); // stripped "in("
+        assert_eq!(result.completion.resp.content, "test"); // stripped "in("
         assert_eq!(result.line_cur, "fn main(");
     }
 
@@ -285,8 +291,11 @@ mod tests {
             line_cur: "fn ma".to_string(),
             cursor_x: 5,
             cursor_y: 0,
-            completion: FimResponse {
-                content: "in(test".to_string(),
+            completion: FimResponseWithInfo {
+                resp: FimResponse {
+                    content: "in(test".to_string(),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             do_render: true,
@@ -305,8 +314,11 @@ mod tests {
             line_cur: "fn main(".to_string(),
             cursor_x: 5,
             cursor_y: 0,
-            completion: FimResponse {
-                content: "ple_syrup_is_no_s".to_string(),
+            completion: FimResponseWithInfo {
+                resp: FimResponse {
+                    content: "ple_syrup_is_no_s".to_string(),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             do_render: true,
@@ -318,7 +330,7 @@ mod tests {
         let result = result.unwrap();
         assert_eq!(result.cursor_x, 8);
         assert_eq!(result.cursor_y, 0);
-        assert_eq!(result.completion.content, "_syrup_is_no_s"); // stripped "in("
+        assert_eq!(result.completion.resp.content, "_syrup_is_no_s"); // stripped "in("
         assert_eq!(result.line_cur, "fn maplein(");
     }
 
@@ -330,8 +342,11 @@ mod tests {
             line_cur: "fn main(".to_string(),
             cursor_x: 5,
             cursor_y: 0,
-            completion: FimResponse {
-                content: "ple_syrup_is_no_s".to_string(),
+            completion: FimResponseWithInfo {
+                resp: FimResponse {
+                    content: "ple_syrup_is_no_s".to_string(),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             do_render: true,

@@ -1,7 +1,9 @@
 use {
     crate::{
-        context::LocalContext, ring_buffer::ExtraContext, Error, FimTimings, LttwResult,
-        PluginState,
+        context::LocalContext,
+        fim::{FimLLM, FimModel},
+        ring_buffer::ExtraContext,
+        Error, FimTimings, LttwResult, PluginState,
     },
     serde::{Deserialize, Serialize},
     std::hash::{Hash, Hasher},
@@ -56,6 +58,28 @@ impl FimTimingsData {
     }
 }
 
+/// FIM completion response with additional information
+#[derive(Debug, Clone, Default)]
+pub struct FimResponseWithInfo {
+    pub resp: FimResponse,
+    pub cached: bool,
+    pub model: FimModel,
+}
+
+impl PartialEq for FimResponseWithInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.resp.content == other.resp.content
+    }
+}
+
+impl Eq for FimResponseWithInfo {}
+
+impl Hash for FimResponseWithInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.resp.content.hash(state);
+    }
+}
+
 /// FIM completion response (uses flat keys from server)
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct FimResponse {
@@ -68,25 +92,12 @@ pub struct FimResponse {
     pub truncated: bool,
 }
 
-impl PartialEq for FimResponse {
-    fn eq(&self, other: &Self) -> bool {
-        self.content == other.content
-    }
-}
-
-impl Eq for FimResponse {}
-
-impl Hash for FimResponse {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.content.hash(state);
-    }
-}
-
 impl PluginState {
     /// Send a full FIM completion request to the server
     #[tracing::instrument]
     pub async fn send_fim_request_full(
         &self,
+        m: FimLLM,
         ctx: &LocalContext,
         extra: Vec<ExtraContext>,
         t_max_prompt_ms: u32,
@@ -126,15 +137,15 @@ impl PluginState {
             ],
         };
 
-        self.send_fim_request(&request).await
+        self.send_fim_request(m, &request).await
     }
 
     /// Send FIM update buffer request to the server
     #[tracing::instrument]
     pub async fn send_fim_request_buffer(
         &self,
+        m: FimLLM,
         extra: Vec<ExtraContext>,
-        m: FimModel,
     ) -> LttwResult<()> {
         let mut request_body = serde_json::json!({
             "input_extra": extra,
@@ -145,7 +156,7 @@ impl PluginState {
             let config = self.config.read();
             (
                 config.get_fim_model_name(m),
-                config.get_model_fim(m),
+                config.get_endpoint(m),
                 config.get_api_key(m),
             )
         };
@@ -172,15 +183,15 @@ impl PluginState {
 
     /// Send FIM request to the server
     #[tracing::instrument]
-    async fn send_fim_request(&self, request: &FimRequest) -> LttwResult<String> {
+    async fn send_fim_request(&self, m: FimLLM, request: &FimRequest) -> LttwResult<String> {
         let mut request_body = serde_json::to_value(request)?;
 
         let (model_fim, endpoint_fim, api_key) = {
             let config = self.config.read();
             (
-                config.model_fim.clone(),
-                config.endpoint_fim.clone(),
-                config.api_key.clone(),
+                config.get_fim_model_name(m),
+                config.get_endpoint(m),
+                config.get_api_key(m),
             )
         };
 
