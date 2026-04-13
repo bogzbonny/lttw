@@ -9,8 +9,8 @@
 ///       currently happening.
 use {
     crate::{
-        context::chunk_similarity, fim::FimLLM, get_state, plugin_state::PluginState,
-        utils::random_range, LttwResult,
+        config::DuelModelPrioritization, context::chunk_similarity, fim::FimLLM, get_state,
+        plugin_state::PluginState, utils::random_range, LttwResult,
     },
     std::collections::VecDeque,
     std::sync::{atomic::Ordering, Arc},
@@ -92,18 +92,27 @@ pub fn mode_change_maybe_start_processing_ring_updates() -> LttwResult<()> {
 pub async fn start_processing_ring_updates() {
     let state = get_state();
     state.ring_updating_active.store(true, Ordering::SeqCst);
+    let (duel, ring_strategy) = {
+        let c = state.config.read();
+        (c.duel_model_mode, c.duel_models_ring_buffer_prioritization)
+    };
     let _ = tokio::spawn(async move {
-        loop {
-            let m = FimLLM::Fast; // XXX
-            let stop = match ring_update(m).await {
-                Ok(stop) => stop,
-                Err(e) => {
-                    error!(e);
-                    true // don't want an infinite loop
+        if !duel {
+            loop_ring_update(FimLLM::Fast).await;
+        } else {
+            match ring_strategy {
+                DuelModelPrioritization::Concurrent => {
+                    let l1 = loop_ring_update(FimLLM::Fast);
+                    let l2 = loop_ring_update(FimLLM::Slow);
+                    tokio::join!(l1, l2);
                 }
-            };
-            if stop {
-                break;
+                DuelModelPrioritization::Series => {
+                    loop_ring_update(FimLLM::Fast).await;
+                    loop_ring_update(FimLLM::Slow).await;
+                }
+                DuelModelPrioritization::SeriesZip => {
+                    loop_ring_update_zipped().await;
+                }
             }
         }
     })
@@ -111,20 +120,75 @@ pub async fn start_processing_ring_updates() {
     state.ring_updating_active.store(false, Ordering::SeqCst);
 }
 
+async fn loop_ring_update(m: FimLLM) {
+    loop {
+        match ring_update(m).await {
+            Ok((stop, _completed)) => {
+                if stop {
+                    break;
+                }
+            }
+            Err(e) => {
+                error!(e);
+                break; // don't want an infinite loop
+            }
+        };
+    }
+}
+
+async fn loop_ring_update_zipped() {
+    let (mut fast_completed, mut slow_completed) = (false, false);
+    loop {
+        if !fast_completed {
+            match ring_update(FimLLM::Fast).await {
+                Ok((stop, completed)) => {
+                    if stop && !completed {
+                        // triggered when the user is active, leave ring buffer updating
+                        break;
+                    }
+                    fast_completed = completed;
+                }
+                Err(e) => {
+                    error!(e);
+                    break; // don't want an infinite loop
+                }
+            };
+        }
+        if !slow_completed {
+            match ring_update(FimLLM::Slow).await {
+                Ok((stop, completed)) => {
+                    if stop && !completed {
+                        // triggered when the user is active, leave ring buffer updating
+                        break;
+                    }
+                    slow_completed = completed;
+                }
+                Err(e) => {
+                    error!(e);
+                    break; // don't want an infinite loop
+                }
+            };
+        }
+        if fast_completed && slow_completed {
+            break;
+        }
+    }
+}
+
 /// Process ring buffer updates - moves queued chunks to active ring and sends to server
 ///  
 #[tracing::instrument]
-async fn ring_update(m: FimLLM) -> LttwResult<bool> {
+async fn ring_update(m: FimLLM) -> LttwResult<(bool, bool)> {
     let state = get_state();
 
     // stop updates if we're not in normal mode and cursor movement is recent
     if !state.in_normal_mode()? && (*state.last_move_time.read()).elapsed() < Duration::from_secs(3)
     {
-        return Ok(true);
+        return Ok((true, false));
     }
 
     if state.get_ring_buffer(m).read().queued.is_empty() {
-        return Ok(true);
+        return Ok((true, true));
     }
 
     // Check if we have chunks before logging
@@ -136,7 +200,7 @@ async fn ring_update(m: FimLLM) -> LttwResult<bool> {
         state.send_fim_request_buffer(m, extra).await?;
     }
 
-    Ok(false)
+    Ok((false, false))
 }
 
 // -----------------------------

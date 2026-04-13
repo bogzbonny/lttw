@@ -427,21 +427,92 @@ async fn spawn_fim_completion_worker(
 
     if !skip {
         *state.fim_worker_generating_for_pos.write() = Some((buffer_id, cursor_x, cursor_y));
-        fim_completion(
-            state.clone(),
-            FimLLM::Fast, // XXX
-            ctx,
-            cursor_x,
-            cursor_y,
-            buffer_id,
-            filename,
-            buffer_lines,
-            prev,
-            do_render,
-            force_regenerate,
-            retry,
-        )
-        .await?;
+        let (duel, concurr) = {
+            let c = state.config.read();
+            (c.duel_model_mode, c.run_duel_models_concurrently)
+        };
+
+        if !duel {
+            fim_completion(
+                state.clone(),
+                FimLLM::Fast,
+                ctx,
+                cursor_x,
+                cursor_y,
+                buffer_id,
+                &filename,
+                &buffer_lines,
+                &prev,
+                do_render,
+                force_regenerate,
+                retry,
+            )
+            .await?;
+        } else if concurr {
+            let f1 = fim_completion(
+                state.clone(),
+                FimLLM::Fast,
+                ctx.clone(),
+                cursor_x,
+                cursor_y,
+                buffer_id,
+                &filename,
+                &buffer_lines,
+                &prev,
+                do_render,
+                force_regenerate,
+                retry,
+            );
+            let f2 = fim_completion(
+                state.clone(),
+                FimLLM::Slow,
+                ctx,
+                cursor_x,
+                cursor_y,
+                buffer_id,
+                &filename,
+                &buffer_lines,
+                &prev,
+                do_render,
+                force_regenerate,
+                retry,
+            );
+            let (res1, res2) = tokio::join!(f1, f2);
+            res1?;
+            res2?;
+        } else {
+            // run in series
+            fim_completion(
+                state.clone(),
+                FimLLM::Fast,
+                ctx.clone(),
+                cursor_x,
+                cursor_y,
+                buffer_id,
+                &filename,
+                &buffer_lines,
+                &prev,
+                do_render,
+                force_regenerate,
+                retry,
+            )
+            .await?;
+            fim_completion(
+                state.clone(),
+                FimLLM::Slow,
+                ctx,
+                cursor_x,
+                cursor_y,
+                buffer_id,
+                &filename,
+                &buffer_lines,
+                &prev,
+                do_render,
+                force_regenerate,
+                retry,
+            )
+            .await?;
+        }
         *state.fim_worker_generating_for_pos.write() = None;
     }
 
@@ -462,9 +533,9 @@ pub async fn fim_completion(
     pos_x: usize,
     pos_y: usize,
     buffer_id: u64,
-    filename: String,
-    lines: Vec<String>,
-    prev: Option<Vec<String>>, // speculative FIM content
+    filename: &str,
+    lines: &[String],
+    prev: &Option<Vec<String>>, // speculative FIM content
     do_render: bool,
     force_regenerate: bool,
     retry: Option<usize>,
@@ -682,7 +753,7 @@ pub async fn fim_completion(
             let prefix_lines = &lines[prefix_start..=prefix_end];
             if !prefix_lines.is_empty() {
                 for _ in 0..ring_n_picks {
-                    state_.pick_chunk(prefix_lines, filename.clone())
+                    state_.pick_chunk(prefix_lines, filename.to_string())
                 }
             }
 
@@ -692,7 +763,7 @@ pub async fn fim_completion(
             let suffix_lines = &lines[suffix_start..=suffix_end];
             if !suffix_lines.is_empty() {
                 for _ in 0..ring_n_picks {
-                    state_.pick_chunk(suffix_lines, filename.clone())
+                    state_.pick_chunk(suffix_lines, filename.to_string())
                 }
             }
         }

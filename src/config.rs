@@ -254,7 +254,7 @@ impl Default for FimModelConfig {
         }
     }
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum DuelModelPrioritization {
     Concurrent,
     Series,

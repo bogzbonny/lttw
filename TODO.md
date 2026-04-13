@@ -14,6 +14,7 @@
      - DON'T DO gets confusing and doesn't work that good because would have to
        delete the final comma 
 00. max cache size per location
+30. output info that it WAS a cache being retrieved
 
 ^^^^^^^^^ DONE
 
@@ -52,7 +53,6 @@ LSP Completions improvements
 
 ------------------------
 GENERAL
-
 
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
@@ -136,7 +136,6 @@ local query_string = [[
 
 10. actually use keymaps in config
 
-30. output info that it WAS a cache being retrieved
 30. ring update notifications through extmarks 
 
 
