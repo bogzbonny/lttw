@@ -310,9 +310,10 @@ pub fn is_in_comment(mut pos_x: usize, pos_y: usize, at_eol: bool) -> LttwResult
 
     // Check if the syntax name indicates a comment
     // Common comment syntax names: Comment, cComment, cppComment, htmlComment, etc.
-    let is_comment = syn_name.starts_with("Comment")
-        || syn_name.contains("comment")
-        || syn_name.contains("Comment");
+    let is_comment = syn_name.contains("comment")
+        || syn_name.contains("Comment")
+        || syn_name.contains("Todo")
+        || syn_name.contains("todo");
 
     info!("Skipping FIM in comment at ({}, {})", pos_x, pos_y);
 

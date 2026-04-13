@@ -4,7 +4,9 @@
 // eviction policy to manage memory usage and improve performance.
 
 use {
-    crate::{context::LocalContext, utils::hash_input, FimResponse, FimResponseWithInfo},
+    crate::{
+        context::LocalContext, fim::FimModel, utils::hash_input, FimResponse, FimResponseWithInfo,
+    },
     ahash::{HashMap, HashMapExt, HashSet},
     serde::{Deserialize, Serialize},
     std::collections::VecDeque,
@@ -92,10 +94,32 @@ impl Cache {
         self.data.get(key).cloned()
     }
 
+    /// Get a value from the cache without updating the LRU order
+    #[tracing::instrument]
+    pub fn cold_get(&mut self, key: &str) -> Option<HashSet<FimResponseWithInfo>> {
+        if !self.data.contains_key(key) {
+            return None;
+        }
+        self.data.get(key).cloned()
+    }
+
     /// Check if a key exists in the cache
     #[tracing::instrument]
     pub fn contains_key(&self, key: &str) -> bool {
         self.data.contains_key(key)
+    }
+
+    /// Check if a key exists in the cache
+    #[tracing::instrument]
+    pub fn contains_key_for_model(&self, key: &str, model: FimModel) -> bool {
+        if !self.data.contains_key(key) {
+            return false;
+        }
+        if let Some(c) = self.data.get(key) {
+            c.iter().any(|v| v.model == model)
+        } else {
+            false
+        }
     }
 
     /// Get the number of entries in the cache

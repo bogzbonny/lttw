@@ -22,7 +22,7 @@ use {
     std::time::{Duration, Instant},
 };
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum FimModel {
     LSP,
     #[default]
@@ -40,7 +40,7 @@ impl std::fmt::Display for FimModel {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FimLLM {
     Fast,
     Slow,
@@ -583,7 +583,7 @@ pub async fn fim_completion(
     if !force_regenerate && state.config.read().auto_fim {
         for hash in &hashes {
             let cache_lock = state.cache.read();
-            if cache_lock.contains_key(hash) {
+            if cache_lock.contains_key_for_model(hash, m.into()) {
                 info!("FIM completion cached for hash, returning early");
                 return Ok(());
             }

@@ -15,9 +15,6 @@
        delete the final comma 
 00. max cache size per location
 30. output info that it WAS a cache being retrieved
-
-^^^^^^^^^ DONE
-
 10. multiple models, first attempt to get the result from the small model (maybe
     even do a retry) then once we've gotten a result maybe launch the slower
     model on the same location to get a potentially better solution.
@@ -31,12 +28,15 @@
      - Some kind of minimum lag before launching the heavy model is probably
        appropriate - like even a full second, just so it's not constantly
        running.
+00. Todo highlight as a part of what is considered "Comments"
+00. slow model isn't activating unless force activation occurs. 
 
-00. lsp_overrides to BTreeMap, Also parse out by language
+^^^^^^^^^ DONE
 
 ------------------------
 LSP Completions improvements
 
+05. lsp_overrides to BTreeMap, Also parse out by language
 10. More sophisticated localized statistics for lsp completion priority
      - beyond doing the global statistics, we could also do some quick stats on
        the nearby environment to wherever the completion is taking place. Nearby
