@@ -1,35 +1,3 @@
-10. option to disable llm calls (just use lsp)
-
-10. reduce cognitive offloading allowing for llm calls to be ignored a % of the
-    time (hence you don't know if you're waiting for an llm or waiting for
-    nothing!).
-     - reduce_cognitive_offloading_ratio = 25%
-     - NOTE this should not apply to LSP predictions
-00. allow lsp completions to occur at the moment of entering Insert mode (seems
-    to only trigger on a movement) 
-00. allow multiple responses to be stored in the cache (instead of just a single
-    one, the others get overwriten)
-00. improve llm response to match suffix if we remove the last bracket (similar
-    to how we do it in lsp) 
-     - DON'T DO gets confusing and doesn't work that good because would have to
-       delete the final comma 
-00. max cache size per location
-30. output info that it WAS a cache being retrieved
-10. multiple models, first attempt to get the result from the small model (maybe
-    even do a retry) then once we've gotten a result maybe launch the slower
-    model on the same location to get a potentially better solution.
-     - single llama.cpp server in router mode should be able to handle
-       concurrent/series requests to multiple models 
-     - experiment with running two models concurrently (see how much it slows
-       down the fast model) 
-     - SHOULD allow for all the llm settings to be different between the two
-       models, importantly the ring buffer settings, pick settings, and context
-       window settings.
-     - Some kind of minimum lag before launching the heavy model is probably
-       appropriate - like even a full second, just so it's not constantly
-       running.
-00. Todo highlight as a part of what is considered "Comments"
-00. slow model isn't activating unless force activation occurs. 
 
 ^^^^^^^^^ DONE
 
