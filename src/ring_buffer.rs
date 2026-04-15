@@ -10,7 +10,7 @@
 use {
     crate::{
         config::DuelModelPrioritization, context::chunk_similarity, fim::FimLLM, get_state,
-        plugin_state::PluginState, utils::random_range, LttwResult,
+        plugin_state::PluginState, router::RingBufferUpdated, utils::random_range, LttwResult,
     },
     std::collections::VecDeque,
     std::sync::{atomic::Ordering, Arc},
@@ -192,12 +192,21 @@ async fn ring_update(m: FimLLM) -> LttwResult<(bool, bool)> {
     }
 
     // Check if we have chunks before logging
-    let chunk_count = state.get_ring_buffer(m).write().update();
+    let (chunk_count, queue_remaining) = state.get_ring_buffer(m).write().update();
 
     if chunk_count > 0 {
         info!("Processing {chunk_count} ring buffer chunks");
         let extra = state.get_ring_buffer(m).read().get_extra();
         state.send_fim_request_buffer(m, extra).await?;
+    }
+
+    let tx = state.get_fim_completion_tx()?;
+    let rbu = RingBufferUpdated {
+        model: m,
+        remaining_in_queue: queue_remaining as u8,
+    };
+    if let Err(e) = tx.send(rbu.into()).await {
+        error!(e);
     }
 
     Ok((false, false))
@@ -325,9 +334,9 @@ impl RingBuffer {
     /// Move the first queued chunk to the ring buffer
     /// returns the size of the ring buffer after completion
     #[tracing::instrument]
-    pub fn update(&mut self) -> usize {
+    pub fn update(&mut self) -> (usize, usize) {
         if self.queued.is_empty() {
-            return self.chunks.len();
+            return (self.chunks.len(), 0);
         }
 
         // take from the front of the queue (oldest, but in order) and add to the ring buffer
@@ -343,7 +352,7 @@ impl RingBuffer {
         while self.chunks.len() > self.ring_n_chunks {
             self.chunks.remove(0);
         }
-        self.chunks.len()
+        (self.chunks.len(), self.queued.len())
     }
 
     /// Get extra context from the ring buffer

@@ -3,6 +3,7 @@ pub type LttwResult<T> = std::result::Result<T, Error>;
 
 /// Error type for FIM operations
 #[derive(Debug, thiserror::Error)]
+#[allow(clippy::result_large_err)]
 pub enum Error {
     #[error("Lttw plugin error: {0}")]
     Lttw(String),

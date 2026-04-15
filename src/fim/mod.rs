@@ -46,6 +46,15 @@ pub enum FimLLM {
     Slow,
 }
 
+impl std::fmt::Display for FimLLM {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FimLLM::Fast => write!(f, "FAST"),
+            FimLLM::Slow => write!(f, "SLOW"),
+        }
+    }
+}
+
 impl From<FimLLM> for FimModel {
     fn from(llm: FimLLM) -> FimModel {
         match llm {
@@ -85,6 +94,7 @@ pub fn fim_try_hint(retry: Option<usize>) -> LttwResult<()> {
     if !in_insert_mode()? {
         return Ok(());
     }
+
     fim_try_hint_inner(false, false, retry) // check_comment = true for normal FIM
 }
 
@@ -94,6 +104,7 @@ pub fn fim_try_hint_skip_debounce() -> LttwResult<()> {
     if !in_insert_mode()? {
         return Ok(());
     }
+
     fim_try_hint_inner(true, false, None) // check_comment = true for skip_debounce
 }
 

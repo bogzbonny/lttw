@@ -238,8 +238,13 @@ pub fn render_fim_suggestion(
                 info_string = format!("{}", completion.model);
             }
 
+            let Some(info_ns_id) = state.info_ns else {
+                return Ok(());
+            };
+
+            utils::clear_buf_namespace_objects(ns_id)?;
             if !info_string.is_empty()
-                && let Err(e) = set_buf_extmark_top_right(ns_id, info_string)
+                && let Err(e) = set_buf_extmark_top_right(info_ns_id, info_string)
             {
                 info!("Error setting info extmark: {:?}", e);
             }

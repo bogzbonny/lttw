@@ -234,6 +234,9 @@ fn fim_hide_inner(state: &PluginState) -> LttwResult<()> {
     if let Some(ns_id_val) = state.extmark_ns {
         clear_buf_namespace_objects(ns_id_val)?
     }
+    if let Some(ns_id_val) = state.info_ns {
+        clear_buf_namespace_objects(ns_id_val)?
+    }
 
     state.fim_state.write().clear();
     Ok(())

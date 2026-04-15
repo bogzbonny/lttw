@@ -66,6 +66,7 @@ pub struct PluginState {
     pub fim_worker_generating_for_pos: Arc<RwLock<Option<(u64, usize, usize)>>>,
 
     pub extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
+    pub info_ns: Option<u32>,    // Namespace for info
     #[allow(dead_code)]
     pub inst_ns: Option<u32>, // Namespace for instruction extmarks
     pub cur_buf_info: Arc<RwLock<CurrentBufferInfo>>, // the current buffer and whether its modified
@@ -129,6 +130,7 @@ impl PluginState {
 
         // Create namespaces for extmarks
         let extmark_ns = Some(create_namespace("lttw_fim"));
+        let info_ns = Some(create_namespace("lttw_info"));
         let inst_ns = Some(create_namespace("lttw_inst"));
 
         // Create a multi-threaded tokio runtime
@@ -171,6 +173,7 @@ impl PluginState {
             fim_worker_semaphore: Arc::new(Semaphore::new(max_req)),
             fim_worker_generating_for_pos: Arc::new(RwLock::new(None)),
             extmark_ns,
+            info_ns,
             tracing_enabled: Arc::new(AtomicBool::new(tracing_enabled)),
             enabled: Arc::new(AtomicBool::new(enable_at_startup)),
             autocmd_ids: Arc::new(RwLock::new(Vec::new())),

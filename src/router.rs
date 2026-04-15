@@ -1,10 +1,13 @@
-use crate::{
-    fim::{fim_try_hint, render::render_fim_suggestion},
-    fim_hide,
-    lsp_completion::retrieve_lsp_completions,
-    plugin_state::get_state,
-    utils::{get_buf_line, get_current_buffer_id, get_pos, in_insert_mode},
-    FimResponse, FimResponseWithInfo, LttwResult,
+use {
+    crate::{
+        fim::{fim_try_hint, render::render_fim_suggestion, FimLLM},
+        fim_hide,
+        lsp_completion::retrieve_lsp_completions,
+        plugin_state::get_state,
+        utils::{self, get_buf_line, get_current_buffer_id, get_pos, in_insert_mode},
+        FimResponse, FimResponseWithInfo, LttwResult, PluginState,
+    },
+    std::sync::Arc,
 };
 
 /// Message to be passed for displaying
@@ -13,8 +16,31 @@ use crate::{
 pub enum DisplayMessage {
     ClearFIM,
     TriggerLSPCompletion,
+    RingBufferUpdated(RingBufferUpdated),
     CompletionMsg(FimCompletionMessage),
     Msgs(Vec<DisplayMessage>),
+}
+
+#[derive(Debug, Clone)]
+pub struct RingBufferUpdated {
+    pub model: FimLLM,
+    pub remaining_in_queue: u8,
+}
+
+impl std::fmt::Display for RingBufferUpdated {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Ring Buffer Update:\nmodel: {}\nremaining in queue: {}",
+            self.model, self.remaining_in_queue
+        )
+    }
+}
+
+impl From<RingBufferUpdated> for DisplayMessage {
+    fn from(rbu: RingBufferUpdated) -> Self {
+        DisplayMessage::RingBufferUpdated(rbu)
+    }
 }
 
 impl From<FimCompletionMessage> for DisplayMessage {
@@ -86,6 +112,7 @@ pub fn process_pending_display() -> LttwResult<()> {
     let mut do_clear = false;
     let mut trigger_lsp_completions = false;
     let mut disp_msgs = Vec::new();
+    let mut ring_buffer_updated = None;
     for msg_ in messages.into_iter() {
         match msg_ {
             DisplayMessage::ClearFIM => {
@@ -94,6 +121,9 @@ pub fn process_pending_display() -> LttwResult<()> {
 
             DisplayMessage::TriggerLSPCompletion => {
                 trigger_lsp_completions = true;
+            }
+            DisplayMessage::RingBufferUpdated(rbu) => {
+                ring_buffer_updated = Some(rbu);
             }
             DisplayMessage::CompletionMsg(msg_) => {
                 disp_msgs.push(msg_);
@@ -106,6 +136,9 @@ pub fn process_pending_display() -> LttwResult<()> {
                         }
                         DisplayMessage::TriggerLSPCompletion => {
                             trigger_lsp_completions = true;
+                        }
+                        DisplayMessage::RingBufferUpdated(rbu) => {
+                            ring_buffer_updated = Some(rbu);
                         }
                         DisplayMessage::CompletionMsg(msg_) => {
                             disp_msgs.push(msg_);
@@ -126,6 +159,7 @@ pub fn process_pending_display() -> LttwResult<()> {
     let (x, y) = get_pos();
     let curr_line = get_buf_line(y);
     let buffer_id = get_current_buffer_id();
+    let has_messages = !disp_msgs.is_empty();
     for msg_ in disp_msgs.into_iter() {
         if let Some(msg_) = valid_adjusted_msg_to_display(msg_, buffer_id, x, y, &curr_line) {
             // because the msg is valid we already know that the message is for the cursor position
@@ -141,6 +175,10 @@ pub fn process_pending_display() -> LttwResult<()> {
                 msg_to_render = Some(msg_); // always render the last message
             }
         }
+    }
+
+    if let Some(rbu) = ring_buffer_updated {
+        ring_buffer_updated_extmarks(state.clone(), rbu)?;
     }
 
     if do_clear {
@@ -161,17 +199,37 @@ pub fn process_pending_display() -> LttwResult<()> {
         retry = msg.retry.unwrap_or(0);
     }
 
-    // NOTE there were messages nomatter what at this point in the function (even if none were
-    // valid to display)
-    //
     // if either the hint isn't shown OR it's only whitespace then trigger another fim
     // only retry a llm call 3 times before giving up
-    if !state.fim_state.read().hint_shown && retry <= 3 {
+    if has_messages && !state.fim_state.read().hint_shown && retry <= 3 {
         retry += 1;
         info!("rerendering fim suggestion");
         fim_try_hint(Some(retry))?;
     }
 
+    Ok(())
+}
+
+#[tracing::instrument]
+pub fn ring_buffer_updated_extmarks(
+    state: Arc<PluginState>,
+    rbu: RingBufferUpdated,
+) -> LttwResult<()> {
+    info!("ring_buffer_updated_extmarks {}", rbu);
+    let show_info = state.config.read().show_info;
+    if show_info == 0 {
+        return Ok(());
+    }
+
+    let Some(ns_id) = state.info_ns else {
+        return Ok(());
+    };
+    let info_string = rbu.to_string();
+    if info_string.is_empty() {
+        return Ok(());
+    }
+    utils::clear_buf_namespace_objects(ns_id)?;
+    utils::set_buf_extmark_top_right(ns_id, info_string)?;
     Ok(())
 }
 

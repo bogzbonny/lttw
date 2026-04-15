@@ -1,21 +1,9 @@
 
 00. force-completion SHOULD be enabled in code comments
+30. ring update notifications through extmarks 
 
 ^^^^^^^^^ DONE
 
-20. LLM backmatching
-Implement this new feature LLM backmatching; when hitting backspace initiate
-matching in the backwards direction (missing some more characters). Example, the
-line is: "client: " then the user backspaces: "client:" - llm should be
-initiated for "client" (missing one more character. Potentially the next time I
-backspace (lets say I now backspaced to "client") then maybe two characters
-could be removed so the llm would make a call for "clie" 
- - as soon as you started typing forwards again it would reset to normal
-   matching
- - probably max out at stripping off "5" characters for the llm backmatching
- - new config params: 
-    - backmatching_enabled (default false)
-    - max_backmatch_characters (default 5)
 
 ------------------------
 LSP Completions improvements
@@ -37,6 +25,11 @@ LSP Completions improvements
 
 ------------------------
 GENERAL
+
+10. persistent info string in the top right corner which doesnt get removed on
+    fim erase (this is currently why we don't see ring update notifications in
+    normal mode). NOTES - we would need to change the position of this everytime
+    the buffer position moves
 
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
@@ -109,7 +102,6 @@ local query_string = [[
 
 10. actually use keymaps in config
 
-30. ring update notifications through extmarks 
 
 
 ------------------------
@@ -207,3 +199,19 @@ LOW PRIORITY
        would be nice if there was a way to have the best of both worlds here
      - yanked text should have a description before adding to ExtraArgs... Maybe
        also have it located at the end near the prefix
+
+60. LLM backmatching
+>>>>PROBABLY DONT DO would be kind of annoying, just get better at deleting
+>>>>backwards faster with vim keystrokes
+Implement this new feature LLM backmatching; when hitting backspace initiate
+matching in the backwards direction (missing some more characters). Example, the
+line is: "client: " then the user backspaces: "client:" - llm should be
+initiated for "client" (missing one more character. Potentially the next time I
+backspace (lets say I now backspaced to "client") then maybe two characters
+could be removed so the llm would make a call for "clie" 
+ - as soon as you started typing forwards again it would reset to normal
+   matching
+ - probably max out at stripping off "5" characters for the llm backmatching
+ - new config params: 
+    - backmatching_enabled (default false)
+    - max_backmatch_characters (default 5)
