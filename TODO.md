@@ -3,6 +3,19 @@
 
 ^^^^^^^^^ DONE
 
+20. LLM backmatching
+Implement this new feature LLM backmatching; when hitting backspace initiate
+matching in the backwards direction (missing some more characters). Example, the
+line is: "client: " then the user backspaces: "client:" - llm should be
+initiated for "client" (missing one more character. Potentially the next time I
+backspace (lets say I now backspaced to "client") then maybe two characters
+could be removed so the llm would make a call for "clie" 
+ - as soon as you started typing forwards again it would reset to normal
+   matching
+ - probably max out at stripping off "5" characters for the llm backmatching
+ - new config params: 
+    - backmatching_enabled (default false)
+    - max_backmatch_characters (default 5)
 
 ------------------------
 LSP Completions improvements
@@ -58,17 +71,6 @@ GENERAL
         - evict git-diff chunks by comparing the chunk similarity to the
           git-diff chunks UPDATED information.
 
-20. LLM backmatching; when hitting backspace initiate matching in the backwards
-    direction (missing some more characters). Example, the line is: 
-      "client: " then the user backspaces: "client:" - llm should be initiated
-      for "client" (missing one more character. Potentially the next time I
-      backspace (lets say I now backspaced to "client") then maybe two
-      characters could be removed so the llm would make a call for "clie" 
-      - as soon as you started typing forwards again it would reset to normal
-        matching
-      - probably max out at stripping off like "5" characters, could get crazy
-        fast if holding down the backspace 
-      - DEFINATELY an option not default behavior 
 
 20. integrate definitions of all nearby objects 
      - add to extra_input
@@ -115,6 +117,17 @@ LOW PRIORITY
 
 40. instruction system LOW priority can use CodeCompanion for now
 
+40. instruction system saving / retrieving contexts
+     - passively generate a context for making edits to each file
+        - pass in an instruction like "explain ways in which the user may want
+          to modify this file and how this would be accomplished"
+     - Add to file's context through a special command 
+        - :LttwInstrAddToContext "something to add"
+        - :LttwInstrContext
+        - :LttwInstrResetCtx
+     - Save/load each context to an git-excluded dotfile in the repo  
+        - passively load these contexts 
+
 05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
      - :lua print(vim.inspect(vim.diagnostic.get())) 
         - DIAGNOSTIC PIPELINE IS OVERWRITTEN BY ALE! thus the diagnostic changed
@@ -127,6 +140,7 @@ LOW PRIORITY
         ["textDocument/publishDiagnostics"] = function(err, result, _, _)
 
      - use regular completions/ endpoint not infill endpoint
+        - Maybe still actually use infill endpoint?
      - NOTE if more tabs are received WHILE the completion is in progress they
        should be discarded
      - Whatever the whole range of the fed diagnostic is is what should be fed
