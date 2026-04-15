@@ -242,7 +242,7 @@ pub fn render_fim_suggestion(
                 return Ok(());
             };
 
-            utils::clear_buf_namespace_objects(ns_id)?;
+            utils::clear_buf_namespace_objects(info_ns_id)?;
             if !info_string.is_empty()
                 && let Err(e) = set_buf_extmark_top_right(info_ns_id, info_string)
             {
