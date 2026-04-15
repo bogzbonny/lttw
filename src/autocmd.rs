@@ -2,11 +2,19 @@ use {
     crate::{
         calculate_diff_between_contents,
         commands::{disable_plugin, enable_plugin},
-        diagnostics::handle_diagnostic_changed,
+        //diagnostics::handle_diagnostic_changed,
         filetype::should_be_enabled,
         fim::FimLLM,
-        fim_hide, fim_try_hint, get_buf_filename, get_buf_lines, get_current_buffer_id,
-        get_current_buffer_info, get_mode_bz, get_pos, get_state, get_yanked_text,
+        fim_hide,
+        fim_try_hint,
+        get_buf_filename,
+        get_buf_lines,
+        get_current_buffer_id,
+        get_current_buffer_info,
+        get_mode_bz,
+        get_pos,
+        get_state,
+        get_yanked_text,
         ring_buffer::mode_change_maybe_start_processing_ring_updates,
         utils::{create_autocmd, del_autocmd},
         LttwResult,
@@ -102,20 +110,20 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
     }
 
     // DiagnosticChanged - track diagnostics when they change
-    let id = create_autocmd(
-        ["DiagnosticChanged"],
-        &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
-            .callback(|_| {
-                info!("DiagnosticChanged autocmd fired");
-                if let Err(e) = handle_diagnostic_changed(nvim_oxi::Object::nil()) {
-                    error!(e)
-                }
-                false
-            })
-            .build(),
-    )
-    .unwrap_or(0);
-    ids.push(id);
+    //let id = create_autocmd(
+    //    ["DiagnosticChanged"],
+    //    &nvim_oxi::api::opts::CreateAutocmdOptsBuilder::default()
+    //        .callback(|_| {
+    //            info!("DiagnosticChanged autocmd fired");
+    //            if let Err(e) = handle_diagnostic_changed(nvim_oxi::Object::nil()) {
+    //                error!(e)
+    //            }
+    //            false
+    //        })
+    //        .build(),
+    //)
+    //.unwrap_or(0);
+    //ids.push(id);
 
     // For keeping track of the active buffer and whether it is modified
     // for the tokio threads

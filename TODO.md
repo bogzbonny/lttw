@@ -29,7 +29,8 @@ GENERAL
 10. persistent info string in the top right corner which doesnt get removed on
     fim erase (this is currently why we don't see ring update notifications in
     normal mode). NOTES - we would need to change the position of this everytime
-    the buffer position moves
+    the buffer position moves as this is actually tied to a line - easy thing
+    would be to just erase it everytime the buffer scope changes 
 
 10. option to automatically launch llama.cpp with nohup rather than depending on
     a server already being running. 
