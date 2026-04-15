@@ -140,7 +140,7 @@ pub fn fim_try_hint_inner(
     info!("no_fim_in_comments = {}", no_fim_in_comments);
 
     #[allow(clippy::collapsible_if)]
-    if no_fim_in_comments {
+    if no_fim_in_comments && !force_regenerate {
         let at_eol = lines.get(pos_y).is_some_and(|line| pos_x == line.len());
         if let Some((allowed_buf, allowed_x, allowed_y)) = state.get_allow_comment_fim_cur_pos()
             && (allowed_buf == buffer_id && allowed_x == pos_x && allowed_y == pos_y)

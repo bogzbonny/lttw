@@ -1,5 +1,8 @@
 
+00. force-completion SHOULD be enabled in code comments
+
 ^^^^^^^^^ DONE
+
 
 ------------------------
 LSP Completions improvements
