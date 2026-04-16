@@ -27,6 +27,21 @@ LSP Completions improvements
      - use the same scope as the llm
      - 10x weight as compared to global (param)
      - passively recalculate only when the line position changes 
+Add in more sophisticated localized statistics for lsp completion priority.
+Currently priority is based on global occurance of the identity. Combine the
+existing occurances with a new local occurance, which will be weighted 10 to 1
+(eg. if a word is found in the local scope around the cursor than it is though
+it was found 10 times in comparison to the global occurance). 
+ - use a papaya map just like for the global occurance
+ - passively async recalculate the local occurances only when the line position changes 
+    - This should be on a seperate async tokio thread from the user of the local context,
+      such that the local lsp completions are never blocked by this calculation.
+    - The recalculation should probably take place in the autocmd.rs on_move
+      function. We will need to store a new param in the PluginState beside the
+      local occurance map which is the y-position which that local occurance map
+      was calculated for
+ - use the same scope as the llm (see config params n_prefix, n_suffix)
+ - 10x weight as compared to global occurance, add a new config param for this
 
 10. Diff history as a part of the completion priority (of the most recent diffs,
     look at all the additions, those have more priority)
