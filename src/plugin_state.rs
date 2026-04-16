@@ -508,6 +508,14 @@ impl PluginState {
     /// Uses the common `get_word_statistics_batch` backend.
     #[tracing::instrument]
     pub fn debug_word_statistics(&self) -> String {
+        self.debug_word_statistics_filtered(None)
+    }
+
+    /// Get combined statistics for words matching an optional prefix filter,
+    /// returning a formatted string with local, global, and combined columns.
+    /// Uses the common `get_word_statistics_batch` backend.
+    #[tracing::instrument]
+    pub fn debug_word_statistics_filtered(&self, prefix: Option<&str>) -> String {
         // Collect all unique words from both global and local maps
         let mut all_words: std::collections::HashSet<String> = self
             .word_statistics
@@ -518,13 +526,31 @@ impl PluginState {
         for k in self.local_word_statistics.pin().iter().map(|(k, _v)| k.clone()) {
             all_words.insert(k);
         }
-        let words: Vec<String> = all_words.into_iter().collect();
+
+        // Filter by prefix if provided
+        let words: Vec<String> = match prefix {
+            Some(p) if !p.is_empty() => all_words
+                .into_iter()
+                .filter(|word| word.starts_with(p))
+                .collect(),
+            _ => all_words.into_iter().collect(),
+        };
 
         // Batch lookup: get (word, local, global, combined) for all words
         let stats = self.get_word_statistics_batch(&words);
 
         // Format as: word | local | global | combined
         let mut lines: Vec<String> = Vec::new();
+        if let Some(p) = prefix {
+            if p.is_empty() {
+                lines.push("No ident prefix at cursor".to_string());
+            } else {
+                lines.push(format!(
+                    "Word statistics matching prefix '{}':",
+                    p
+                ));
+            }
+        }
         lines.push(format!(
             "{:<30} {:>8} {:>8} {:>10}",
             "WORD", "LOCAL", "GLOBAL", "COMBINED"
@@ -534,11 +560,13 @@ impl PluginState {
             lines.push(format!("{:<30} {:>8} {:>8} {:>10}", word, local, global, combined));
         }
         let output = lines.join("\n");
-        info!(
-            "word statistics ({} unique words, {} total entries)",
-            stats.len(),
-            stats.iter().map(|(_, l, g, _)| l + g).sum::<u64>()
-        );
+        if prefix.is_none() {
+            info!(
+                "word statistics ({} unique words, {} total entries)",
+                stats.len(),
+                stats.iter().map(|(_, l, g, _)| l + g).sum::<u64>()
+            );
+        }
         output
     }
 }

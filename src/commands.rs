@@ -1,7 +1,10 @@
 use {
     crate::{
-        autocmd, autocmd::clear_filetype_autocommand, fim_hide, get_state, instruction, keymap,
-        utils::get_current_filetype, LttwResult,
+        autocmd,
+        autocmd::clear_filetype_autocommand,
+        fim_hide, get_state, instruction, keymap,
+        utils::{get_buf_line, get_current_filetype, get_pos},
+        LttwResult,
     },
     nvim_oxi::api::{create_user_command, del_autocmd},
     std::sync::atomic::Ordering,
@@ -35,14 +38,38 @@ pub fn register_commands() -> LttwResult<()> {
     );
 
     let _ = create_user_command(
-        "LttwDebugWordStats",
-        |_| -> LttwResult<()> {
-            if let Err(e) = debug_word_statistics() {
-                error!(e);
+        "LttwDebug",
+        |args: nvim_oxi::api::types::CommandArgs| -> LttwResult<()> {
+            let subcommand = args.args.as_deref().unwrap_or_default();
+            match subcommand {
+                "LSPStatsAllWords" => {
+                    if let Err(e) = debug_lsp_stats_all_words() {
+                        error!(e);
+                    }
+                }
+                "LSPStatsWords" => {
+                    if let Err(e) = debug_lsp_stats_words() {
+                        error!(e);
+                    }
+                }
+                _ => {
+                    if let Err(e) = nvim_oxi::api::command(
+                        "echo 'LttwDebug: unknown subcommand. Use LSPStatsAllWords or LSPStatsWords'",
+                    ) {
+                        error!(e);
+                    }
+                }
             }
             Ok(())
         },
-        &Default::default(),
+        &nvim_oxi::api::opts::CreateCommandOptsBuilder::default()
+            .nargs(nvim_oxi::api::types::CommandNArgs::One)
+            .complete(nvim_oxi::api::types::CommandComplete::CustomList(
+                nvim_oxi::Function::from_fn(|(_, _, _)| {
+                    vec!["LSPStatsAllWords".to_string(), "LSPStatsWords".to_string()]
+                }),
+            ))
+            .build(),
     );
 
     let _ = create_user_command(
@@ -80,9 +107,9 @@ pub fn register_commands() -> LttwResult<()> {
     );
 
     let _ = create_user_command(
-        "LttwInstRerun",
+        "LttwDebugClear",
         |_| -> LttwResult<()> {
-            instruction::inst_rerun()?;
+            //debug_clear()?; // TODO update
             Ok(())
         },
         &Default::default(),
@@ -289,17 +316,6 @@ fn toggle_auto_fim() -> LttwResult<bool> {
     Ok(new_value)
 }
 
-pub fn debug_word_statistics() -> LttwResult<()> {
-    let state = get_state();
-    let output = state.debug_word_statistics();
-    if output.is_empty() {
-        nvim_oxi::api::command("echo 'No word statistics available'")?;
-    } else {
-        nvim_oxi::api::command(&format!("echo '{}'", output))?;
-    }
-    Ok(())
-}
-
 /// Toggle LSP completions, returns the new state
 #[tracing::instrument]
 fn toggle_lsp_completions() -> bool {
@@ -346,4 +362,49 @@ fn toggle_duel_mode() -> bool {
         if new_value { "enabled" } else { "disabled" }
     );
     new_value
+}
+
+/// Extract the current ident prefix at the cursor position by scanning backwards
+/// from pos_x until we hit a non-alphanumeric/non-underscore character.
+fn get_current_ident_prefix() -> String {
+    let (pos_x, pos_y) = get_pos();
+    let line = get_buf_line(pos_y);
+    let chars: Vec<char> = line.chars().collect();
+
+    // Scan backwards from pos_x, collect chars, then reverse
+    let prefix_chars: Vec<char> = (0..pos_x)
+        .rev()
+        .filter_map(|i| {
+            let ch = chars[i];
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                Some(ch)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    prefix_chars.into_iter().collect()
+}
+
+/// Debug command: show all word statistics (LSPStatsAllWords subcommand)
+fn debug_lsp_stats_all_words() -> LttwResult<()> {
+    let state = get_state();
+    let output = state.debug_word_statistics();
+    if output.is_empty() {
+        nvim_oxi::api::command("echo 'No word statistics available'")?;
+    } else {
+        nvim_oxi::api::command(&format!("echo '{}'", output))?;
+    }
+    Ok(())
+}
+
+/// Debug command: show word statistics filtered to words matching the current ident prefix
+/// (LSPStatsWords subcommand)
+fn debug_lsp_stats_words() -> LttwResult<()> {
+    let state = get_state();
+    let prefix = get_current_ident_prefix();
+    let output = state.debug_word_statistics_filtered(Some(&prefix));
+    nvim_oxi::api::command(&format!("echo '{}'", output))?;
+    Ok(())
 }
