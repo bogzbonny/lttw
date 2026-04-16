@@ -14,6 +14,12 @@
 LSP Completions improvements
 
 05. lsp_overrides to BTreeMap, Also parse out by language
+within config make lsp_overrides to BTreeMap, parse out by language. All the
+existing default values are for the rust language. This update now means that
+when using the lsp_overrides we must know the buffer filetype, so we'll need to
+add a new filetype string to CurrentBufferInfo which should be populated in the
+same way as is done in utils.rs get_current_filetype 
+
 10. More sophisticated localized statistics for lsp completion priority
      - beyond doing the global statistics, we could also do some quick stats on
        the nearby environment to wherever the completion is taking place. Nearby
@@ -21,12 +27,18 @@ LSP Completions improvements
        stats. This would be good for variable names.
      - probably just recompute with some frequency on line changes / finish
        insert mode - should be fast to compute async 
+     - use the same scope as the llm
+     - 10x weight as compared to global (param)
+     - passively recalculate only when the line position changes 
 
 10. Diff history as a part of the completion priority (of the most recent diffs,
     look at all the additions, those have more priority)
+     - let's say look at the last 7 diffs (param)
+     - 10x weight as compared to global (param)
 
 30. Option to allow for case-insenstive LSP so If I typed 'op' it could still match with
     Option<...>
+     - requires usage of the new
 
 ------------------------
 GENERAL
