@@ -1,4 +1,3 @@
-
 00. force-completion SHOULD be enabled in code comments
 30. ring update notifications through extmarks 
 10. persistent info string in the top right corner which doesnt get removed on
@@ -6,19 +5,17 @@
     normal mode). NOTES - we would need to change the position of this everytime
     the buffer position moves as this is actually tied to a line - easy thing
     would be to just erase it everytime the buffer scope changes 
+05. lsp_overrides to BTreeMap, Also parse out by language
+     - lsp_overrides is now BTreeMap<String, Vec<(String, String)>> keyed by
+       filetype. CurrentBufferInfo now has a `filetype` field populated via
+       get_current_filetype(). lsp_completion.rs looks up overrides by buffer filetype.
+       Backwards compat: flat arrays fall back to "rust" key. 
 
 ^^^^^^^^^ DONE
 
 
 ------------------------
 LSP Completions improvements
-
-05. lsp_overrides to BTreeMap, Also parse out by language
-within config make lsp_overrides to BTreeMap, parse out by language. All the
-existing default values are for the rust language. This update now means that
-when using the lsp_overrides we must know the buffer filetype, so we'll need to
-add a new filetype string to CurrentBufferInfo which should be populated in the
-same way as is done in utils.rs get_current_filetype 
 
 10. More sophisticated localized statistics for lsp completion priority
      - beyond doing the global statistics, we could also do some quick stats on

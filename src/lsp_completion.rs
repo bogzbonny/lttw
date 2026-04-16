@@ -74,10 +74,11 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<DisplayMe
     //info!("retrieved lsp completions: {}", json_str);
     let (truncate_vars, insert_one_var, overrides) = {
         let config = state.config.read();
+        let filetype = state.get_cur_buffer_info().filetype.clone();
         (
             config.lsp_comp_truncate_vars,
             config.lsp_comp_insert_one_var,
-            config.lsp_overrides.clone(),
+            config.get_lsp_overrides(&filetype).to_vec(),
         )
     };
 

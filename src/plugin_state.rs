@@ -108,6 +108,7 @@ pub struct CurrentBufferInfo {
     pub is_modified: bool,
     pub is_loaded: bool,
     pub is_readable: bool,
+    pub filetype: String,
 }
 
 /// Type alias for ring buffer timer handle to simplify type declarations

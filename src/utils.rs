@@ -231,7 +231,7 @@ pub fn get_yanked_text() -> LttwResult<String> {
 }
 
 /// Get buffer lines from Neovim
-// id, filename, is_modified, is_readable
+// id, filename, is_modified, is_readable, filetype
 #[tracing::instrument]
 pub fn get_current_buffer_info() -> LttwResult<CurrentBufferInfo> {
     assert_not_tokio_worker();
@@ -242,11 +242,13 @@ pub fn get_current_buffer_info() -> LttwResult<CurrentBufferInfo> {
     let filepath = buf_file_path.to_string_lossy().to_string();
     let is_loaded = buf.is_loaded(); // acts like buf_listed
     let is_readable = is_readable(buf_file_path.as_path());
+    let filetype = get_current_filetype()?;
     let out = CurrentBufferInfo {
         filepath,
         is_modified,
         is_loaded,
         is_readable,
+        filetype,
     };
     Ok(out)
 }

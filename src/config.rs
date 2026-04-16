@@ -7,7 +7,7 @@ use {
     crate::fim::FimLLM,
     nvim_oxi::conversion::FromObject,
     serde::{Deserialize, Serialize},
-    std::str::FromStr,
+    std::{collections::BTreeMap, str::FromStr},
 };
 
 /// Configuration options for the lttw plugin
@@ -75,11 +75,12 @@ pub struct LttwConfig {
     pub lsp_comp_truncate_vars: bool,
     pub lsp_comp_insert_one_var: bool,
 
-    /// LSP override pairs for transforming completion text.
-    /// Each pair is (pattern, replacement). If a completion text matches
+    /// LSP override pairs for transforming completion text, keyed by filetype.
+    /// Each key is a Neovim filetype (e.g. "rust", "typescript") and the value
+    /// is a list of (pattern, replacement) pairs. If a completion text matches
     /// the pattern, it will be replaced with the replacement string.
-    /// Example: [("Ok()", "Ok(())")] will transform Ok() to Ok(())
-    pub lsp_overrides: Vec<(String, String)>,
+    /// Example: {"rust": [("Ok()", "Ok(())")]} will transform Ok() to Ok(()) for Rust files.
+    pub lsp_overrides: BTreeMap<String, Vec<(String, String)>>,
 
     //-------------------------------------------
     // INSTRUCTION
@@ -136,31 +137,38 @@ impl Default for LttwConfig {
             lsp_completions: true,
             lsp_comp_truncate_vars: true,
             lsp_comp_insert_one_var: false,
-            // Default override: transform Ok() to Ok(()) for unit type returns
-            lsp_overrides: vec![
-                ("Ok()".to_string(), "Ok(())".to_string()),
-                ("unwrap_or()".to_string(), "unwrap_or(…)".to_string()),
-                ("if … {".to_string(), "if ".to_string()),
-                ("if let … =  {".to_string(), "if let ".to_string()),
-                ("match … {".to_string(), "match ".to_string()),
-                ("let … = ;".to_string(), "let ".to_string()),
-                ("let mut … = ;".to_string(), "let mut ".to_string()),
-                ("for … in  {".to_string(), "for ".to_string()),
-                ("while … {".to_string(), "while ".to_string()),
-                ("fn …() {".to_string(), "fn ".to_string()),
-                ("trait … {".to_string(), "trait ".to_string()),
-                ("enum … {".to_string(), "enum ".to_string()),
-                ("impl … {".to_string(), "impl ".to_string()),
-                ("Arc<>".to_string(), "Arc<".to_string()),
-                ("RwLock<>".to_string(), "RwLock<".to_string()),
-                ("Box<>".to_string(), "Box<".to_string()),
-                ("Option<>".to_string(), "Option<".to_string()),
-                ("Result<>".to_string(), "Result<".to_string()),
-                ("Mutex<>".to_string(), "Mutex<".to_string()),
-                ("Rc<>".to_string(), "Rc<".to_string()),
-                ("RefCell<>".to_string(), "RefCell<".to_string()),
-                ("Vec<>".to_string(), "Vec<".to_string()),
-            ],
+            // Default overrides keyed by filetype (currently only rust defaults)
+            lsp_overrides: {
+                let mut map = BTreeMap::new();
+                map.insert(
+                    "rust".to_string(),
+                    vec![
+                        ("Ok()".to_string(), "Ok(())".to_string()),
+                        ("unwrap_or()".to_string(), "unwrap_or(…)".to_string()),
+                        ("if … {".to_string(), "if ".to_string()),
+                        ("if let … =  {".to_string(), "if let ".to_string()),
+                        ("match … {".to_string(), "match ".to_string()),
+                        ("let … = ;".to_string(), "let ".to_string()),
+                        ("let mut … = ;".to_string(), "let mut ".to_string()),
+                        ("for … in  {".to_string(), "for ".to_string()),
+                        ("while … {".to_string(), "while ".to_string()),
+                        ("fn …() {".to_string(), "fn ".to_string()),
+                        ("trait … {".to_string(), "trait ".to_string()),
+                        ("enum … {".to_string(), "enum ".to_string()),
+                        ("impl … {".to_string(), "impl ".to_string()),
+                        ("Arc<>".to_string(), "Arc<".to_string()),
+                        ("RwLock<>".to_string(), "RwLock<".to_string()),
+                        ("Box<>".to_string(), "Box<".to_string()),
+                        ("Option<>".to_string(), "Option<".to_string()),
+                        ("Result<>".to_string(), "Result<".to_string()),
+                        ("Mutex<>".to_string(), "Mutex<".to_string()),
+                        ("Rc<>".to_string(), "Rc<".to_string()),
+                        ("RefCell<>".to_string(), "RefCell<".to_string()),
+                        ("Vec<>".to_string(), "Vec<".to_string()),
+                    ],
+                );
+                map
+            },
             enable_at_startup: true,
             tracing_enabled: false,
             tracing_log_file: false,
@@ -785,7 +793,7 @@ impl LttwConfig {
             config.lsp_comp_insert_one_var = v;
         }
 
-        // Helper to get array of string pairs from dictionary
+        // Helper to get array of string pairs from an array (flat)
         let get_string_pairs = |key: &str| -> Option<Vec<(String, String)>> {
             dict.get(key).and_then(|obj| {
                 nvim_oxi::Array::from_object(obj.clone()).ok().map(|a| {
@@ -814,8 +822,49 @@ impl LttwConfig {
             })
         };
 
-        if let Some(v) = get_string_pairs("lsp_overrides") {
+        // Helper to get a BTreeMap of filetype -> string pairs from dictionary
+        let get_string_pairs_by_filetype = |key: &str| -> Option<BTreeMap<String, Vec<(String, String)>>> {
+            dict.get(key).and_then(|obj| {
+                nvim_oxi::Dictionary::from_object(obj.clone()).ok().map(|d| {
+                    let mut map = BTreeMap::new();
+                    for (filetype_key, filetype_val) in d.iter() {
+                        if let Ok(arr) = nvim_oxi::Array::from_object(filetype_val.clone()) {
+                            let pairs: Vec<(String, String)> = arr.into_iter()
+                                .filter_map(|item| {
+                                    nvim_oxi::Array::from_object(item).ok().and_then(|pair| {
+                                        if pair.len() >= 2 {
+                                            let first = nvim_oxi::String::try_from(pair[0].clone())
+                                                .ok()
+                                                .map(|s| s.to_string());
+                                            let second = nvim_oxi::String::try_from(pair[1].clone())
+                                                .ok()
+                                                .map(|s| s.to_string());
+                                            match (first, second) {
+                                                (Some(f), Some(s)) => Some((f, s)),
+                                                _ => None,
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                })
+                                .collect();
+                            map.insert(filetype_key.to_string(), pairs);
+                        }
+                    }
+                    map
+                })
+            })
+        };
+
+        // Try the new filetype-keyed format first, fall back to flat array for backwards compat
+        if let Some(v) = get_string_pairs_by_filetype("lsp_overrides") {
             config.lsp_overrides = v;
+        } else if let Some(v) = get_string_pairs("lsp_overrides") {
+            // Backwards compat: if user provides a flat array, put it under "rust"
+            if !v.is_empty() {
+                config.lsp_overrides.insert("rust".to_string(), v);
+            }
         }
 
         config
@@ -838,5 +887,15 @@ impl LttwConfig {
                 .any(|ft| ft == filetype || ft == "*");
         }
         enabled
+    }
+
+    /// Get LSP overrides for a specific filetype.
+    /// Returns an empty slice if no overrides are configured for that filetype.
+    #[tracing::instrument]
+    pub fn get_lsp_overrides(&self, filetype: &str) -> &[(String, String)] {
+        self.lsp_overrides
+            .get(filetype)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 }
