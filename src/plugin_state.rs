@@ -93,6 +93,14 @@ pub struct PluginState {
     // keep statistics on all the words for ordering all LSP completions
     word_statistics: Arc<PapayaMap<String, u64>>,
 
+    /// Local word occurrence statistics around the cursor position.
+    /// Recalculated asynchronously when the cursor Y position changes.
+    local_word_statistics: Arc<PapayaMap<String, u64>>,
+
+    /// The Y position (line number) for which local_word_statistics was last calculated.
+    /// Used to detect when recalculation is needed on cursor move.
+    local_word_stats_y: Arc<RwLock<Option<usize>>>,
+
     // FIM completion channel for async worker communication
     pub fim_completion_tx: Arc<RwLock<Option<mpsc::Sender<DisplayMessage>>>>,
 
@@ -191,6 +199,8 @@ impl PluginState {
 
             file_contents: Arc::new(RwLock::new(HashMap::new())),
             word_statistics: Arc::new(PapayaMap::new()),
+            local_word_statistics: Arc::new(PapayaMap::new()),
+            local_word_stats_y: Arc::new(RwLock::new(None)),
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(RwLock::new(None)),
             pending_display: Arc::new(RwLock::new(Vec::new())),
@@ -285,6 +295,12 @@ impl PluginState {
         *self.allow_comment_fim_cur_pos.read()
     }
 
+    /// Get the Y position for which local word statistics were last calculated
+    #[tracing::instrument]
+    pub fn get_local_word_stats_y(&self) -> Option<usize> {
+        *self.local_word_stats_y.read()
+    }
+
     #[tracing::instrument]
     pub fn has_file_contents(&self, filename: &str) -> bool {
         self.file_contents.read().contains_key(filename)
@@ -343,11 +359,132 @@ impl PluginState {
             .unwrap_or(0u64)
     }
 
+    /// Get the combined word statistic usage, factoring in both local (around-cursor)
+    /// and global occurrences. Local occurrences are weighted by the configured
+    /// `local_occurrence_weight` multiplier.
     #[tracing::instrument]
-    pub fn debug_word_statistics(&self) {
-        self.word_statistics.pin().iter().for_each(|(k, v)| {
-            info!("{}: {}", k, v);
-        });
+    pub fn get_combined_word_statistic_usage(&self, word: &str) -> u64 {
+        let local = self
+            .local_word_statistics
+            .pin()
+            .get(word)
+            .copied()
+            .unwrap_or(0u64);
+        let global = self
+            .word_statistics
+            .pin()
+            .get(word)
+            .copied()
+            .unwrap_or(0u64);
+        let weight = {
+            let config = self.config.read();
+            config.local_occurrence_weight
+        };
+        local * weight + global
+    }
+
+    /// Recalculate local word statistics for the scope around the given cursor position.
+    /// The scope uses the same n_prefix/n_suffix boundaries as LLM completions.
+    ///
+    /// This clears the existing local map and repopulates it by tokenizing all words
+    /// in the prefix scope (n_prefix lines before cursor), the current line up to cursor,
+    /// and the suffix scope (current line after cursor + n_suffix lines after).
+    #[tracing::instrument(skip(lines))]
+    pub fn recalculate_local_word_statistics(&self, lines: &[String], pos_x: usize, pos_y: usize) {
+        let (n_prefix, n_suffix) = {
+            let config = self.config.read();
+            (config.n_prefix as usize, config.n_suffix as usize)
+        };
+
+        let max_y = lines.len();
+
+        // Determine the prefix scope: n_prefix lines before current line
+        let prefix_start = if pos_y > 0 {
+            pos_y.saturating_sub(n_prefix)
+        } else {
+            0
+        };
+        let prefix_lines: Vec<&String> = if prefix_start < pos_y {
+            lines[prefix_start..pos_y].iter().collect()
+        } else {
+            Vec::new()
+        };
+
+        // Current line split at cursor
+        let line_cur = lines.get(pos_y).cloned().unwrap_or_default();
+        let line_before_cursor = if pos_x <= line_cur.len() {
+            line_cur[..pos_x].to_string()
+        } else {
+            line_cur.clone()
+        };
+        let line_after_cursor = if pos_x <= line_cur.len() {
+            line_cur[pos_x..].to_string()
+        } else {
+            String::new()
+        };
+
+        // Determine the suffix scope: n_suffix lines after current line
+        let suffix_end = std::cmp::min(max_y, pos_y + 1 + n_suffix);
+        let suffix_lines: Vec<&String> = if pos_y + 1 < suffix_end {
+            lines[pos_y + 1..suffix_end].iter().collect()
+        } else {
+            Vec::new()
+        };
+
+        // Build the full local context text
+        let mut local_text = String::new();
+        for line in &prefix_lines {
+            local_text.push_str(line);
+            local_text.push('\n');
+        }
+        local_text.push_str(&line_before_cursor);
+        local_text.push('\n');
+        local_text.push_str(&line_after_cursor);
+        local_text.push('\n');
+        for line in &suffix_lines {
+            local_text.push_str(line);
+            local_text.push('\n');
+        }
+
+        // Clear existing local stats and recalculate
+        let stats = self.local_word_statistics.pin();
+        stats.clear();
+
+        let mut current_word = String::new();
+        for ch in local_text.chars() {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                if ch.is_numeric() && current_word.is_empty() {
+                    continue;
+                }
+                current_word.push(ch);
+            } else if !current_word.is_empty() {
+                let _ = *stats.update_or_insert(current_word.clone(), |v| v + 1, 0);
+                current_word.clear();
+            }
+        }
+        // Handle last word if any
+        if !current_word.is_empty() {
+            let _ = *stats.update_or_insert(current_word.clone(), |v| v + 1, 0);
+        }
+
+        // Record the Y position for this calculation
+        *self.local_word_stats_y.write() = Some(pos_y);
+
+        info!(
+            "recalculated local word statistics for y={pos_y}, found {} unique words",
+            stats.len()
+        );
+    }
+
+    #[tracing::instrument]
+    pub fn debug_word_statistics(&self) -> String {
+        let mut lines: Vec<String> = Vec::new();
+        for (k, v) in self.word_statistics.pin().iter() {
+            lines.push(format!("{}: {}", k, v));
+        }
+        let output = lines.join("\n");
+        info!("word statistics ({} entries)", lines.len());
+        output
     }
 }
 

@@ -100,6 +100,12 @@ pub struct LttwConfig {
     pub n_suffix: u32, // number of suffix lines fed into the inline endpoint
 
     //-------------------------------------------
+    // Local word statistics for LSP completion priority
+    /// Multiplier applied to local (around-cursor) word occurrences vs global occurrences.
+    /// A word found in the local scope is treated as if it occurred this many times globally.
+    pub local_occurrence_weight: u64,
+
+    //-------------------------------------------
     // PER MODEL CONFIG
     default_fim_config: FimModelConfig,
     fast_fim_config: FimModelConfigOverrides,
@@ -185,6 +191,7 @@ impl Default for LttwConfig {
 
             n_prefix: 256,
             n_suffix: 64,
+            local_occurrence_weight: 10,
 
             default_fim_config: FimModelConfig::default(),
             fast_fim_config: FimModelConfigOverrides::default(),
@@ -578,6 +585,9 @@ impl LttwConfig {
         }
         if let Some(v) = get_i64("n_suffix") {
             config.n_suffix = v as u32;
+        }
+        if let Some(v) = get_i64("local_occurrence_weight") {
+            config.local_occurrence_weight = v as u64;
         }
 
         // ------------------

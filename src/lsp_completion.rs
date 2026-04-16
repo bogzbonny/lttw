@@ -169,7 +169,7 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<DisplayMe
 
             // NOTE use the full suggestion here, NOT the prefix stripped text!
             let ident = strip_to_first_identifier(&comp.text);
-            let usage = state.get_word_statistic_usage(&ident);
+            let usage = state.get_combined_word_statistic_usage(&ident);
 
             let fim_resp = FimResponseWithInfo {
                 resp: FimResponse {

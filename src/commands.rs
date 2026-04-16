@@ -13,7 +13,9 @@ pub fn register_commands() -> LttwResult<()> {
     let _ = create_user_command(
         "LttwToggleAutoFim",
         |_| -> LttwResult<()> {
-            let _ = toggle_auto_fim();
+            if let Err(e) = toggle_auto_fim() {
+                error!(e);
+            }
             Ok(())
         },
         &Default::default(),
@@ -24,7 +26,9 @@ pub fn register_commands() -> LttwResult<()> {
         |_| -> LttwResult<()> {
             // manual disabling also removes the filetype check autocommand
             clear_filetype_autocommand()?;
-            let _ = disable_plugin();
+            if let Err(e) = disable_plugin() {
+                error!(e);
+            }
             Ok(())
         },
         &Default::default(),
@@ -33,7 +37,9 @@ pub fn register_commands() -> LttwResult<()> {
     let _ = create_user_command(
         "LttwDebugWordStats",
         |_| -> LttwResult<()> {
-            debug_word_statistics();
+            if let Err(e) = debug_word_statistics() {
+                error!(e);
+            }
             Ok(())
         },
         &Default::default(),
@@ -42,7 +48,9 @@ pub fn register_commands() -> LttwResult<()> {
     let _ = create_user_command(
         "LttwEnable",
         |_| -> LttwResult<()> {
-            let _ = enable_plugin();
+            if let Err(e) = enable_plugin() {
+                error!(e);
+            }
             Ok(())
         },
         &Default::default(),
@@ -125,6 +133,34 @@ pub fn register_commands() -> LttwResult<()> {
         |_| -> LttwResult<()> {
             disable_info()?;
             nvim_oxi::api::command("echo 'info display disabled'")?;
+            Ok(())
+        },
+        &Default::default(),
+    );
+
+    // Completion source toggles
+    let _ = create_user_command(
+        "LttwToggleLspCompletions",
+        |_| -> LttwResult<()> {
+            toggle_lsp_completions();
+            Ok(())
+        },
+        &Default::default(),
+    );
+
+    let _ = create_user_command(
+        "LttwToggleLlmCompletions",
+        |_| -> LttwResult<()> {
+            toggle_llm_completions();
+            Ok(())
+        },
+        &Default::default(),
+    );
+
+    let _ = create_user_command(
+        "LttwToggleDuelMode",
+        |_| -> LttwResult<()> {
+            toggle_duel_mode();
             Ok(())
         },
         &Default::default(),
@@ -241,7 +277,58 @@ fn toggle_auto_fim() -> LttwResult<bool> {
     Ok(new_value)
 }
 
-pub fn debug_word_statistics() {
+pub fn debug_word_statistics() -> LttwResult<()> {
     let state = get_state();
-    state.debug_word_statistics();
+    let output = state.debug_word_statistics();
+    if output.is_empty() {
+        nvim_oxi::api::command("echo 'No word statistics available'")?;
+    } else {
+        nvim_oxi::api::command(&format!("echo '{}'", output))?;
+    }
+    Ok(())
+}
+
+/// Toggle LSP completions
+#[tracing::instrument]
+fn toggle_lsp_completions() {
+    let state = get_state();
+    let new_value = !state.config.read().lsp_completions;
+    {
+        let mut config_lock = state.config.write();
+        config_lock.lsp_completions = new_value;
+    }
+    info!(
+        "LSP completions {}",
+        if new_value { "enabled" } else { "disabled" }
+    );
+}
+
+/// Toggle LLM completions
+#[tracing::instrument]
+fn toggle_llm_completions() {
+    let state = get_state();
+    let new_value = !state.config.read().llm_completions;
+    {
+        let mut config_lock = state.config.write();
+        config_lock.llm_completions = new_value;
+    }
+    info!(
+        "LLM completions {}",
+        if new_value { "enabled" } else { "disabled" }
+    );
+}
+
+/// Toggle Duel Mode (dual-model FIM completion)
+#[tracing::instrument]
+fn toggle_duel_mode() {
+    let state = get_state();
+    let new_value = !state.config.read().duel_model_mode;
+    {
+        let mut config_lock = state.config.write();
+        config_lock.duel_model_mode = new_value;
+    }
+    info!(
+        "Duel mode {}",
+        if new_value { "enabled" } else { "disabled" }
+    );
 }

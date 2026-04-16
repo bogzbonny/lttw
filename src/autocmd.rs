@@ -230,7 +230,7 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
     Ok(())
 }
 
-#[tracing::instrument]
+  #[tracing::instrument]
 fn on_move() -> LttwResult<()> {
     let state = get_state();
     *state.last_move_time.write() = Instant::now();
@@ -247,6 +247,26 @@ fn on_move() -> LttwResult<()> {
            pos_y={pos_y}, allowed_buf={allowed_buf}, allowed_x={allowed_x}, allowed_y={allowed_y}",
         );
         state.clear_allow_comment_fim_cur_pos();
+    }
+
+    // Asynchronously recalculate local word statistics if the Y position has changed.
+    // This runs on a separate tokio worker thread so LSP completions are never blocked.
+    let should_recalc = {
+        let current_y = state.get_local_word_stats_y();
+        current_y != Some(pos_y)
+    };
+
+    if should_recalc {
+        let state_ = state.clone();
+        let rt = state.tokio_runtime.clone();
+        // Only recalc if we're in insert mode (where LSP completions are relevant)
+        if let Ok(true) = state.in_insert_mode() {
+            // Get buffer lines on the main thread (can't call nvim API from tokio worker)
+            let lines = get_buf_lines(..);
+            rt.read().spawn(async move {
+                state_.recalculate_local_word_statistics(&lines, pos_x, pos_y);
+            });
+        }
     }
 
     info!("Cursor moved");
