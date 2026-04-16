@@ -53,9 +53,7 @@ pub fn register_commands() -> LttwResult<()> {
                     }
                 }
                 _ => {
-                    if let Err(e) = nvim_oxi::api::command(
-                        "echo 'LttwDebug: unknown subcommand. Use LSPStatsAllWords or LSPStatsWords'",
-                    ) {
+                    if let Err(e) = nvim_oxi::api::command("echo 'LttwDebug: unknown subcommand'") {
                         error!(e);
                     }
                 }
@@ -373,7 +371,6 @@ fn get_current_ident_prefix() -> String {
 
     // Scan backwards from pos_x, collect chars, then reverse
     let prefix_chars: Vec<char> = (0..pos_x)
-        .rev()
         .filter_map(|i| {
             let ch = chars[i];
             if ch.is_ascii_alphanumeric() || ch == '_' {
@@ -405,6 +402,6 @@ fn debug_lsp_stats_words() -> LttwResult<()> {
     let state = get_state();
     let prefix = get_current_ident_prefix();
     let output = state.debug_word_statistics_filtered(Some(&prefix));
-    nvim_oxi::api::command(&format!("echo '{}'", output))?;
+    nvim_oxi::api::command(&format!("echo 'prefix: {}\n{}'", prefix, output))?;
     Ok(())
 }
