@@ -203,6 +203,7 @@ async fn ring_update(m: FimLLM) -> LttwResult<(bool, bool)> {
     let tx = state.get_fim_completion_tx()?;
     let rbu = RingBufferUpdated {
         model: m,
+        ring_buffer_size: chunk_count as u8,
         remaining_in_queue: queue_remaining as u8,
     };
     if let Err(e) = tx.send(rbu.into()).await {

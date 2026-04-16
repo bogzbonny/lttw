@@ -24,6 +24,7 @@ pub enum DisplayMessage {
 #[derive(Debug, Clone)]
 pub struct RingBufferUpdated {
     pub model: FimLLM,
+    pub ring_buffer_size: u8,
     pub remaining_in_queue: u8,
 }
 
@@ -31,8 +32,8 @@ impl std::fmt::Display for RingBufferUpdated {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Ring Buffer Update:\nmodel: {}\nremaining in queue: {}",
-            self.model, self.remaining_in_queue
+            "Ring Buffer Update:\nmodel: {}\nbuffer size: {}\nremaining in queue: {}",
+            self.model, self.ring_buffer_size, self.remaining_in_queue
         )
     }
 }
