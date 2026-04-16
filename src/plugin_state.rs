@@ -383,6 +383,33 @@ impl PluginState {
         local * weight + global
     }
 
+    /// Get combined statistics for a batch of words, returning (word, local_count, global_count, combined).
+    /// Local occurrences are weighted by the configured `local_occurrence_weight`.
+    /// This is the common backend used by both `retrieve_lsp_completions` and `debug_word_statistics`.
+    #[tracing::instrument]
+    pub fn get_word_statistics_batch(&self, words: &[String]) -> Vec<(String, u64, u64, u64)> {
+        let weight = self.config.read().local_occurrence_weight;
+        words
+            .iter()
+            .map(|word| {
+                let local = self
+                    .local_word_statistics
+                    .pin()
+                    .get(word)
+                    .copied()
+                    .unwrap_or(0);
+                let global = self
+                    .word_statistics
+                    .pin()
+                    .get(word)
+                    .copied()
+                    .unwrap_or(0);
+                let combined = local * weight + global;
+                (word.clone(), local, global, combined)
+            })
+            .collect()
+    }
+
     /// Recalculate local word statistics for the scope around the given cursor position.
     /// The scope uses the same n_prefix/n_suffix boundaries as LLM completions.
     ///
@@ -476,14 +503,42 @@ impl PluginState {
         );
     }
 
+    /// Get combined statistics for all known words (from both global and local maps),
+    /// returning a formatted string with local, global, and combined columns.
+    /// Uses the common `get_word_statistics_batch` backend.
     #[tracing::instrument]
     pub fn debug_word_statistics(&self) -> String {
+        // Collect all unique words from both global and local maps
+        let mut all_words: std::collections::HashSet<String> = self
+            .word_statistics
+            .pin()
+            .iter()
+            .map(|(k, _v)| k.clone())
+            .collect();
+        for k in self.local_word_statistics.pin().iter().map(|(k, _v)| k.clone()) {
+            all_words.insert(k);
+        }
+        let words: Vec<String> = all_words.into_iter().collect();
+
+        // Batch lookup: get (word, local, global, combined) for all words
+        let stats = self.get_word_statistics_batch(&words);
+
+        // Format as: word | local | global | combined
         let mut lines: Vec<String> = Vec::new();
-        for (k, v) in self.word_statistics.pin().iter() {
-            lines.push(format!("{}: {}", k, v));
+        lines.push(format!(
+            "{:<30} {:>8} {:>8} {:>10}",
+            "WORD", "LOCAL", "GLOBAL", "COMBINED"
+        ));
+        lines.push("-".repeat(60));
+        for (word, local, global, combined) in &stats {
+            lines.push(format!("{:<30} {:>8} {:>8} {:>10}", word, local, global, combined));
         }
         let output = lines.join("\n");
-        info!("word statistics ({} entries)", lines.len());
+        info!(
+            "word statistics ({} unique words, {} total entries)",
+            stats.len(),
+            stats.iter().map(|(_, l, g, _)| l + g).sum::<u64>()
+        );
         output
     }
 }

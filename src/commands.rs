@@ -142,7 +142,11 @@ pub fn register_commands() -> LttwResult<()> {
     let _ = create_user_command(
         "LttwToggleLspCompletions",
         |_| -> LttwResult<()> {
-            toggle_lsp_completions();
+            let new_value = toggle_lsp_completions();
+            nvim_oxi::api::command(&format!(
+                "echo 'LSP completions {}'",
+                if new_value { "enabled" } else { "disabled" }
+            ))?;
             Ok(())
         },
         &Default::default(),
@@ -151,7 +155,11 @@ pub fn register_commands() -> LttwResult<()> {
     let _ = create_user_command(
         "LttwToggleLlmCompletions",
         |_| -> LttwResult<()> {
-            toggle_llm_completions();
+            let new_value = toggle_llm_completions();
+            nvim_oxi::api::command(&format!(
+                "echo 'LLM completions {}'",
+                if new_value { "enabled" } else { "disabled" }
+            ))?;
             Ok(())
         },
         &Default::default(),
@@ -160,7 +168,11 @@ pub fn register_commands() -> LttwResult<()> {
     let _ = create_user_command(
         "LttwToggleDuelMode",
         |_| -> LttwResult<()> {
-            toggle_duel_mode();
+            let new_value = toggle_duel_mode();
+            nvim_oxi::api::command(&format!(
+                "echo 'Duel mode {}'",
+                if new_value { "enabled" } else { "disabled" }
+            ))?;
             Ok(())
         },
         &Default::default(),
@@ -288,9 +300,9 @@ pub fn debug_word_statistics() -> LttwResult<()> {
     Ok(())
 }
 
-/// Toggle LSP completions
+/// Toggle LSP completions, returns the new state
 #[tracing::instrument]
-fn toggle_lsp_completions() {
+fn toggle_lsp_completions() -> bool {
     let state = get_state();
     let new_value = !state.config.read().lsp_completions;
     {
@@ -301,11 +313,12 @@ fn toggle_lsp_completions() {
         "LSP completions {}",
         if new_value { "enabled" } else { "disabled" }
     );
+    new_value
 }
 
-/// Toggle LLM completions
+/// Toggle LLM completions, returns the new state
 #[tracing::instrument]
-fn toggle_llm_completions() {
+fn toggle_llm_completions() -> bool {
     let state = get_state();
     let new_value = !state.config.read().llm_completions;
     {
@@ -316,11 +329,12 @@ fn toggle_llm_completions() {
         "LLM completions {}",
         if new_value { "enabled" } else { "disabled" }
     );
+    new_value
 }
 
-/// Toggle Duel Mode (dual-model FIM completion)
+/// Toggle Duel Mode (dual-model FIM completion), returns the new state
 #[tracing::instrument]
-fn toggle_duel_mode() {
+fn toggle_duel_mode() -> bool {
     let state = get_state();
     let new_value = !state.config.read().duel_model_mode;
     {
@@ -331,4 +345,5 @@ fn toggle_duel_mode() {
         "Duel mode {}",
         if new_value { "enabled" } else { "disabled" }
     );
+    new_value
 }
