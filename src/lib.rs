@@ -43,6 +43,7 @@ use {
     utils::{
         clear_buf_namespace_objects, get_buf_filename, get_buf_lines, get_current_buffer_id,
         get_current_buffer_info, get_mode_bz, get_pos, get_yanked_text, in_insert_mode,
+        set_buf_extmark_right, set_buf_top_right_pos_y,
     },
 };
 
@@ -229,15 +230,29 @@ fn fim_hide() -> LttwResult<()> {
 }
 
 #[tracing::instrument]
+fn move_info_line_if_buf_shifted(state: &PluginState) -> LttwResult<()> {
+    let Some(ns_id_val) = state.info_ns else {
+        return Ok(());
+    };
+    let top_line = set_buf_top_right_pos_y();
+    if let Some((ref ns_top_line, ref info_string)) = *state.info_ns_line.read()
+        && *ns_top_line != top_line
+    {
+        clear_buf_namespace_objects(ns_id_val)?;
+        set_buf_extmark_right(ns_id_val, info_string, top_line)?;
+    }
+    Ok(())
+}
+
+#[tracing::instrument]
 fn fim_hide_inner(state: &PluginState) -> LttwResult<()> {
     // Clear virtual text using nvim_buf_clear_namespace()
     if let Some(ns_id_val) = state.extmark_ns {
         clear_buf_namespace_objects(ns_id_val)?
     }
-    if let Some(ns_id_val) = state.info_ns {
-        clear_buf_namespace_objects(ns_id_val)?
-    }
-
     state.fim_state.write().clear();
+
+    //clear_info_line_if_moved(state)?;
+
     Ok(())
 }

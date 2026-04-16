@@ -67,6 +67,8 @@ pub struct PluginState {
 
     pub extmark_ns: Option<u32>, // Namespace for extmarks (virtual text)
     pub info_ns: Option<u32>,    // Namespace for info
+    pub info_ns_line: Arc<RwLock<Option<(usize, String)>>>, // the top line number which the info is printed at
+
     #[allow(dead_code)]
     pub inst_ns: Option<u32>, // Namespace for instruction extmarks
     pub cur_buf_info: Arc<RwLock<CurrentBufferInfo>>, // the current buffer and whether its modified
@@ -174,6 +176,7 @@ impl PluginState {
             fim_worker_generating_for_pos: Arc::new(RwLock::new(None)),
             extmark_ns,
             info_ns,
+            info_ns_line: Arc::new(RwLock::new(None)),
             tracing_enabled: Arc::new(AtomicBool::new(tracing_enabled)),
             enabled: Arc::new(AtomicBool::new(enable_at_startup)),
             autocmd_ids: Arc::new(RwLock::new(Vec::new())),

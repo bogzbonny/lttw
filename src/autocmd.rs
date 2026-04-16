@@ -15,6 +15,7 @@ use {
         get_pos,
         get_state,
         get_yanked_text,
+        move_info_line_if_buf_shifted,
         ring_buffer::mode_change_maybe_start_processing_ring_updates,
         utils::{create_autocmd, del_autocmd},
         LttwResult,
@@ -249,8 +250,8 @@ fn on_move() -> LttwResult<()> {
     }
 
     info!("Cursor moved");
-    //fim_hide()?; //
     fim_try_hint(None)?;
+    move_info_line_if_buf_shifted(&state)?;
     Ok(())
 }
 

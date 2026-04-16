@@ -229,7 +229,9 @@ pub fn ring_buffer_updated_extmarks(
         return Ok(());
     }
     utils::clear_buf_namespace_objects(ns_id)?;
-    utils::set_buf_extmark_top_right(ns_id, info_string)?;
+    let top_line = utils::set_buf_extmark_top_right(ns_id, &info_string)?;
+    *state.info_ns_line.write() = Some((top_line, info_string));
+
     Ok(())
 }
 

@@ -242,11 +242,10 @@ pub fn render_fim_suggestion(
                 return Ok(());
             };
 
-            utils::clear_buf_namespace_objects(info_ns_id)?;
-            if !info_string.is_empty()
-                && let Err(e) = set_buf_extmark_top_right(info_ns_id, info_string)
-            {
-                info!("Error setting info extmark: {:?}", e);
+            if !info_string.is_empty() {
+                utils::clear_buf_namespace_objects(info_ns_id)?;
+                let top_line = set_buf_extmark_top_right(info_ns_id, &info_string)?;
+                *state.info_ns_line.write() = Some((top_line, info_string));
             }
         }
     }
