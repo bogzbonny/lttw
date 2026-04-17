@@ -94,7 +94,7 @@ pub struct PluginState {
     // keep statistics on all the words for ordering all LSP completions
     word_statistics: Arc<PapayaMap<String, u64>>,
 
-   /// Local word occurrence statistics around the cursor position.
+    /// Local word occurrence statistics around the cursor position.
     /// Recalculated asynchronously when the cursor Y position changes.
     local_word_statistics: Arc<PapayaMap<String, u64>>,
 
@@ -370,21 +370,9 @@ impl PluginState {
         for chunk in chunks.iter() {
             for line in chunk {
                 if let Some(line) = line.strip_prefix('+') {
-                    let mut current_word = String::new();
-                    for ch in line.chars() {
-                        if ch.is_ascii_alphanumeric() || ch == '_' {
-                            if ch.is_numeric() && current_word.is_empty() {
-                                continue;
-                            }
-                            current_word.push(ch);
-                        } else if !current_word.is_empty() {
-                            let _ = *stats.update_or_insert(current_word.clone(), |v| v + 1, 0);
-                            current_word.clear();
-                        }
-                    }
-                    if !current_word.is_empty() {
-                        let _ = *stats.update_or_insert(current_word.clone(), |v| v + 1, 0);
-                    }
+                    parse_words(line, |word| {
+                        let _ = *stats.update_or_insert(word.to_string(), |v| v + 1, 0);
+                    });
                 }
             }
         }
@@ -417,7 +405,7 @@ impl PluginState {
             .unwrap_or(0u64)
     }
 
-  /// Get the combined word statistic usage, factoring in local (around-cursor),
+    /// Get the combined word statistic usage, factoring in local (around-cursor),
     /// recent diff additions, and global occurrences. Local and diff occurrences
     /// are weighted by their respective configured multipliers.
     #[tracing::instrument]
@@ -543,22 +531,9 @@ impl PluginState {
         let stats = self.local_word_statistics.pin();
         stats.clear();
 
-        let mut current_word = String::new();
-        for ch in local_text.chars() {
-            if ch.is_ascii_alphanumeric() || ch == '_' {
-                if ch.is_numeric() && current_word.is_empty() {
-                    continue;
-                }
-                current_word.push(ch);
-            } else if !current_word.is_empty() {
-                let _ = *stats.update_or_insert(current_word.clone(), |v| v + 1, 0);
-                current_word.clear();
-            }
-        }
-        // Handle last word if any
-        if !current_word.is_empty() {
-            let _ = *stats.update_or_insert(current_word.clone(), |v| v + 1, 0);
-        }
+        parse_words(&local_text, |word| {
+            let _ = *stats.update_or_insert(word.to_string(), |v| v + 1, 0);
+        });
 
         // Record the Y position for this calculation
         *self.local_word_stats_y.write() = Some(pos_y);
@@ -607,7 +582,7 @@ impl PluginState {
             _ => all_words.into_iter().collect(),
         };
 
-  // Batch lookup: get (word, local, diff, global, combined) for all words
+        // Batch lookup: get (word, local, diff, global, combined) for all words
         let stats = self.get_word_statistics_batch(&words);
 
         // Format as: word | local | diff | global | combined
@@ -646,73 +621,39 @@ impl PluginState {
     }
 }
 
-// add_word_statistics takes all the content then separates out all the Identifiers (words
-// which must begin with a letter or underscore but then may also include numbers afterwords).
-// The identifiers are then added to the word_statistics adding one for each word that exists
+/// Adds all identifiers found in content to the word statistics, incrementing each by 1.
+/// Identifiers are ASCII alphanumeric sequences that cannot start with a digit.
 #[tracing::instrument]
 pub fn add_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, content: String) {
     info!("add_word_statistics");
-    let mut current_word = String::new();
-
     let stats = word_stats.pin();
-
-    for ch in content.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '_' {
-            if ch.is_numeric() && current_word.is_empty() {
-                continue;
-            }
-            current_word.push(ch);
-        } else if !current_word.is_empty() {
-            let _ = *stats.update_or_insert(current_word.clone(), |v| v + 1, 0);
-            current_word.clear();
-        }
-    }
-
-    // Handle last word if any
-    if !current_word.is_empty() {
-        let _ = *stats.update_or_insert(current_word.clone(), |v| v + 1, 0);
-    }
+    parse_words(&content, |word| {
+        let _ = *stats.update_or_insert(word.to_string(), |v| v + 1, 0);
+    });
 }
 
+/// Subtracts all identifiers found in content from the word statistics, decrementing each by 1.
+/// Identifiers are ASCII alphanumeric sequences that cannot start with a digit.
 #[tracing::instrument]
 pub fn sub_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, content: String) {
     info!("sub_word_statistics");
-    let mut current_word = String::new();
-
     let stats = word_stats.pin();
-    for ch in content.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '_' {
-            if ch.is_numeric() && current_word.is_empty() {
-                continue;
-            }
-            current_word.push(ch);
-        } else if !current_word.is_empty() {
-            let _ = *stats.update_or_insert(current_word.clone(), |v| v.saturating_sub(1), 0);
-            current_word.clear();
-        }
-    }
-
-    // Handle last word if any
-    if !current_word.is_empty() {
-        let _ = *stats.update_or_insert(current_word.clone(), |v| v.saturating_sub(1), 0);
-    }
+    parse_words(&content, |word| {
+        let _ = *stats.update_or_insert(word.to_string(), |v| v.saturating_sub(1), 0);
+    });
 }
 
-// strips a completion down to its identifier for comparison in the word statistics
+/// Strips a completion down to its first identifier for comparison in word statistics.
+/// The first identifier is the first ASCII alphanumeric sequence that doesn't start with a digit.
 #[tracing::instrument]
 pub fn strip_to_first_identifier(s: &str) -> String {
-    let mut out = String::new();
-    for ch in s.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '_' {
-            if ch.is_numeric() && out.is_empty() {
-                continue;
-            }
-            out.push(ch);
-        } else if !out.is_empty() {
-            return out;
+    let mut first = None;
+    parse_words(s, |word| {
+        if first.is_none() {
+            first = Some(word.to_string());
         }
-    }
-    out
+    });
+    first.unwrap_or_default()
 }
 
 // diff_word_statistics takes in a diff string and modifies
@@ -726,5 +667,28 @@ pub fn diff_word_statistics(word_stats: Arc<PapayaMap<String, u64>>, diff_conten
         } else if let Some(line) = line.strip_prefix('-') {
             sub_word_statistics(word_stats.clone(), line.to_string());
         }
+    }
+}
+
+/// Parse words from a string and apply the given function to each word.
+/// Words are ASCII alphanumeric sequences that cannot start with a digit.
+fn parse_words<F>(content: &str, mut f: F)
+where
+    F: FnMut(&str),
+{
+    let mut current_word = String::new();
+    for ch in content.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            if ch.is_numeric() && current_word.is_empty() {
+                continue;
+            }
+            current_word.push(ch);
+        } else if !current_word.is_empty() {
+            f(&current_word);
+            current_word.clear();
+        }
+    }
+    if !current_word.is_empty() {
+        f(&current_word);
     }
 }
