@@ -25,9 +25,10 @@ A Neovim plugin for code completion using llama.cpp, written in Rust.
 
 Requirements:
  - Cargo installed
- - Running llama.cpp server with:
-   - FIM endpoint at `http://127.0.0.1:8012/infill` (or configure custom endpoint)
-   - Chat completions endpoint at `http://127.0.0.1:8012/v1/chat/completions` (or configure custom endpoint)
+ - `llama-server` binary available on your `$PATH` (install via [llama.cpp](https://github.com/ggml-org/llama.cpp))
+ - A GGUF model file ready to use (see [Setting Up the Server](#setting-up-the-server) for details)
+
+**Auto-launch:** By default, LTTW will automatically start the llama.cpp server for you when Neovim opens. See [Auto-Launch](#auto-launch) for details. You can also run the server manually and LTTW will detect and use it.
 
 ### Using vim-plug
 
@@ -176,6 +177,8 @@ require('llama').setup({
 | `model_fim` | string | `""` | Model name when multiple models are loaded (optional, recommended: Qwen3 Coder 30B) |
 | `model_inst` | string | `""` | Instruction model name (optional, recommended: gpt-oss-120b) |
 | `api_key` | string | `""` | llama.cpp server API key (optional) |
+| `auto_launch` | boolean | `true` | Automatically launch llama.cpp server if not already running |
+| `auto_launch_command` | string | See [Auto-Launch](#auto-launch) | Shell command to run the llama.cpp server |
 
 #### Context Configuration
 
@@ -340,6 +343,125 @@ require('llama').setup({
   },
 })
 ```
+
+#### Disable Auto-Launch (Manual Server Management)
+
+```lua
+require('llama').setup({
+  -- Disable automatic server launching
+  auto_launch = false,
+})
+```
+
+### Auto-Launch
+
+By default, LTTW will automatically launch the llama.cpp server when Neovim starts up if one isn't already running on the configured port. This eliminates the need to manually start and manage the server process.
+
+#### How It Works
+
+1. When the plugin initializes, it checks if a server is already responding on the port specified by `endpoint_fim` (default: `8012`)
+2. If the server is already running, LTTW uses it as-is
+3. If no server is detected and `auto_launch` is `true`, LTTW runs the `auto_launch_command` to start the server
+4. The plugin waits 500ms for the server to start, then verifies it's responding
+
+#### Setting Up the Server
+
+The default launch command assumes:
+- `llama-server` is available on your `$PATH`
+- You have model files in `~/models/`
+- You want to offload all layers to the GPU (`-ngl 99`)
+
+**Install llama.cpp:**
+
+```bash
+# Clone and build llama.cpp
+git clone https://github.com/ggml-org/llama.cpp
+cd llama.cpp
+cmake -B build
+cmake --build build --config Release -j
+# Optionally add to PATH
+export PATH="$PATH:$(pwd)/build/bin"
+```
+
+**Download a model:**
+
+```bash
+# Example: Download Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf
+# You can find models on HuggingFace or other sources
+# Place model files in ~/models/ (or update the command below)
+mkdir -p ~/models
+# Download a model file (example URL - replace with your preferred model)
+# wget -O ~/models/qwen2.5-coder-1.5b.Q4_K_M.gguf \
+#   https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+```
+
+#### Default Command Explained
+
+```bash
+nohup llama-server \
+  --models-dir ~/models \
+  --port 8012 \
+  -ngl 99 \
+  -dt 0.1 \
+  --ubatch-size 1024 \
+  --batch-size 512 \
+  --ctx-size 0 \
+  --cache-reuse 256 \
+  > /dev/null 2>&1 &
+```
+
+| Flag | Meaning |
+|------|---------|
+| `nohup` | Prevents the server from being killed when Neovim closes |
+| `llama-server` | The llama.cpp server binary |
+| `--models-dir ~/models` | Directory containing your GGUF model files |
+| `--port 8012` | Port for the HTTP API (must match `endpoint_fim`) |
+| `-ngl 99` | Number of GPU layers to offload (99 = offload all layers) |
+| `-dt 0.1` | Default temperature for completions (0 = deterministic) |
+| `--ubatch-size 1024` | Unified batch size for processing |
+| `--batch-size 512` | Prompt processing batch size |
+| `--ctx-size 0` | Use model's native context size |
+| `--cache-reuse 256` | KV cache reuse length (reduces redundant computation) |
+| `> /dev/null 2>&1 &` | Redirect output and run in background |
+
+#### Customizing the Launch Command
+
+If your setup differs, customize the command to match your environment:
+
+```lua
+require('llama').setup({
+  -- Custom model path
+  auto_launch_command = [[
+    nohup llama-server \
+      --model ~/models/my-model.gguf \
+      --port 8012 \
+      -ngl 35 \
+      -dt 0.1 \
+      --ubatch-size 1024 \
+      --batch-size 512 \
+      --ctx-size 4096 \
+      --cache-reuse 256 \
+      > /dev/null 2>&1 &
+  ]],
+})
+```
+
+**Tips for customization:**
+- Use `--model` instead of `--models-dir` if you have a single model file
+- Adjust `-ngl` based on your GPU VRAM (check with `nvidia-smi`)
+- Increase `--ctx-size` for larger context windows if your model supports it
+- Reduce `--batch-size` or `--ubatch-size` if you run out of GPU memory
+
+#### Using a Pre-existing Server
+
+If you already have a llama.cpp server running (e.g., from a terminal session or another tool), LTTW will detect it automatically. No configuration needed.
+
+To verify LTTW sees your server, check the Neovim log:
+```bash
+tail -f ~/.local/state/nvim/lttw.log
+```
+
+Look for: `"llama.cpp server is already running"` in the logs.
 
 ## Alternatives Local Code Completion
 
