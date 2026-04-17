@@ -87,6 +87,14 @@ pub struct LttwConfig {
     /// A word found in the local scope is treated as if it occurred this many times globally.
     pub lsp_local_occurrence_weight: u64,
 
+    /// Number of recent diff hunks to keep for LSP completion weighting.
+    /// When new diffs are added, the oldest diff is evicted if the list exceeds this length.
+    pub lsp_diff_history_length: u32,
+
+    /// Multiplier applied to word occurrences from recent diff additions (+ lines).
+    /// Similar to lsp_local_occurrence_weight but for the diff history.
+    pub lsp_diff_occurrence_weight: u64,
+
     //-------------------------------------------
     // INSTRUCTION
     pub instr_endpoint: String,
@@ -192,6 +200,8 @@ impl Default for LttwConfig {
             n_prefix: 256,
             n_suffix: 64,
             lsp_local_occurrence_weight: 10,
+            lsp_diff_history_length: 7,
+            lsp_diff_occurrence_weight: 10,
 
             default_fim_config: FimModelConfig::default(),
             fast_fim_config: FimModelConfigOverrides::default(),
@@ -588,6 +598,12 @@ impl LttwConfig {
         }
         if let Some(v) = get_i64("lsp_local_occurrence_weight") {
             config.lsp_local_occurrence_weight = v as u64;
+        }
+        if let Some(v) = get_i64("lsp_diff_history_length") {
+            config.lsp_diff_history_length = v as u32;
+        }
+        if let Some(v) = get_i64("lsp_diff_occurrence_weight") {
+            config.lsp_diff_occurrence_weight = v as u64;
         }
 
         // ------------------

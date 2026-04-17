@@ -8,6 +8,7 @@ use {
     papaya::HashMap as PapayaMap,
     parking_lot::{RwLock, RwLockReadGuard},
     std::{
+        collections::VecDeque,
         sync::{
             atomic::{AtomicBool, AtomicI64, AtomicU64},
             Arc, OnceLock,
@@ -93,13 +94,22 @@ pub struct PluginState {
     // keep statistics on all the words for ordering all LSP completions
     word_statistics: Arc<PapayaMap<String, u64>>,
 
-    /// Local word occurrence statistics around the cursor position.
+   /// Local word occurrence statistics around the cursor position.
     /// Recalculated asynchronously when the cursor Y position changes.
     local_word_statistics: Arc<PapayaMap<String, u64>>,
 
     /// The Y position (line number) for which local_word_statistics was last calculated.
     /// Used to detect when recalculation is needed on cursor move.
     local_word_stats_y: Arc<RwLock<Option<usize>>>,
+
+    /// Word occurrence statistics from recent diff additions (+ lines).
+    /// Evicted when the list exceeds lsp_diff_history_length.
+    /// Used for LSP completion weighting.
+    recent_diff_word_statistics: Arc<PapayaMap<String, u64>>,
+
+    /// Recent diff chunks (only + lines) for LSP completion weighting.
+    /// When new diffs are added, oldest chunks are evicted if the list exceeds lsp_diff_history_length.
+    recent_diff_chunks: Arc<RwLock<VecDeque<Vec<String>>>>,
 
     // FIM completion channel for async worker communication
     pub fim_completion_tx: Arc<RwLock<Option<mpsc::Sender<DisplayMessage>>>>,
@@ -201,6 +211,8 @@ impl PluginState {
             word_statistics: Arc::new(PapayaMap::new()),
             local_word_statistics: Arc::new(PapayaMap::new()),
             local_word_stats_y: Arc::new(RwLock::new(None)),
+            recent_diff_word_statistics: Arc::new(PapayaMap::new()),
+            recent_diff_chunks: Arc::new(RwLock::new(VecDeque::new())),
             // Initialize completion channel and runtime (will be set up later)
             fim_completion_tx: Arc::new(RwLock::new(None)),
             pending_display: Arc::new(RwLock::new(Vec::new())),
@@ -332,6 +344,52 @@ impl PluginState {
         });
     }
 
+    /// Add a new diff chunk to the recent diff list, evicting old chunks if necessary,
+    /// and rebuild the recent_diff_word_statistics map from the current list.
+    /// This is called synchronously (not async) to ensure the recent diff stats
+    /// are updated before LSP completions are retrieved.
+    #[tracing::instrument]
+    pub fn add_recent_diff_word_statistics(&self, diff_content: Vec<String>) {
+        let config = self.config.read();
+        let max_chunks = config.lsp_diff_history_length as usize;
+
+        // Add the new diff chunk to the recent diff list
+        {
+            let mut chunks = self.recent_diff_chunks.write();
+            chunks.push_back(diff_content);
+            // Evict oldest chunks if list exceeds max
+            while chunks.len() > max_chunks {
+                chunks.pop_front();
+            }
+        }
+
+        // Rebuild the recent_diff_word_statistics map from the current list
+        let stats = self.recent_diff_word_statistics.pin();
+        stats.clear();
+        let chunks = self.recent_diff_chunks.read();
+        for chunk in chunks.iter() {
+            for line in chunk {
+                if let Some(line) = line.strip_prefix('+') {
+                    let mut current_word = String::new();
+                    for ch in line.chars() {
+                        if ch.is_ascii_alphanumeric() || ch == '_' {
+                            if ch.is_numeric() && current_word.is_empty() {
+                                continue;
+                            }
+                            current_word.push(ch);
+                        } else if !current_word.is_empty() {
+                            let _ = *stats.update_or_insert(current_word.clone(), |v| v + 1, 0);
+                            current_word.clear();
+                        }
+                    }
+                    if !current_word.is_empty() {
+                        let _ = *stats.update_or_insert(current_word.clone(), |v| v + 1, 0);
+                    }
+                }
+            }
+        }
+    }
+
     /// set the file contents bypassing calculating word statistics
     #[tracing::instrument]
     pub fn set_file_contents_bypass_word_stats(&self, filename: String, new_content: String) {
@@ -359,13 +417,19 @@ impl PluginState {
             .unwrap_or(0u64)
     }
 
-    /// Get the combined word statistic usage, factoring in both local (around-cursor)
-    /// and global occurrences. Local occurrences are weighted by the configured
-    /// \x60lsp_local_occurrence_weight\x60 multiplier.
+  /// Get the combined word statistic usage, factoring in local (around-cursor),
+    /// recent diff additions, and global occurrences. Local and diff occurrences
+    /// are weighted by their respective configured multipliers.
     #[tracing::instrument]
     pub fn get_combined_word_statistic_usage(&self, word: &str) -> u64 {
         let local = self
             .local_word_statistics
+            .pin()
+            .get(word)
+            .copied()
+            .unwrap_or(0u64);
+        let diff = self
+            .recent_diff_word_statistics
             .pin()
             .get(word)
             .copied()
@@ -376,19 +440,20 @@ impl PluginState {
             .get(word)
             .copied()
             .unwrap_or(0u64);
-        let weight = {
-            let config = self.config.read();
-            config.lsp_local_occurrence_weight
-        };
-        local * weight + global
+        let config = self.config.read();
+        let local_weight = config.lsp_local_occurrence_weight;
+        let diff_weight = config.lsp_diff_occurrence_weight;
+        local * local_weight + diff * diff_weight + global
     }
 
-    /// Get combined statistics for a batch of words, returning (word, local_count, global_count, combined).
-    /// Local occurrences are weighted by the configured \x60lsp_local_occurrence_weight\x60.
+    /// Get combined statistics for a batch of words, returning (word, local_count, diff_count, global_count, combined).
+    /// Local and diff occurrences are weighted by their respective configured multipliers.
     /// This is the common backend used by both `retrieve_lsp_completions` and `debug_word_statistics`.
     #[tracing::instrument]
-    pub fn get_word_statistics_batch(&self, words: &[String]) -> Vec<(String, u64, u64, u64)> {
-        let weight = self.config.read().lsp_local_occurrence_weight;
+    pub fn get_word_statistics_batch(&self, words: &[String]) -> Vec<(String, u64, u64, u64, u64)> {
+        let config = self.config.read();
+        let local_weight = config.lsp_local_occurrence_weight;
+        let diff_weight = config.lsp_diff_occurrence_weight;
         words
             .iter()
             .map(|word| {
@@ -398,9 +463,15 @@ impl PluginState {
                     .get(word)
                     .copied()
                     .unwrap_or(0);
+                let diff = self
+                    .recent_diff_word_statistics
+                    .pin()
+                    .get(word)
+                    .copied()
+                    .unwrap_or(0);
                 let global = self.word_statistics.pin().get(word).copied().unwrap_or(0);
-                let combined = local * weight + global;
-                (word.clone(), local, global, combined)
+                let combined = local * local_weight + diff * diff_weight + global;
+                (word.clone(), local, diff, global, combined)
             })
             .collect()
     }
@@ -536,10 +607,10 @@ impl PluginState {
             _ => all_words.into_iter().collect(),
         };
 
-        // Batch lookup: get (word, local, global, combined) for all words
+  // Batch lookup: get (word, local, diff, global, combined) for all words
         let stats = self.get_word_statistics_batch(&words);
 
-        // Format as: word | local | global | combined
+        // Format as: word | local | diff | global | combined
         let mut lines: Vec<String> = Vec::new();
         if let Some(p) = prefix {
             if p.is_empty() {
@@ -553,14 +624,14 @@ impl PluginState {
             }
         }
         lines.push(format!(
-            "{:<30} {:>8} {:>8} {:>10}",
-            "WORD", "LOCAL", "GLOBAL", "COMBINED"
+            "{:<30} {:>8} {:>8} {:>8} {:>10}",
+            "WORD", "LOCAL", "DIFF", "GLOBAL", "COMBINED"
         ));
-        lines.push("-".repeat(60));
-        for (word, local, global, combined) in &stats {
+        lines.push("-".repeat(66));
+        for (word, local, diff, global, combined) in &stats {
             lines.push(format!(
-                "{:<30} {:>8} {:>8} {:>10}",
-                word, local, global, combined
+                "{:<30} {:>8} {:>8} {:>8} {:>10}",
+                word, local, diff, global, combined
             ));
         }
         let output = lines.join("\n");
@@ -568,7 +639,7 @@ impl PluginState {
             info!(
                 "word statistics ({} unique words, {} total entries)",
                 stats.len(),
-                stats.iter().map(|(_, l, g, _)| l + g).sum::<u64>()
+                stats.iter().map(|(_, l, d, g, _)| l + d + g).sum::<u64>()
             );
         }
         output

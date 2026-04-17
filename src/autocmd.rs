@@ -518,7 +518,9 @@ fn on_buf_write_post() -> LttwResult<()> {
 
                 // process word statistics for diff chunks
                 for c in diff_chunks {
-                    state.adjust_word_statistics_for_diff(c.content);
+                    state.adjust_word_statistics_for_diff(c.content.clone());
+                    // Also add + lines to recent diff stats for LSP completion weighting
+                    state.add_recent_diff_word_statistics(c.content);
                 }
             }
 
