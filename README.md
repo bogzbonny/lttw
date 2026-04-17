@@ -51,6 +51,14 @@ lua require('llama').setup()
 ```
 
 
+## Models
+
+https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
+https://huggingface.co/JetBrains/Mellum-4b-base
+https://huggingface.co/Etherll/Mellum-4b-sft-rust-GGUF
+https://huggingface.co/mradermacher/Mellum-4b-sft-rust-i1-GGUF
+
+
 ## LSP Completion Overrides
 
 The `lsp_overrides` configuration option allows you to transform LSP completion text

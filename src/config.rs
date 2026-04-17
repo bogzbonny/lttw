@@ -130,7 +130,7 @@ impl Default for LttwConfig {
             show_info: 2,
             auto_fim: true,
             max_cache_keys: 32, // can be small due to recaching
-            ring_update_ms: 1000,
+            ring_update_ms: 500,
             keymap_fim_accept_line: "<Tab>".to_string(),
             keymap_fim_accept_full: "<S-Tab>".to_string(),
             keymap_fim_force_retrigger: "<C-l>".to_string(),
