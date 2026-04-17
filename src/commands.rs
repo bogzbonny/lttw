@@ -1,9 +1,10 @@
 use {
     crate::{
-        LttwResult, autocmd,
+        autocmd,
         autocmd::clear_filetype_autocommand,
-        fim_hide, get_state, instruction, keymap,
+        fim_hide, get_state, instruction, keymap, server_launch,
         utils::{get_buf_line, get_current_filetype, get_pos},
+        LttwResult,
     },
     nvim_oxi::api::{create_user_command, del_autocmd},
     std::sync::atomic::Ordering,
@@ -191,6 +192,24 @@ pub fn register_commands() -> LttwResult<()> {
         &Default::default(),
     );
 
+    let _ = create_user_command(
+        "LttwServerRestart",
+        |_| -> LttwResult<()> {
+            let state = get_state();
+            let config = state.config.read();
+            if !config.auto_launch {
+                nvim_oxi::api::command(
+                    "echo 'LttwServerRestart: auto_launch is disabled, cannot restart server'",
+                )?;
+                return Ok(());
+            }
+            server_launch::restart_server(&config);
+            nvim_oxi::api::command("echo 'llama.cpp server restarting...'")?;
+            Ok(())
+        },
+        &Default::default(),
+    );
+
     Ok(())
 }
 
@@ -253,7 +272,7 @@ pub fn enable_plugin() -> LttwResult<()> {
     Ok(())
 }
 
-/// Disable the plugin - removes keymaps, clears autocmds, and hides hints
+/// Disable the plugin - removes keymaps, clears autocmds, hides hints, and stops the server
 #[tracing::instrument]
 pub fn disable_plugin() -> LttwResult<()> {
     let state = get_state();
@@ -277,6 +296,8 @@ pub fn disable_plugin() -> LttwResult<()> {
             del_autocmd(id)?
         }
     }
+
+    // Never kill the server here — only the restart command should kill it.
 
     // Mark as disabled
     state.enabled.store(false, Ordering::SeqCst);

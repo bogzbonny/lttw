@@ -79,7 +79,7 @@ fn setup(c: nvim_oxi::Object) {
     // Check if llama.cpp server is running and optionally auto-launch it
     let state = get_state();
     let config = state.config.read();
-    let _ = server_launch::ensure_server_running(&config);
+    server_launch::ensure_server_running(&config);
     drop(config);
     let (tracing_enabled, log_file, tracing_level, disable_cleanup) = {
         let config = state.config.read();

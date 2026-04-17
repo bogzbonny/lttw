@@ -118,6 +118,10 @@ pub struct PluginState {
     pub pending_display: Arc<RwLock<Vec<DisplayMessage>>>,
     // Persistent tokio runtime for async operations
     pub tokio_runtime: Arc<RwLock<Runtime>>,
+
+    /// The llama.cpp server process handle, if auto-launched and currently running.
+    /// Used for restart/stop functionality.
+    pub server_process: Arc<RwLock<Option<std::process::Child>>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -217,6 +221,7 @@ impl PluginState {
             fim_completion_tx: Arc::new(RwLock::new(None)),
             pending_display: Arc::new(RwLock::new(Vec::new())),
             tokio_runtime: Arc::new(RwLock::new(runtime)),
+            server_process: Arc::new(RwLock::new(None)),
         }
     }
     #[tracing::instrument]

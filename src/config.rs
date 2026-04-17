@@ -123,8 +123,8 @@ pub struct LttwConfig {
 impl Default for LttwConfig {
     fn default() -> Self {
         Self {
-            debounce_min_ms: 20,
-            debounce_max_ms: 200,
+            debounce_min_ms: 100,
+            debounce_max_ms: 300,
             max_concurrent_fim_requests: 3, // good to be larger than 1 to allow for speculative FIM
             single_line_prediction_within_line: true,
             show_info: 2,
