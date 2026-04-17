@@ -10,13 +10,6 @@
        filetype. CurrentBufferInfo now has a `filetype` field populated via
        get_current_filetype(). lsp_completion.rs looks up overrides by buffer filetype.
        Backwards compat: flat arrays fall back to "rust" key. 
-
-^^^^^^^^^ DONE
-
-
-------------------------
-LSP Completions improvements
-
 10. More sophisticated localized statistics for lsp completion priority
      - beyond doing the global statistics, we could also do some quick stats on
        the nearby environment to wherever the completion is taking place. Nearby
@@ -43,10 +36,28 @@ it was found 10 times in comparison to the global occurance).
  - use the same scope as the llm (see config params n_prefix, n_suffix)
  - 10x weight as compared to global occurance, add a new config param for this
 
+^^^^^^^^^ DONE
+
+
+------------------------
+LSP Completions improvements
+
 10. Diff history as a part of the completion priority (of the most recent diffs,
     look at all the additions, those have more priority)
      - let's say look at the last 7 diffs (param)
      - 10x weight as compared to global (param)
+similar to the local occurrence extra weighting for lsp completions, add an
+additional map 'recent_diff_occurrence' which takes from ADDITIONS (+) portion of
+the most recent diffs and includes these as weighting when determining which lsp
+completion has the greatest occurrence. We will need to keep a special list of
+the recent diffs for lsp completions now (look at how/when the diffs are added to the
+ring buffer) - add this to the PluginState. There should be two new config
+params added as a part of this feature: 
+  - number of recent diffs: lsp_diff_history_length (default 7) 
+    - whenever new diffs are added to the lsp diff list, evict the oldest diff
+      if the list length is greater than this value 
+  - weighting: lsp_diff_occurrence_weight (default 10) 
+    - similar to lsp_local_occurrence_weight but for the diff
 
 30. Option to allow for case-insenstive LSP so If I typed 'op' it could still match with
     Option<...>

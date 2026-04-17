@@ -361,7 +361,7 @@ impl PluginState {
 
     /// Get the combined word statistic usage, factoring in both local (around-cursor)
     /// and global occurrences. Local occurrences are weighted by the configured
-    /// `local_occurrence_weight` multiplier.
+    /// \x60lsp_local_occurrence_weight\x60 multiplier.
     #[tracing::instrument]
     pub fn get_combined_word_statistic_usage(&self, word: &str) -> u64 {
         let local = self
@@ -378,17 +378,17 @@ impl PluginState {
             .unwrap_or(0u64);
         let weight = {
             let config = self.config.read();
-            config.local_occurrence_weight
+            config.lsp_local_occurrence_weight
         };
         local * weight + global
     }
 
     /// Get combined statistics for a batch of words, returning (word, local_count, global_count, combined).
-    /// Local occurrences are weighted by the configured `local_occurrence_weight`.
+    /// Local occurrences are weighted by the configured \x60lsp_local_occurrence_weight\x60.
     /// This is the common backend used by both `retrieve_lsp_completions` and `debug_word_statistics`.
     #[tracing::instrument]
     pub fn get_word_statistics_batch(&self, words: &[String]) -> Vec<(String, u64, u64, u64)> {
-        let weight = self.config.read().local_occurrence_weight;
+        let weight = self.config.read().lsp_local_occurrence_weight;
         words
             .iter()
             .map(|word| {
