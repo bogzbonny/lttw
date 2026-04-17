@@ -4,8 +4,15 @@
 ------------------------
 GENERAL
 
-10. option to automatically launch llama.cpp with nohup rather than depending on
-    a server already being running. 
+10. 
+config option to automatically launch llama.cpp rather than depending on
+a server already being running. Always check if the llama server is already
+running before launching it. There should be two config options, auto_launch
+(bool default true) and also auto_launch_command with default: 
+
+nohup llama-server --models-dir ~/models --port 8012 -ngl 99 -dt 0.1 --ubatch-size 1024 --batch-size 512 --ctx-size 0 --cache-reuse 256 > /dev/null 2>&1 &
+
+
 
 20. README gif of homer with the bird
      - link it to https://www.youtube.com/watch?v=R_rF4kcqLkI
