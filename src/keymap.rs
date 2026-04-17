@@ -142,19 +142,19 @@ pub fn remove_keymaps() -> LttwResult<()> {
 
     // Unmap FIM keymaps
     if !config.keymap_fim_accept_line.is_empty() {
-        let _ = del_keymap(Mode::Normal, &config.keymap_fim_accept_line);
+        let _ = del_keymap(Mode::Insert, &config.keymap_fim_accept_line);
     }
     if !config.keymap_fim_accept_full.is_empty() {
-        let _ = del_keymap(Mode::Normal, &config.keymap_fim_accept_full);
+        let _ = del_keymap(Mode::Insert, &config.keymap_fim_accept_full);
     }
     if !config.keymap_fim_force_retrigger.is_empty() {
-        let _ = del_keymap(Mode::Normal, &config.keymap_fim_force_retrigger);
+        let _ = del_keymap(Mode::Insert, &config.keymap_fim_force_retrigger);
     }
     if !config.keymap_fim_cycle_fim_next.is_empty() {
-        let _ = del_keymap(Mode::Normal, &config.keymap_fim_cycle_fim_next);
+        let _ = del_keymap(Mode::Insert, &config.keymap_fim_cycle_fim_next);
     }
     if !config.keymap_fim_cycle_fim_prev.is_empty() {
-        let _ = del_keymap(Mode::Normal, &config.keymap_fim_cycle_fim_prev);
+        let _ = del_keymap(Mode::Insert, &config.keymap_fim_cycle_fim_prev);
     }
 
     Ok(())

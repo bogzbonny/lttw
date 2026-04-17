@@ -1,6 +1,5 @@
-^^^^^^^^^ DONE
-
 10. actually use keymaps in config
+^^^^^^^^^ DONE
 
 ------------------------
 LSP Completions improvements
