@@ -252,8 +252,11 @@ fn on_move() -> LttwResult<()> {
     // Asynchronously recalculate local word statistics if the Y position has changed.
     // This runs on a separate tokio worker thread so LSP completions are never blocked.
     let should_recalc = {
-        let current_y = state.get_local_word_stats_y();
-        current_y != Some(pos_y)
+        if let Some((last_buf_id, last_y)) = state.local_word_stats_buf_id_pos_y() {
+            last_y != pos_y || last_buf_id != buf_id
+        } else {
+            true
+        }
     };
 
     if should_recalc {
@@ -264,7 +267,7 @@ fn on_move() -> LttwResult<()> {
             // Get buffer lines on the main thread (can't call nvim API from tokio worker)
             let lines = get_buf_lines(..);
             rt.read().spawn(async move {
-                state_.recalculate_local_word_statistics(&lines, pos_x, pos_y);
+                state_.recalculate_local_word_statistics(&lines,  pos_y, buf_id);
             });
         }
     }

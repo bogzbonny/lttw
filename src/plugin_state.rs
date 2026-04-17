@@ -100,7 +100,7 @@ pub struct PluginState {
 
     /// The Y position (line number) for which local_word_statistics was last calculated.
     /// Used to detect when recalculation is needed on cursor move.
-    local_word_stats_y: Arc<RwLock<Option<usize>>>,
+    local_word_stats_buf_id_pos_y: Arc<RwLock<Option<(u64, usize)>>>,
 
     /// Word occurrence statistics from recent diff additions (+ lines).
     /// Evicted when the list exceeds lsp_diff_history_length.
@@ -210,7 +210,7 @@ impl PluginState {
             file_contents: Arc::new(RwLock::new(HashMap::new())),
             word_statistics: Arc::new(PapayaMap::new()),
             local_word_statistics: Arc::new(PapayaMap::new()),
-            local_word_stats_y: Arc::new(RwLock::new(None)),
+            local_word_stats_buf_id_pos_y: Arc::new(RwLock::new(None)),
             recent_diff_word_statistics: Arc::new(PapayaMap::new()),
             recent_diff_chunks: Arc::new(RwLock::new(VecDeque::new())),
             // Initialize completion channel and runtime (will be set up later)
@@ -309,8 +309,8 @@ impl PluginState {
 
     /// Get the Y position for which local word statistics were last calculated
     #[tracing::instrument]
-    pub fn get_local_word_stats_y(&self) -> Option<usize> {
-        *self.local_word_stats_y.read()
+    pub fn local_word_stats_buf_id_pos_y(&self) -> Option<(u64, usize)> {
+        *self.local_word_stats_buf_id_pos_y.read()
     }
 
     #[tracing::instrument]
@@ -471,7 +471,7 @@ impl PluginState {
     /// in the prefix scope (n_prefix lines before cursor), the current line up to cursor,
     /// and the suffix scope (current line after cursor + n_suffix lines after).
     #[tracing::instrument(skip(lines))]
-    pub fn recalculate_local_word_statistics(&self, lines: &[String], pos_x: usize, pos_y: usize) {
+    pub fn recalculate_local_word_statistics(&self, lines: &[String], pos_y: usize, buf_id: u64) {
         let (n_prefix, n_suffix) = {
             let config = self.config.read();
             (config.n_prefix as usize, config.n_suffix as usize)
@@ -491,23 +491,10 @@ impl PluginState {
             Vec::new()
         };
 
-        // Current line split at cursor
-        let line_cur = lines.get(pos_y).cloned().unwrap_or_default();
-        let line_before_cursor = if pos_x <= line_cur.len() {
-            line_cur[..pos_x].to_string()
-        } else {
-            line_cur.clone()
-        };
-        let line_after_cursor = if pos_x <= line_cur.len() {
-            line_cur[pos_x..].to_string()
-        } else {
-            String::new()
-        };
-
         // Determine the suffix scope: n_suffix lines after current line
-        let suffix_end = std::cmp::min(max_y, pos_y + 1 + n_suffix);
-        let suffix_lines: Vec<&String> = if pos_y + 1 < suffix_end {
-            lines[pos_y + 1..suffix_end].iter().collect()
+        let suffix_end = std::cmp::min(max_y, pos_y + n_suffix);
+        let suffix_lines: Vec<&String> = if pos_y < suffix_end {
+            lines[pos_y..suffix_end].iter().collect()
         } else {
             Vec::new()
         };
@@ -518,10 +505,6 @@ impl PluginState {
             local_text.push_str(line);
             local_text.push('\n');
         }
-        local_text.push_str(&line_before_cursor);
-        local_text.push('\n');
-        local_text.push_str(&line_after_cursor);
-        local_text.push('\n');
         for line in &suffix_lines {
             local_text.push_str(line);
             local_text.push('\n');
@@ -536,7 +519,7 @@ impl PluginState {
         });
 
         // Record the Y position for this calculation
-        *self.local_word_stats_y.write() = Some(pos_y);
+        *self.local_word_stats_buf_id_pos_y.write() = Some((buf_id, pos_y));
 
         info!(
             "recalculated local word statistics for y={pos_y}, found {} unique words",
