@@ -5,7 +5,7 @@
 
 use {
     crate::{
-        context::LocalContext, fim::FimModel, utils::hash_input, FimResponse, FimResponseWithInfo,
+        FimResponse, FimResponseWithInfo, context::LocalContext, fim::FimModel, utils::hash_input,
     },
     ahash::{HashMap, HashMapExt, HashSet},
     serde::{Deserialize, Serialize},
@@ -174,7 +174,7 @@ impl Cache {
         //
         let mut char_indices = pm.char_indices().collect::<Vec<_>>();
         char_indices.push((pm.len(), '\0')); // needed for simplifying the loop logic, can be any char,
-                                             // its never used
+        // its never used
         let char_len = char_indices.len() - 1;
 
         let max_iters = 128; // TODO parameterize this

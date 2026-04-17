@@ -8,16 +8,16 @@ pub use {info_stats::FimTimings, state::FimState};
 
 use {
     crate::{
+        DisplayMessage, FimCompletionMessage, FimResponse, FimResponseWithInfo, LttwResult,
         cache::compute_hashes,
-        context::get_local_context,
         context::LocalContext,
+        context::get_local_context,
         filetype::should_be_enabled,
         fim_hide, get_buf_lines, get_current_buffer_id, get_pos, in_insert_mode,
-        plugin_state::{get_state, PluginState},
+        plugin_state::{PluginState, get_state},
         utils::{self, filter_tail, get_buf_filename, is_in_comment},
-        DisplayMessage, FimCompletionMessage, FimResponse, FimResponseWithInfo, LttwResult,
     },
-    accept::{fim_accept_inner, FimAcceptType},
+    accept::{FimAcceptType, fim_accept_inner},
     std::sync::Arc,
     std::time::{Duration, Instant},
 };

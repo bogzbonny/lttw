@@ -1,9 +1,9 @@
 use {
     crate::{
+        Error, FimTimings, LttwResult, PluginState,
         context::LocalContext,
         fim::{FimLLM, FimModel},
         ring_buffer::ExtraContext,
-        Error, FimTimings, LttwResult, PluginState,
     },
     serde::{Deserialize, Serialize},
     std::hash::{Hash, Hasher},

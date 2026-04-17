@@ -3,14 +3,13 @@
 // This module provides various utility functions used throughout the plugin.
 
 use {
-    crate::{plugin_state::CurrentBufferInfo, LttwResult, LTTW_FIM_HIGHLIGHT},
+    crate::{LTTW_FIM_HIGHLIGHT, LttwResult, plugin_state::CurrentBufferInfo},
     ahash::AHasher,
     nvim_oxi::{
         api::{
-            self, get_option_value,
+            self, Buffer, Window, get_option_value,
             opts::{CreateAutocmdOpts, OptionOpts, SetExtmarkOpts, SetExtmarkOptsBuilder},
             types::ExtmarkVirtTextPosition,
-            Buffer, Window,
         },
         conversion::FromObject,
     },

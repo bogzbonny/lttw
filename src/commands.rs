@@ -1,10 +1,9 @@
 use {
     crate::{
-        autocmd,
+        LttwResult, autocmd,
         autocmd::clear_filetype_autocommand,
         fim_hide, get_state, instruction, keymap,
         utils::{get_buf_line, get_current_filetype, get_pos},
-        LttwResult,
     },
     nvim_oxi::api::{create_user_command, del_autocmd},
     std::sync::atomic::Ordering,
@@ -52,6 +51,11 @@ pub fn register_commands() -> LttwResult<()> {
                         error!(e);
                     }
                 }
+                "ClearFile" => {
+                    if let Err(e) = debug_clear_file() {
+                        error!(e);
+                    }
+                }
                 _ => {
                     if let Err(e) = nvim_oxi::api::command("echo 'LttwDebug: unknown subcommand'") {
                         error!(e);
@@ -64,7 +68,11 @@ pub fn register_commands() -> LttwResult<()> {
             .nargs(nvim_oxi::api::types::CommandNArgs::One)
             .complete(nvim_oxi::api::types::CommandComplete::CustomList(
                 nvim_oxi::Function::from_fn(|(_, _, _)| {
-                    vec!["LSPStatsAllWords".to_string(), "LSPStatsWords".to_string()]
+                    vec![
+                        "LSPStatsAllWords".to_string(),
+                        "LSPStatsWords".to_string(),
+                        "ClearFile".to_string(),
+                    ]
                 }),
             ))
             .build(),
@@ -105,29 +113,9 @@ pub fn register_commands() -> LttwResult<()> {
     );
 
     let _ = create_user_command(
-        "LttwDebugClear",
-        |_| -> LttwResult<()> {
-            //debug_clear()?; // TODO update
-            Ok(())
-        },
-        &Default::default(),
-    );
-
-    let _ = create_user_command(
         "LttwInstContinue",
         |_| -> LttwResult<()> {
             instruction::inst_continue()?;
-            Ok(())
-        },
-        &Default::default(),
-    );
-
-    // Debug commands
-
-    let _ = create_user_command(
-        "LttwDebugClear",
-        |_| -> LttwResult<()> {
-            //debug_clear()?; // TODO update
             Ok(())
         },
         &Default::default(),
@@ -403,5 +391,13 @@ fn debug_lsp_stats_words() -> LttwResult<()> {
     let prefix = get_current_ident_prefix();
     let output = state.debug_word_statistics_filtered(Some(&prefix));
     nvim_oxi::api::command(&format!("echo 'prefix: {}\n{}'", prefix, output))?;
+    Ok(())
+}
+
+/// Debug command: clear the lttw log file (ClearFile subcommand)
+fn debug_clear_file() -> LttwResult<()> {
+    // Truncate the log file created by tracing (log_to_file layer in log.rs)
+    std::fs::write("./lttw.log", "")?;
+    info!("Cleared lttw.log");
     Ok(())
 }

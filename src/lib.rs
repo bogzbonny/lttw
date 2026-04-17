@@ -36,7 +36,7 @@ use {
     fim::fim_try_hint,
     nvim_oxi::libuv::AsyncHandle,
     nvim_oxi::{Dictionary, Function},
-    plugin_state::{get_state, init_state, PluginState},
+    plugin_state::{PluginState, get_state, init_state},
     router::process_pending_display,
     std::time::Duration,
     tokio::sync::mpsc,

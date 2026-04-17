@@ -5,11 +5,11 @@
 // On each recalculation, it compares new vs old diff chunks and updates the ring buffer.
 
 use {
-    crate::{ring_buffer::Chunk, LttwResult},
+    crate::{LttwResult, ring_buffer::Chunk},
     gix_diff::blob::{
+        Algorithm, UnifiedDiff,
         intern::InternedInput,
         unified_diff::{ConsumeBinaryHunk, ContextSize},
-        Algorithm, UnifiedDiff,
     },
     std::time::Instant,
 };

@@ -9,11 +9,11 @@
 ///       currently happening.
 use {
     crate::{
-        config::DuelModelPrioritization, context::chunk_similarity, fim::FimLLM, get_state,
-        plugin_state::PluginState, router::RingBufferUpdated, utils::random_range, LttwResult,
+        LttwResult, config::DuelModelPrioritization, context::chunk_similarity, fim::FimLLM,
+        get_state, plugin_state::PluginState, router::RingBufferUpdated, utils::random_range,
     },
     std::collections::VecDeque,
-    std::sync::{atomic::Ordering, Arc},
+    std::sync::{Arc, atomic::Ordering},
     std::time::{Duration, Instant},
 };
 
@@ -486,10 +486,10 @@ pub struct ExtraContext {
 #[cfg(test)]
 mod tests {
     use crate::{
-        cache::{compute_hashes, Cache},
+        FimResponse,
+        cache::{Cache, compute_hashes},
         context::LocalContext,
         ring_buffer::RingBuffer,
-        FimResponse,
     };
 
     #[test]

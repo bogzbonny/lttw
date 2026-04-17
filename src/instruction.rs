@@ -5,10 +5,10 @@
 
 use {
     crate::{
+        Error, LttwResult,
         config::LttwConfig,
         get_buf_lines, get_pos, get_state,
         utils::{del_buf_extmark, get_current_buffer_id, set_buf_extmark, set_buf_lines},
-        Error, LttwResult,
     },
     nvim_oxi::Dictionary,
     serde::{Deserialize, Serialize},
@@ -288,9 +288,11 @@ mod tests {
 
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "system");
-        assert!(messages[0]
-            .content
-            .contains("You are a text-editing assistant"));
+        assert!(
+            messages[0]
+                .content
+                .contains("You are a text-editing assistant")
+        );
         assert_eq!(messages[1].role, "user");
         assert!(messages[1].content.contains("INSTRUCTION: make it shorter"));
     }

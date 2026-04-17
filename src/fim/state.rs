@@ -1,4 +1,4 @@
-use crate::{llama_client::FimTimingsData, FimResponseWithInfo};
+use crate::{FimResponseWithInfo, llama_client::FimTimingsData};
 
 #[derive(Debug, Clone, Default)]
 pub struct FimState {

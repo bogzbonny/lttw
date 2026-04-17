@@ -1,8 +1,7 @@
-// src/config.rs - Configuration handling for lttw
-//
-// This module handles the plugin configuration, translating the Vimscript
-// configuration into a strongly-typed Rust struct.
-
+/// src/config.rs - Configuration handling for lttw
+///
+/// This module handles the plugin configuration, translating the Vimscript
+/// configuration into a strongly-typed Rust struct.
 use {
     crate::fim::FimLLM,
     nvim_oxi::conversion::FromObject,
@@ -32,16 +31,11 @@ pub struct LttwConfig {
 
     // TODO actually use
     // Keymap configuration
-    pub keymap_fim_trigger: String,
-    pub keymap_fim_accept_full: String,
     pub keymap_fim_accept_line: String,
-    pub keymap_fim_accept_word: String,
-    pub keymap_debug_toggle: String,
-    pub keymap_inst_trigger: String,
-    pub keymap_inst_rerun: String,
-    pub keymap_inst_continue: String,
-    pub keymap_inst_accept: String,
-    pub keymap_inst_cancel: String,
+    pub keymap_fim_accept_full: String,
+    pub keymap_fim_force_retrigger: String,
+    pub keymap_fim_cycle_fim_next: String,
+    pub keymap_fim_cycle_fim_prev: String,
 
     // Diff tracking configuration
     pub diff_tracking_enabled: bool,
@@ -112,7 +106,6 @@ pub struct LttwConfig {
     pub n_prefix: u32, // number of prefix lines fed into the inline endpoint
     pub n_suffix: u32, // number of suffix lines fed into the inline endpoint
 
-
     //-------------------------------------------
     // PER MODEL CONFIG
     default_fim_config: FimModelConfig,
@@ -131,16 +124,11 @@ impl Default for LttwConfig {
             auto_fim: true,
             max_cache_keys: 32, // can be small due to recaching
             ring_update_ms: 1000,
-            keymap_fim_trigger: "<leader>llf".to_string(),
-            keymap_fim_accept_full: "<Tab>".to_string(),
-            keymap_fim_accept_line: "<S-Tab>".to_string(),
-            keymap_fim_accept_word: "<leader>ll]".to_string(),
-            keymap_debug_toggle: "<leader>lld".to_string(),
-            keymap_inst_trigger: "<leader>lli".to_string(),
-            keymap_inst_rerun: "<leader>llr".to_string(),
-            keymap_inst_continue: "<leader>llc".to_string(),
-            keymap_inst_accept: "<Tab>".to_string(),
-            keymap_inst_cancel: "<Esc>".to_string(),
+            keymap_fim_accept_line: "<Tab>".to_string(),
+            keymap_fim_accept_full: "<S-Tab>".to_string(),
+            keymap_fim_force_retrigger: "<C-l>".to_string(),
+            keymap_fim_cycle_fim_next: "<C-j>".to_string(),
+            keymap_fim_cycle_fim_prev: "<C-k>".to_string(),
             diff_tracking_enabled: true,
             no_fim_in_comments: true,
             llm_completions: true,
@@ -569,12 +557,23 @@ impl LttwConfig {
             let v = v.clamp(0, 2) as u8;
             config.show_info = v;
         }
-        if let Some(v) = get_string("keymap_fim_trigger") {
-            config.keymap_fim_trigger = v;
+
+        if let Some(v) = get_string("keymap_fim_accept_line") {
+            config.keymap_fim_accept_line = v;
         }
-        if let Some(v) = get_string("keymap_inst_trigger") {
-            config.keymap_inst_trigger = v;
+        if let Some(v) = get_string("keymap_fim_accept_full") {
+            config.keymap_fim_accept_full = v;
         }
+        if let Some(v) = get_string("keymap_fim_force_retrigger") {
+            config.keymap_fim_force_retrigger = v;
+        }
+        if let Some(v) = get_string("keymap_fim_cycle_fim_next") {
+            config.keymap_fim_cycle_fim_next = v;
+        }
+        if let Some(v) = get_string("keymap_fim_cycle_fim_prev") {
+            config.keymap_fim_cycle_fim_prev = v;
+        }
+
         if let Some(v) = get_i64("debounce_min_ms") {
             config.debounce_min_ms = v as u64;
         }
@@ -849,39 +848,50 @@ impl LttwConfig {
         };
 
         // Helper to get a BTreeMap of filetype -> string pairs from dictionary
-        let get_string_pairs_by_filetype = |key: &str| -> Option<BTreeMap<String, Vec<(String, String)>>> {
-            dict.get(key).and_then(|obj| {
-                nvim_oxi::Dictionary::from_object(obj.clone()).ok().map(|d| {
-                    let mut map = BTreeMap::new();
-                    for (filetype_key, filetype_val) in d.iter() {
-                        if let Ok(arr) = nvim_oxi::Array::from_object(filetype_val.clone()) {
-                            let pairs: Vec<(String, String)> = arr.into_iter()
-                                .filter_map(|item| {
-                                    nvim_oxi::Array::from_object(item).ok().and_then(|pair| {
-                                        if pair.len() >= 2 {
-                                            let first = nvim_oxi::String::try_from(pair[0].clone())
-                                                .ok()
-                                                .map(|s| s.to_string());
-                                            let second = nvim_oxi::String::try_from(pair[1].clone())
-                                                .ok()
-                                                .map(|s| s.to_string());
-                                            match (first, second) {
-                                                (Some(f), Some(s)) => Some((f, s)),
-                                                _ => None,
-                                            }
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                })
-                                .collect();
-                            map.insert(filetype_key.to_string(), pairs);
-                        }
-                    }
-                    map
+        let get_string_pairs_by_filetype =
+            |key: &str| -> Option<BTreeMap<String, Vec<(String, String)>>> {
+                dict.get(key).and_then(|obj| {
+                    nvim_oxi::Dictionary::from_object(obj.clone())
+                        .ok()
+                        .map(|d| {
+                            let mut map = BTreeMap::new();
+                            for (filetype_key, filetype_val) in d.iter() {
+                                if let Ok(arr) = nvim_oxi::Array::from_object(filetype_val.clone())
+                                {
+                                    let pairs: Vec<(String, String)> = arr
+                                        .into_iter()
+                                        .filter_map(|item| {
+                                            nvim_oxi::Array::from_object(item).ok().and_then(
+                                                |pair| {
+                                                    if pair.len() >= 2 {
+                                                        let first = nvim_oxi::String::try_from(
+                                                            pair[0].clone(),
+                                                        )
+                                                        .ok()
+                                                        .map(|s| s.to_string());
+                                                        let second = nvim_oxi::String::try_from(
+                                                            pair[1].clone(),
+                                                        )
+                                                        .ok()
+                                                        .map(|s| s.to_string());
+                                                        match (first, second) {
+                                                            (Some(f), Some(s)) => Some((f, s)),
+                                                            _ => None,
+                                                        }
+                                                    } else {
+                                                        None
+                                                    }
+                                                },
+                                            )
+                                        })
+                                        .collect();
+                                    map.insert(filetype_key.to_string(), pairs);
+                                }
+                            }
+                            map
+                        })
                 })
-            })
-        };
+            };
 
         // Try the new filetype-keyed format first, fall back to flat array for backwards compat
         if let Some(v) = get_string_pairs_by_filetype("lsp_overrides") {

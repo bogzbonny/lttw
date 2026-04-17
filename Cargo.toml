@@ -41,4 +41,5 @@ opentelemetry-otlp = { version = "0.31.0", features = [
 opentelemetry-stdout = { version = "0.31.0", features = ["trace", "metrics"] }
 tracing-appender = "0.2.4"
 papaya = "0.2.4"
+rayon = "1.12.0"
 

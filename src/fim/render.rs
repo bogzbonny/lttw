@@ -1,11 +1,11 @@
 use {
     super::info_stats::build_info_string,
     crate::{
+        FimResponseWithInfo, FimTimings, LTTW_FIM_HIGHLIGHT, LttwResult,
         fim::{FimLLM, FimModel},
         llama_client::FimTimingsData,
         plugin_state::PluginState,
         utils::{self, clear_buf_namespace_objects, set_buf_extmark, set_buf_extmark_top_right},
-        FimResponseWithInfo, FimTimings, LttwResult, LTTW_FIM_HIGHLIGHT,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition},
     std::sync::Arc,

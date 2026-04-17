@@ -1,6 +1,6 @@
 use {
     super::render::render_fim_suggestion,
-    crate::{plugin_state::get_state, LttwResult},
+    crate::{LttwResult, plugin_state::get_state},
 };
 
 /// Cycle to next completion

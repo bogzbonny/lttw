@@ -1,9 +1,9 @@
 ^^^^^^^^^ DONE
 
+10. actually use keymaps in config
 
 ------------------------
 LSP Completions improvements
-
 
 30. Option to allow for case-insenstive LSP so If I typed 'op' it could still match with
     Option<...>
@@ -80,8 +80,6 @@ local query_string = [[
        - probably want to have a config option for all the words which we don't
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
-
-10. actually use keymaps in config
 
 
 
@@ -196,3 +194,5 @@ could be removed so the llm would make a call for "clie"
  - new config params: 
     - backmatching_enabled (default false)
     - max_backmatch_characters (default 5)
+ - force recalculation should always stop backcalculating and do a normal
+   recalculation

@@ -1,7 +1,7 @@
 use {
     crate::{
-        cache, config, diagnostics::DiagnosticTracker, fim::FimLLM, fim::FimState,
-        instruction::InstructionRequestState, ring_buffer, DisplayMessage, Error, LttwResult,
+        DisplayMessage, Error, LttwResult, cache, config, diagnostics::DiagnosticTracker,
+        fim::FimLLM, fim::FimState, instruction::InstructionRequestState, ring_buffer,
     },
     ahash::{HashMap, HashMapExt},
     nvim_oxi::api::create_namespace,
@@ -10,14 +10,14 @@ use {
     std::{
         collections::VecDeque,
         sync::{
-            atomic::{AtomicBool, AtomicI64, AtomicU64},
             Arc, OnceLock,
+            atomic::{AtomicBool, AtomicI64, AtomicU64},
         },
         time::Instant,
     },
     tokio::{
         runtime::Runtime,
-        sync::{mpsc, Semaphore},
+        sync::{Semaphore, mpsc},
     },
 };
 

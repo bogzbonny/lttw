@@ -1,11 +1,11 @@
 use {
     super::render::trim_suggestion_and_suffix_on_curr_line,
     crate::{
+        LttwResult,
         fim::fim_try_hint_skip_debounce,
         fim_hide_inner,
         plugin_state::get_state,
         utils::{get_current_buffer_id, set_buf_lines, set_window_cursor},
-        LttwResult,
     },
 };
 

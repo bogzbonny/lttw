@@ -1,11 +1,11 @@
 use {
     crate::{
-        fim::{fim_try_hint, render::render_fim_suggestion, FimLLM},
+        FimResponse, FimResponseWithInfo, LttwResult, PluginState,
+        fim::{FimLLM, fim_try_hint, render::render_fim_suggestion},
         fim_hide,
         lsp_completion::retrieve_lsp_completions,
         plugin_state::get_state,
         utils::{self, get_buf_line, get_current_buffer_id, get_pos, in_insert_mode},
-        FimResponse, FimResponseWithInfo, LttwResult, PluginState,
     },
     std::sync::Arc,
 };

@@ -1,5 +1,6 @@
 use {
     crate::{
+        LttwResult,
         calculate_diff_between_contents,
         commands::{disable_plugin, enable_plugin},
         //diagnostics::handle_diagnostic_changed,
@@ -18,7 +19,6 @@ use {
         move_info_line_if_buf_shifted,
         ring_buffer::mode_change_maybe_start_processing_ring_updates,
         utils::{create_autocmd, del_autocmd},
-        LttwResult,
     },
     std::sync::atomic::Ordering,
     std::time::Instant,
@@ -230,7 +230,7 @@ pub fn setup_non_filetype_autocmds() -> LttwResult<()> {
     Ok(())
 }
 
-  #[tracing::instrument]
+#[tracing::instrument]
 fn on_move() -> LttwResult<()> {
     let state = get_state();
     *state.last_move_time.write() = Instant::now();
@@ -267,7 +267,7 @@ fn on_move() -> LttwResult<()> {
             // Get buffer lines on the main thread (can't call nvim API from tokio worker)
             let lines = get_buf_lines(..);
             rt.read().spawn(async move {
-                state_.recalculate_local_word_statistics(&lines,  pos_y, buf_id);
+                state_.recalculate_local_word_statistics(&lines, pos_y, buf_id);
             });
         }
     }
