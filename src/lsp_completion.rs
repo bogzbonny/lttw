@@ -203,7 +203,7 @@ pub fn retrieve_lsp_completions(state: &PluginState) -> LttwResult<Vec<DisplayMe
 
     // sort the completions from least common to most common
     // NOTE later FimCompletionMessages are considered higher priority
-    filtered_comps.sort_by(|a, b| a.1.cmp(&b.1));
+    filtered_comps.sort_by(|b, a| a.1.cmp(&b.1));
     let filtered_comps: Vec<_> = filtered_comps.into_iter().map(|x| x.0.into()).collect();
 
     // save in caches

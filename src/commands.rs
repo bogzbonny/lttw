@@ -369,19 +369,19 @@ fn get_current_ident_prefix() -> String {
     let line = get_buf_line(pos_y);
     let chars: Vec<char> = line.chars().collect();
 
-    // Scan backwards from pos_x, collect chars, then reverse
-    let prefix_chars: Vec<char> = (0..pos_x)
-        .filter_map(|i| {
-            let ch = chars[i];
-            if ch.is_ascii_alphanumeric() || ch == '_' {
-                Some(ch)
-            } else {
-                None
-            }
-        })
-        .collect();
+    // Scan backwards from pos_x to find the start of the identifier
+    let mut start = pos_x;
+    for i in (0..pos_x).rev() {
+        let ch = chars[i];
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            start = i;
+        } else {
+            break;
+        }
+    }
 
-    prefix_chars.into_iter().collect()
+    // Extract the prefix in correct order (left-to-right as in source)
+    chars[start..pos_x].iter().collect()
 }
 
 /// Debug command: show all word statistics (LSPStatsAllWords subcommand)

@@ -398,12 +398,7 @@ impl PluginState {
                     .get(word)
                     .copied()
                     .unwrap_or(0);
-                let global = self
-                    .word_statistics
-                    .pin()
-                    .get(word)
-                    .copied()
-                    .unwrap_or(0);
+                let global = self.word_statistics.pin().get(word).copied().unwrap_or(0);
                 let combined = local * weight + global;
                 (word.clone(), local, global, combined)
             })
@@ -523,7 +518,12 @@ impl PluginState {
             .iter()
             .map(|(k, _v)| k.clone())
             .collect();
-        for k in self.local_word_statistics.pin().iter().map(|(k, _v)| k.clone()) {
+        for k in self
+            .local_word_statistics
+            .pin()
+            .iter()
+            .map(|(k, _v)| k.clone())
+        {
             all_words.insert(k);
         }
 
@@ -546,7 +546,8 @@ impl PluginState {
                 lines.push("No ident prefix at cursor".to_string());
             } else {
                 lines.push(format!(
-                    "Word statistics matching prefix '{}':",
+                    "{} Word statistics matching prefix: {}:",
+                    words.len(),
                     p
                 ));
             }
@@ -557,7 +558,10 @@ impl PluginState {
         ));
         lines.push("-".repeat(60));
         for (word, local, global, combined) in &stats {
-            lines.push(format!("{:<30} {:>8} {:>8} {:>10}", word, local, global, combined));
+            lines.push(format!(
+                "{:<30} {:>8} {:>8} {:>10}",
+                word, local, global, combined
+            ));
         }
         let output = lines.join("\n");
         if prefix.is_none() {
