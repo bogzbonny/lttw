@@ -56,6 +56,13 @@ pub struct LttwConfig {
     pub tracing_log_file: bool,
     pub tracing_level: String,
 
+    // Server auto-launch configuration
+    /// Whether to automatically launch llama.cpp server if not already running.
+    pub auto_launch: bool,
+    /// Shell command used to launch the llama.cpp server.
+    /// Only used when `auto_launch` is true and server is not already running.
+    pub auto_launch_command: String,
+
     // cleanup of old virt text (used for debugging)
     // TODO eventually remove this
     pub disable_cleanup: bool,
@@ -175,6 +182,8 @@ impl Default for LttwConfig {
             tracing_enabled: false,
             tracing_log_file: false,
             tracing_level: "DEBUG".to_string(),
+            auto_launch: true,
+            auto_launch_command: "nohup llama-server --models-dir ~/models --port 8012 -ngl 99 -dt 0.1 --ubatch-size 1024 --batch-size 512 --ctx-size 0 --cache-reuse 256 > /dev/null 2>&1 &".to_string(),
             disable_cleanup: false,
             disabled_filetypes: Vec::new(),
             enabled_filetypes: Vec::new(),
@@ -768,6 +777,12 @@ impl LttwConfig {
         }
         if let Some(v) = get_string("tracing_level") {
             config.tracing_level = v;
+        }
+        if let Some(v) = get_bool("auto_launch") {
+            config.auto_launch = v;
+        }
+        if let Some(v) = get_string("auto_launch_command") {
+            config.auto_launch_command = v;
         }
 
         // Override array fields

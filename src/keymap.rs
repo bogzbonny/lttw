@@ -1,11 +1,12 @@
 use {
     crate::{
+        LttwResult,
         fim::{
-            accept::{fim_accept, FimAcceptType},
+            accept::{FimAcceptType, fim_accept},
             cycle::{fim_cycle_next, fim_cycle_prev},
             fim_try_hint_regenerate,
         },
-        get_state, LttwResult,
+        get_state,
     },
     nvim_oxi::api::{del_keymap, opts::SetKeymapOptsBuilder, set_keymap, types::Mode},
 };

@@ -7,10 +7,10 @@ use {
         {FimCompletionMessage, FimResponse, FimResponseWithInfo, LttwResult},
     },
     ahash::HashSet,
-    regex::Regex,
-    std::sync::Arc,
     parking_lot::RwLock,
     rayon::prelude::*,
+    regex::Regex,
+    std::sync::Arc,
 };
 
 /// Get LSP completions for the cursor position and log them
@@ -447,7 +447,15 @@ mod tests {
         let prefix = "Hello";
         let suffix = "";
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -460,7 +468,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "$0World", find("$0") returns 0, truncate(0) gives ""
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("".to_string())
         );
     }
@@ -473,7 +489,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "World$0", find("$0") returns 5, truncate(5) gives "World"
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -486,7 +510,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "${1:World}", find("${") returns 0, truncate(0) gives ""
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("".to_string())
         );
     }
@@ -499,8 +531,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "World${1:more}", find("${") returns 5, truncate(5) gives "World"
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[],  Arc::new(RwLock::new(None))),
-
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -513,8 +552,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "$1World", find("$1") returns 0, truncate(0) gives ""
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))),
-
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("".to_string())
         );
     }
@@ -527,8 +573,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "World$1", find("$1") returns 5, truncate(5) gives "World"
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[],  Arc::new(RwLock::new(None))),
-
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -541,8 +594,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "$2World", find("$2") returns 0, truncate(0) gives ""
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[],  Arc::new(RwLock::new(None))),
-
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("".to_string())
         );
     }
@@ -555,7 +615,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "World$2", find("$2") returns 5, truncate(5) gives "World"
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -568,7 +636,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "\nWorld", find('\n') returns 0, truncate(0) gives ""
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[],  Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("".to_string())
         );
     }
@@ -581,7 +657,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "World\nMore", find('\n') returns 5, truncate(5) gives "World"
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -594,7 +678,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "World$55", find("$55") returns 5, truncate(5) gives "World"
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -607,7 +699,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "World$7", find("$7") returns 5, truncate(5) gives "World"
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[],Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -620,7 +720,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "$0World", find("$0") returns 0, truncate(0) gives ""
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("".to_string())
         );
     }
@@ -633,7 +741,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "World$10More$55End", find("$10") returns 5, truncate(5) gives "World"
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -647,7 +763,15 @@ mod tests {
         // After stripping prefix: "World$1", find("$1") returns 5, truncate(5) gives "World"
         // Then suffix matching removes "World" because it matches suffix
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("".to_string())
         );
     }
@@ -661,7 +785,15 @@ mod tests {
         // After stripping prefix: "World$55", find("$55") returns 5, truncate(5) gives "World"
         // Then suffix matching removes "orld" because it matches suffix end
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("W".to_string())
         );
     }
@@ -674,7 +806,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "${1:World}", find("${1:World}") returns 0, truncate(0) gives ""
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("".to_string())
         );
     }
@@ -687,7 +827,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "World${1:more}", find("${1:more}") returns 5, truncate(5) gives "World"
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -700,7 +848,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "World${55:more}", find("${55:more}") returns 5, truncate(5) gives "World"
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -713,7 +869,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "World${1:more, }", find("${1:more, }") returns 5, truncate(5) gives "World"
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -726,7 +890,15 @@ mod tests {
         let suffix = "";
         // After stripping prefix: "World${1:more}", find("${1:more}") returns 5, truncate(5) gives "World"
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -740,7 +912,15 @@ mod tests {
         // After stripping prefix: "World${1:more, }", find("${1:more, }") returns 5, truncate(5) gives "World"
         // Then suffix matching removes "World" because it matches suffix
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("".to_string())
         );
     }
@@ -754,7 +934,15 @@ mod tests {
         // After stripping prefix: "World${55:more}", find("${55:more}") returns 5, truncate(5) gives "World"
         // Then suffix matching removes "orld" because it matches suffix end
         assert_eq!(
-            trim_completion(completion, prefix, suffix, true, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                true,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("W".to_string())
         );
     }
@@ -769,7 +957,15 @@ mod tests {
         // After stripping prefix: "World$1More", remove $1 -> "WorldMore"
         // First match was at position 5, and it's not at end, so insert "…" at position 5
         assert_eq!(
-            trim_completion(completion, prefix, suffix, false, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                false,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World…More".to_string())
         );
     }
@@ -783,7 +979,15 @@ mod tests {
         // After stripping prefix: "World$1", remove $1 -> "World"
         // First match was at position 5, and it IS at end (5 == 5), so no ellipsis
         assert_eq!(
-            trim_completion(completion, prefix, suffix, false, false, &[], Arc::new(RwLock::new(None))), 
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                false,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World".to_string())
         );
     }
@@ -798,7 +1002,15 @@ mod tests {
         // Remove all markers: "WorldMoreEnd"
         // First match was at position 5
         assert_eq!(
-            trim_completion(completion, prefix, suffix, false, false, &[], Arc::new(RwLock::new(None))),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                false,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World…MoreEnd".to_string())
         );
     }
@@ -812,7 +1024,15 @@ mod tests {
         // After stripping prefix: "$1World", remove $1 -> "World"
         // First match was at position 0, and it's not at end (0 < 5), so insert "…" at position 0
         assert_eq!(
-            trim_completion(completion, prefix, suffix, false, false, &[], Arc::new(RwLock::new(None))),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                false,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("…World".to_string())
         );
     }
@@ -827,7 +1047,15 @@ mod tests {
         // Remove ${1:more} -> "WorldEnd"
         // First match was at position 5
         assert_eq!(
-            trim_completion(completion, prefix, suffix, false, false, &[], Arc::new(RwLock::new(None))),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                false,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("World…End".to_string())
         );
     }
@@ -842,7 +1070,15 @@ mod tests {
         // First match was at position 5, and it IS at end (5 == 5), so no ellipsis
         // Then suffix matching removes "World" because it matches suffix
         assert_eq!(
-            trim_completion(completion, prefix, suffix, false, false, &[], Arc::new(RwLock::new(None))),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                false,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("".to_string())
         );
     }
@@ -857,7 +1093,15 @@ mod tests {
         // First match was at position 5, and it IS at end (5 == 5), so no ellipsis
         // Then suffix matching removes "orld" because it matches suffix end
         assert_eq!(
-            trim_completion(completion, prefix, suffix, false, false, &[], Arc::new(RwLock::new(None))),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                false,
+                false,
+                &[],
+                Arc::new(RwLock::new(None))
+            ),
             Some("W".to_string())
         );
     }
@@ -874,7 +1118,15 @@ mod tests {
         // Remove ${1:more} -> "WorldEnd"
         // First match was at position 5, exactly 1 curly match, so insert next_var
         assert_eq!(
-            trim_completion(completion, prefix, suffix, false, false, &[], Arc::clone(&next_var)),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                false,
+                false,
+                &[],
+                Arc::clone(&next_var)
+            ),
             Some("WorldreplacedEnd".to_string())
         );
     }
@@ -890,7 +1142,15 @@ mod tests {
         // Remove both curly matches -> "WorldEnd"
         // 2 curly matches, so use ellipsis at first position (5)
         assert_eq!(
-            trim_completion(completion, prefix, suffix, false, false, &[], Arc::clone(&next_var)),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                false,
+                false,
+                &[],
+                Arc::clone(&next_var)
+            ),
             Some("World…End".to_string())
         );
     }
@@ -906,7 +1166,15 @@ mod tests {
         // Remove ${1:more} -> "WorldEnd"
         // First match was at position 5, so insert "…" at position 5
         assert_eq!(
-            trim_completion(completion, prefix, suffix, false, false, &[], Arc::clone(&next_var)),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                false,
+                false,
+                &[],
+                Arc::clone(&next_var)
+            ),
             Some("World…End".to_string())
         );
     }
@@ -923,7 +1191,15 @@ mod tests {
         // Remove $1 -> "WorldMore"
         // 0 curly matches, 1 dollar match ($1), so insert next_var at position 5
         assert_eq!(
-            trim_completion(completion, prefix, suffix, false, false, &[], Arc::clone(&next_var)),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                false,
+                false,
+                &[],
+                Arc::clone(&next_var)
+            ),
             Some("WorldreplacedMore".to_string())
         );
     }
@@ -939,7 +1215,15 @@ mod tests {
         // Remove ${1:more} -> "World"
         // First match was at position 5, and it IS at end (5 == 5), so no insertion
         assert_eq!(
-            trim_completion(completion, prefix, suffix, false, false, &[], Arc::clone(&next_var)),
+            trim_completion(
+                completion,
+                prefix,
+                suffix,
+                false,
+                false,
+                &[],
+                Arc::clone(&next_var)
+            ),
             Some("World".to_string())
         );
     }

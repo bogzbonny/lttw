@@ -22,6 +22,7 @@ pub mod lsp_completion;
 pub mod plugin_state;
 pub mod ring_buffer;
 pub mod router;
+pub mod server_launch;
 pub mod utils;
 
 pub use {
@@ -75,7 +76,11 @@ fn setup(c: nvim_oxi::Object) {
     // Initialize plugin state
     init_state(c);
 
+    // Check if llama.cpp server is running and optionally auto-launch it
     let state = get_state();
+    let config = state.config.read();
+    let _ = server_launch::ensure_server_running(&config);
+    drop(config);
     let (tracing_enabled, log_file, tracing_level, disable_cleanup) = {
         let config = state.config.read();
         (
