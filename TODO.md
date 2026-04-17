@@ -1,12 +1,5 @@
-10. actually use keymaps in config
 ^^^^^^^^^ DONE
 
-------------------------
-LSP Completions improvements
-
-30. Option to allow for case-insenstive LSP so If I typed 'op' it could still match with
-    Option<...>
-     - requires usage of the new
 
 ------------------------
 GENERAL
@@ -18,6 +11,7 @@ GENERAL
      - link it to https://www.youtube.com/watch?v=R_rF4kcqLkI
 
 20. git diff extra_input eviction by line number
+     - should evict also from the lsp diff list
      - because we're just saving the file changes we do not need to actually 
        calculate removed diffs, just calculate the new diffs and add those to
        the queue HOWEVER we should probably remove other diff segments by
@@ -80,23 +74,16 @@ local query_string = [[
          want to get the definition for (eg. pub,struct, unwrap, usize, i64,
          Option,
 
+------------------------
+LSP Completions improvements
+
+30. Option to allow for case-insenstive LSP so If I typed 'op' it could still match with
+    Option<...>
+     - requires usage of the new
 
 
 ------------------------
 LOW PRIORITY
-
-40. instruction system LOW priority can use CodeCompanion for now
-
-40. instruction system saving / retrieving contexts
-     - passively generate a context for making edits to each file
-        - pass in an instruction like "explain ways in which the user may want
-          to modify this file and how this would be accomplished"
-     - Add to file's context through a special command 
-        - :LttwInstrAddToContext "something to add"
-        - :LttwInstrContext
-        - :LttwInstrResetCtx
-     - Save/load each context to an git-excluded dotfile in the repo  
-        - passively load these contexts 
 
 05. Use TAB-TAB from normal mode to fix lines with diagnostic errors 
      - :lua print(vim.inspect(vim.diagnostic.get())) 
@@ -128,12 +115,6 @@ LOW PRIORITY
      - OPTION ONCE no more errors - save file to regenerate diagnostics
      - OPTION ONCE no more errors, go to the next file with errors in a new tab
 
-05. Sophisticated LLM suggestions: 
-     - on a timer feed in the ordered diff history, get the LLM to hypothesis on
-       what the user is attempting to do - save this as the current 'goal'
-     - whenever in normal mode (and still?) based on the projected goal and the
-       current code, make suggestions 
-
 30. autocmd for YANK adds messages to extra_inputs. We should either NOT add the
     yanked text. or prefix it with '-' symbols if the yank was a deletion. Low
     priority though we already do diff analysis which should take care of the
@@ -141,7 +122,20 @@ LOW PRIORITY
     require actually parsing the event args in the callback (always a bit of a
     pain).
 
-30. Small Statistic completion predictions: 
+40. instruction system LOW priority can use CodeCompanion for now
+
+40. instruction system saving / retrieving contexts
+     - passively generate a context for making edits to each file
+        - pass in an instruction like "explain ways in which the user may want
+          to modify this file and how this would be accomplished"
+     - Add to file's context through a special command 
+        - :LttwInstrAddToContext "something to add"
+        - :LttwInstrContext
+        - :LttwInstrResetCtx
+     - Save/load each context to an git-excluded dotfile in the repo  
+        - passively load these contexts 
+
+40. Small Statistic completion predictions: 
      - we're definately in HLM territory here
      - predict and complete small little things such as: 
      - let askldfj String[CUR] should predict " = " 
@@ -159,11 +153,6 @@ LOW PRIORITY
        completion predictors (but also could weight predictors from the
        codebase you're working on in higher)
 
-50. Offline/Online mode for getting responses locally or over the web
-     - it would be really nice if this could be a persistant setting which is
-       not in the config... so when you flip it just stays flipped 
-     - "stateful toggle"?
-
 50. Bring the entire FIM system into LTTW for further customization
      - allow more control over cache ordering if one was to be evicted?
        - maybe this isn't an issue and we can just add something to the end of
@@ -177,6 +166,12 @@ LOW PRIORITY
        would be nice if there was a way to have the best of both worlds here
      - yanked text should have a description before adding to ExtraArgs... Maybe
        also have it located at the end near the prefix
+
+50. Sophisticated LLM suggestions: 
+     - on a timer feed in the ordered diff history, get the LLM to hypothesis on
+       what the user is attempting to do - save this as the current 'goal'
+     - whenever in normal mode (and still?) based on the projected goal and the
+       current code, make suggestions 
 
 60. LLM backmatching
 >>>>PROBABLY DONT DO would be kind of annoying, just get better at deleting
@@ -195,3 +190,8 @@ could be removed so the llm would make a call for "clie"
     - max_backmatch_characters (default 5)
  - force recalculation should always stop backcalculating and do a normal
    recalculation
+
+90. Offline/Online mode for getting responses locally or over the web
+     - it would be really nice if this could be a persistant setting which is
+       not in the config... so when you flip it just stays flipped 
+     - "stateful toggle"?

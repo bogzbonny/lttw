@@ -429,3 +429,4 @@ params added as a part of this feature:
   - weighting: lsp_diff_occurrence_weight (default 10) 
     - similar to lsp_local_occurrence_weight but for the diff
 
+10. actually use keymaps in config
