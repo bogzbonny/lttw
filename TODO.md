@@ -10,6 +10,26 @@ nohup llama-server --models-dir ~/models --port 8012 -ngl 99 -dt 0.1 --ubatch-si
 ------------------------
 GENERAL
 
+10. Bring the entire FIM system into LTTW for further customization
+     - allow more control over cache ordering if one was to be evicted?
+       - maybe this isn't an issue and we can just add something to the end of
+         the cache though?
+     - investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
+       - would require FIM customization - probably a bad idea the existing FIM
+         format is established and trained on - we'd have to see how good it
+         actually worked!
+     - the indent system for generating completions is good, however, its a bit
+       annoying to not be able to autogenerate a closing } in the right position
+       would be nice if there was a way to have the best of both worlds here
+     - yanked text should have a description before adding to ExtraArgs... Maybe
+       also have it located at the end near the prefix
+
+10. support SWEEP format/models https://blog.sweep.dev/posts/oss-next-editb
+     - basic example https://huggingface.co/sweepai/sweep-next-edit-1.5B/blob/main/run_model.py
+     - https://github.com/sweepai/cursortab.nvim/blob/38ed4adcfac0fc6be9f2bb648667016eae9f00f1/server/provider/sweep/sweep.go#L78
+     - https://github.com/sweepai/cursortab.nvim/blob/38ed4adcfac0fc6be9f2bb648667016eae9f00f1/server/provider/processors.go#L121
+     - V2 seems a bit different: https://huggingface.co/sweepai/sweep-next-edit-v2-7B/blob/main/inference.py
+
 20. git diff extra_input eviction by line number
      - should evict also from the lsp diff list
      - because we're just saving the file changes we do not need to actually 
@@ -83,7 +103,6 @@ LSP Completions improvements
     Option<...>
      - requires usage of the new
 
-
 ------------------------
 LOW PRIORITY
 
@@ -155,19 +174,6 @@ LOW PRIORITY
        completion predictors (but also could weight predictors from the
        codebase you're working on in higher)
 
-50. Bring the entire FIM system into LTTW for further customization
-     - allow more control over cache ordering if one was to be evicted?
-       - maybe this isn't an issue and we can just add something to the end of
-         the cache though?
-     - investigate FIM techniques used by https://huggingface.co/zed-industries/zeta-2
-       - would require FIM customization - probably a bad idea the existing FIM
-         format is established and trained on - we'd have to see how good it
-         actually worked!
-     - the indent system for generating completions is good, however, its a bit
-       annoying to not be able to autogenerate a closing } in the right position
-       would be nice if there was a way to have the best of both worlds here
-     - yanked text should have a description before adding to ExtraArgs... Maybe
-       also have it located at the end near the prefix
 
 50. Sophisticated LLM suggestions: 
      - on a timer feed in the ordered diff history, get the LLM to hypothesis on

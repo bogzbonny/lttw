@@ -57,6 +57,9 @@ https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF
 https://huggingface.co/JetBrains/Mellum-4b-base
 https://huggingface.co/Etherll/Mellum-4b-sft-rust-GGUF
 https://huggingface.co/mradermacher/Mellum-4b-sft-rust-i1-GGUF
+https://huggingface.co/sweepai
+https://huggingface.co/henrik3/sweep-next-edit-v2-7B-GGUF
+https://huggingface.co/sweepai/sweep-next-edit-1.5B
 
 
 ## LSP Completion Overrides
