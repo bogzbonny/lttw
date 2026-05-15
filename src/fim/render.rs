@@ -1,11 +1,11 @@
 use {
     super::info_stats::build_info_string,
     crate::{
-        FimResponseWithInfo, FimTimings, LTTW_FIM_HIGHLIGHT, LttwResult,
         fim::{FimLLM, FimModel},
         llama_client::FimTimingsData,
         plugin_state::PluginState,
         utils::{self, clear_buf_namespace_objects, set_buf_extmark, set_buf_extmark_top_right},
+        FimResponseWithInfo, FimTimings, LttwResult, LTTW_FIM_HIGHLIGHT,
     },
     nvim_oxi::api::{opts::SetExtmarkOptsBuilder, types::ExtmarkVirtTextPosition},
     std::sync::Arc,
@@ -45,6 +45,8 @@ pub fn render_fim_suggestion(
         sug_lines.push(String::new());
     }
 
+    // TODO this may not be UTF safe
+
     // Filter out duplicate text - remove suggested prefix that matches existing suffix
     // Safety: ensure bounds before slicing
     let line_cur_len = line_cur.len();
@@ -58,7 +60,8 @@ pub fn render_fim_suggestion(
         // Check if the beginning of the suggestion duplicates existing text.
         // Iterate over characters (not bytes) to safely handle multi-byte UTF-8.
         for (i, _ch) in line_cur_suffix.char_indices().rev() {
-            let prefix = &line_cur_suffix[..=i];
+            let prefix = &line_cur_suffix[..i]; // NOTE used to be [..=i] which is non UTF safe
+
             // Use char count for slicing sug_lines[0] (also potentially non-ASCII)
             let dup_char_count = prefix.chars().count();
             if sug_lines[0].starts_with(prefix) {
