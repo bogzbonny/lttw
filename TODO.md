@@ -7,6 +7,12 @@ nohup llama-server --models-dir ~/models --port 8012 -ngl 99 -dt 0.1 --ubatch-si
 ^^^^^^^^^ DONE
 
 
+There are string UTF boundary errors in render_fim_suggestion. Fix them. I'm getting the errors: 
+PANIC error: src/fim/render.rs:60:57 byte index 28 is not a char boundary; it is inside '—' (bytes 26..29) of `!("Review cycle triggered — entering reviewer mode");
+
+
+
+
 ------------------------
 GENERAL
 

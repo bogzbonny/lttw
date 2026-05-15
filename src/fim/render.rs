@@ -55,16 +55,21 @@ pub fn render_fim_suggestion(
         ""
     };
     if !line_cur_suffix.is_empty() && !sug_lines.is_empty() && !sug_lines[0].is_empty() {
-        // Check if the beginning of the suggestion duplicates existing text
-        for i in (0..line_cur_suffix.len()).rev() {
-            if sug_lines[0].starts_with(&line_cur_suffix[..=i]) {
+        // Check if the beginning of the suggestion duplicates existing text.
+        // Iterate over characters (not bytes) to safely handle multi-byte UTF-8.
+        for (i, _ch) in line_cur_suffix.char_indices().rev() {
+            let prefix = &line_cur_suffix[..=i];
+            // Use char count for slicing sug_lines[0] (also potentially non-ASCII)
+            let dup_char_count = prefix.chars().count();
+            if sug_lines[0].starts_with(prefix) {
                 // Remove the duplicate part from the first line of suggestion
-                let dup_len = line_cur_suffix[..=i].len();
-                if dup_len < sug_lines[0].len() {
-                    sug_lines[0] = sug_lines[0][dup_len..].to_string();
+                let num_chars_to_remove = dup_char_count;
+                let remaining: String = sug_lines[0].chars().skip(num_chars_to_remove).collect();
+                sug_lines[0] = if remaining.is_empty() {
+                    String::new()
                 } else {
-                    sug_lines[0] = String::new();
-                }
+                    remaining
+                };
                 break;
             }
         }
