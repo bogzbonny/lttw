@@ -1,20 +1,51 @@
-10. config option to automatically launch llama.cpp rather than depending on
-a server already being running. Always check if the llama server is already
-running before launching it. There should be two config options, auto_launch
-(bool default true) and also auto_launch_command with default: 
-nohup llama-server --models-dir ~/models --port 8012 -ngl 99 -dt 0.1 --ubatch-size 1024 --batch-size 512 --ctx-size 0 --cache-reuse 256 > /dev/null 2>&1 &
-
 ^^^^^^^^^ DONE
-
 
 There are string UTF boundary errors in render_fim_suggestion. Fix them. I'm getting the errors: 
 PANIC error: src/fim/render.rs:60:57 byte index 28 is not a char boundary; it is inside '—' (bytes 26..29) of `!("Review cycle triggered — entering reviewer mode");
 
-
-
-
 ------------------------
 GENERAL
+
+10. speech dictation while typing for LTTW
+ - ACTUALLY build as a lib so bart can use it
+    - continiously hold... shift-space(?) for this to work, for neovim could probably even allow for typing while in insert mode this way
+    - probably should just have this system just utilize keyboard simulation for the actual typing, and keyboard capture to test the key being held
+    - We SHOULD have just one instance running in the background multiple neovim/bart instances should have to send reqests to this one location. 
+    - THE HARD PART is figuring out WHEN we should be enabled at all/ when there are multiple instances running where to route the requests
+       - neovim: "FocusGained" and "FocusLost" autocmds
+ - ALREADY ready to try
+   - https://github.com/cjpais/Handy
+   - https://github.com/Beingpax/VoiceInk 
+   - https://github.com/zachlatta/freeflow
+ - https://github.com/zachlatta/freeflow
+ - https://github.com/Beingpax/VoiceInk 
+ - https://github.com/sebsto/wispr
+ - https://github.com/moonshine-ai/moonshine
+ - https://github.com/kyza0d/vocal.nvim
+ - https://github.com/nicolasayotte/dyt.nvim 
+ - RUST
+    - https://github.com/handy-computer/transcribe.cpp/tree/main/bindings/rust/transcribe-cpp
+ - speaking the word "ACTION" at the beginning will tell the llm to take an
+   action instead of just streaming your words to text
+    - probably while in visual mode just assume ACTION is being taken  
+ - :ContiniousSpeech 
+    - advanced (future development) where the user can be speaking and typing
+      continuously
+    - would need to separate out silence from proper commands (based on time of
+      silence
+ - choose a particular key to ideally hold which the speech is then linked to,
+   probably while holding `spacebar` command the voice is being recorded and
+   interpreted. (maybe causes slight problems in visual mode, will have to see) 
+ - In dictation mode (default) pass the whisper text through a fast llm which is
+   basically attempting to insert the text at the cursor position. Prompt it
+   with the cursor location, some surrounding context (measured in tokens), the
+   language being used (or markdown), Enforce no thinking. Ask it to remove any
+   speech filler words "um" "like" etc. 
+     - maybe don't provide any context? ask it to respond only with the output
+       text directly which is then then directly inserted
+ - visually stream in the words as they come in and then the llm corrected
+   versions to (stream in the top right corner)
+ - include a soft ding noise to tell the user recording is working (one to start one to confirm ending)
 
 10. Bring the entire FIM system into LTTW for further customization
      - allow more control over cache ordering if one was to be evicted?

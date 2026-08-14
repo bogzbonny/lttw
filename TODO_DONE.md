@@ -1,3 +1,11 @@
+
+10. config option to automatically launch llama.cpp rather than depending on
+a server already being running. Always check if the llama server is already
+running before launching it. There should be two config options, auto_launch
+(bool default true) and also auto_launch_command with default: 
+nohup llama-server --models-dir ~/models --port 8012 -ngl 99 -dt 0.1 --ubatch-size 1024 --batch-size 512 --ctx-size 0 --cache-reuse 256 > /dev/null 2>&1 &
+
+
 01. fix filetype prediction logic
 01. add debounce
 01. Should not be Inline extmarks when there are no ending matches
